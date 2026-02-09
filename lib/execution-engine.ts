@@ -48,7 +48,7 @@ interface BatchDoc {
 }
 
 interface NotificationDoc {
-  _id: ObjectId
+  _id?: ObjectId
   user_id: string
   type: 'analysis' | 'alert' | 'system'
   title: string
