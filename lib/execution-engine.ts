@@ -556,12 +556,12 @@ export async function listExecutionsPaged(
 
   const [items, total] = await Promise.all([
     executions
-      .find(query)
+      .find(query as any)
       .sort({ created_at: -1 })
       .skip(offset)
       .limit(limit)
       .toArray(),
-    executions.countDocuments(query)
+    executions.countDocuments(query as any)
   ])
 
   return {
