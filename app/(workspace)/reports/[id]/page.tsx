@@ -5,6 +5,13 @@ import { useParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 import { apiFetch } from '@/lib/client-api'
+import {
+  Button,
+  Card,
+  PageHeader,
+  Alert,
+  Spinner,
+} from '@/components/ui'
 
 interface ReportDetail {
   _id: string
@@ -45,50 +52,93 @@ export default function ReportDetailPage() {
   }, [params.id])
 
   return (
-    <div className="container report-grid">
-      <section className="card report-head">
-        <div>
-          <h3>报告详情</h3>
-          <p className="muted">{detail ? `${detail.stock_name || detail.stock_symbol}（${detail.stock_symbol}）` : '正在加载...'}</p>
-        </div>
-        <Link className="btn btn-soft" href="/reports">
-          返回列表
-        </Link>
-      </section>
+    <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+      <PageHeader
+        title="报告详情"
+        description={
+          detail
+            ? `${detail.stock_name || detail.stock_symbol}（${detail.stock_symbol}）`
+            : '正在加载...'
+        }
+        actions={
+          <Link href="/reports">
+            <Button variant="soft">返回列表</Button>
+          </Link>
+        }
+      />
 
-      {loading ? <div className="card report-panel">正在加载报告...</div> : null}
-      {error ? <div className="card board-error">{error}</div> : null}
+      {loading ? (
+        <Card>
+          <div className="flex items-center justify-center py-12">
+            <Spinner size="lg" />
+          </div>
+        </Card>
+      ) : null}
+
+      {error ? <Alert variant="error">{error}</Alert> : null}
 
       {detail ? (
         <>
-          <section className="card report-panel">
-            <h4>核心结论</h4>
-            <p>{detail.summary || '-'}</p>
-            <p>{detail.recommendation || '-'}</p>
-            <div className="report-metrics">
-              <span>置信度：{detail.confidence_score ?? '-'}</span>
-              <span>风险等级：{detail.risk_level ?? '-'}</span>
-              <span>生成时间：{new Date(detail.created_at).toLocaleString()}</span>
+          <Card>
+            <h4 className="text-sm font-semibold text-[var(--fg)] mb-3">
+              核心结论
+            </h4>
+            <p className="text-sm text-[var(--fg-secondary)] leading-relaxed">
+              {detail.summary || '-'}
+            </p>
+            <p className="text-sm text-[var(--fg-secondary)] leading-relaxed mt-2">
+              {detail.recommendation || '-'}
+            </p>
+            <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t border-[var(--border)]">
+              <span className="text-xs text-[var(--fg-muted)]">
+                置信度：
+                <span className="font-mono text-[var(--fg-secondary)] font-medium">
+                  {detail.confidence_score ?? '-'}
+                </span>
+              </span>
+              <span className="text-xs text-[var(--fg-muted)]">
+                风险等级：
+                <span className="font-mono text-[var(--fg-secondary)] font-medium">
+                  {detail.risk_level ?? '-'}
+                </span>
+              </span>
+              <span className="text-xs text-[var(--fg-muted)]">
+                生成时间：
+                <span className="text-[var(--fg-secondary)]">
+                  {new Date(detail.created_at).toLocaleString()}
+                </span>
+              </span>
             </div>
-          </section>
+          </Card>
 
-          <section className="card report-panel">
-            <h4>关键要点</h4>
+          <Card>
+            <h4 className="text-sm font-semibold text-[var(--fg)] mb-3">
+              关键要点
+            </h4>
             {detail.key_points && detail.key_points.length > 0 ? (
-              <ul className="report-list">
+              <ul className="space-y-2 pl-4 list-disc">
                 {detail.key_points.map((point, index) => (
-                  <li key={`${point}-${index}`}>{point}</li>
+                  <li
+                    key={`${point}-${index}`}
+                    className="text-sm text-[var(--fg-secondary)] leading-relaxed"
+                  >
+                    {point}
+                  </li>
                 ))}
               </ul>
             ) : (
-              <p className="muted">暂无关键要点。</p>
+              <p className="text-sm text-[var(--fg-muted)]">暂无关键要点。</p>
             )}
-          </section>
+          </Card>
 
-          <section className="card report-panel">
-            <h4>原始结构数据</h4>
-            <pre className="raw-block">{JSON.stringify(detail.reports || {}, null, 2)}</pre>
-          </section>
+          <Card>
+            <h4 className="text-sm font-semibold text-[var(--fg)] mb-3">
+              原始结构数据
+            </h4>
+            <pre className="text-xs font-mono leading-relaxed text-[var(--fg-secondary)] bg-[var(--bg-secondary)] rounded-lg p-4 overflow-x-auto whitespace-pre-wrap break-all">
+              {JSON.stringify(detail.reports || {}, null, 2)}
+            </pre>
+          </Card>
         </>
       ) : null}
     </div>

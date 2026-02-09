@@ -4,6 +4,11 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
+import { Alert } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { PageHeader } from '@/components/ui/page-header'
+import { Spinner } from '@/components/ui/spinner'
 import { apiFetch } from '@/lib/client-api'
 
 interface Detail {
@@ -38,24 +43,27 @@ export default function LearningArticlePage() {
   }, [params.id])
 
   return (
-    <div className="container report-grid">
-      <section className="card report-head">
-        <div>
-          <h3>{detail?.title || '文章详情'}</h3>
-          <p className="muted">{detail?.summary || '正在加载...'}</p>
-        </div>
-        <Link className="btn btn-soft" href="/learning">
-          返回列表
-        </Link>
-      </section>
+    <div className="space-y-6">
+      <PageHeader
+        title={detail?.title || '文章详情'}
+        description={detail?.summary}
+        actions={
+          <Link href="/learning">
+            <Button variant="soft">返回列表</Button>
+          </Link>
+        }
+      />
 
-      {loading ? <div className="card report-panel">正在加载文章...</div> : null}
-      {error ? <div className="card board-error">{error}</div> : null}
-
-      {detail ? (
-        <section className="card report-panel">
-          <pre className="raw-block">{detail.content}</pre>
-        </section>
+      {loading ? (
+        <Spinner />
+      ) : error ? (
+        <Alert variant="error">{error}</Alert>
+      ) : detail ? (
+        <Card>
+          <pre className="whitespace-pre-wrap font-mono text-sm bg-[var(--bg-secondary)] rounded-lg p-4 overflow-auto max-h-[600px]">
+            {detail.content}
+          </pre>
+        </Card>
       ) : null}
     </div>
   )

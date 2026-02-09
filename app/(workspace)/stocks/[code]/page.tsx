@@ -4,6 +4,11 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
+import { Alert } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { PageHeader } from '@/components/ui/page-header'
+import { Spinner } from '@/components/ui/spinner'
 import { apiFetch } from '@/lib/client-api'
 
 interface StockInfo {
@@ -42,33 +47,60 @@ export default function StockDetailPage() {
   }, [params.code])
 
   return (
-    <div className="container report-grid">
-      <section className="card report-head">
-        <div>
-          <h3>股票详情</h3>
-          <p className="muted">{params.code}</p>
+    <div className="space-y-6">
+      <PageHeader
+        title="股票详情"
+        description={params.code}
+        actions={
+          <Link href={`/analysis?symbol=${encodeURIComponent(params.code)}`}>
+            <Button variant="primary">去现场分析</Button>
+          </Link>
+        }
+      />
+
+      {loading && (
+        <div className="flex items-center justify-center py-16">
+          <Spinner size="lg" />
         </div>
-        <Link className="btn btn-primary" href={`/analysis?symbol=${encodeURIComponent(params.code)}`}>
-          去现场分析
-        </Link>
-      </section>
+      )}
 
-      {loading ? <div className="card report-panel">加载中...</div> : null}
-      {error ? <div className="card board-error">{error}</div> : null}
+      {error && <Alert variant="error">{error}</Alert>}
 
-      {info ? (
-        <section className="card report-panel">
-          <h4>{info.name}（{info.symbol}）</h4>
-          <div className="report-metrics">
-            <span>市场：{info.market}</span>
-            <span>价格：{info.current_price.toFixed(2)}</span>
-            <span>涨跌：{info.change.toFixed(2)} / {info.change_percent.toFixed(2)}%</span>
-            <span>成交量：{info.volume.toLocaleString()}</span>
-            <span>PE：{info.pe_ratio?.toFixed(2) ?? '-'}</span>
-            <span>PB：{info.pb_ratio?.toFixed(2) ?? '-'}</span>
+      {info && (
+        <Card>
+          <h4 className="text-sm font-semibold text-[var(--fg)] mb-4">
+            {info.name}（{info.symbol}）
+          </h4>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <div>
+              <p className="text-xs text-[var(--fg-muted)]">市场</p>
+              <p className="text-sm font-medium text-[var(--fg)]">{info.market}</p>
+            </div>
+            <div>
+              <p className="text-xs text-[var(--fg-muted)]">价格</p>
+              <p className="text-sm font-medium text-[var(--fg)]">{info.current_price.toFixed(2)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-[var(--fg-muted)]">涨跌</p>
+              <p className="text-sm font-medium text-[var(--fg)]">
+                {info.change.toFixed(2)} / {info.change_percent.toFixed(2)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-[var(--fg-muted)]">成交量</p>
+              <p className="text-sm font-medium text-[var(--fg)]">{info.volume.toLocaleString()}</p>
+            </div>
+            <div>
+              <p className="text-xs text-[var(--fg-muted)]">PE</p>
+              <p className="text-sm font-medium text-[var(--fg)]">{info.pe_ratio?.toFixed(2) ?? '-'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-[var(--fg-muted)]">PB</p>
+              <p className="text-sm font-medium text-[var(--fg)]">{info.pb_ratio?.toFixed(2) ?? '-'}</p>
+            </div>
           </div>
-        </section>
-      ) : null}
+        </Card>
+      )}
     </div>
   )
 }

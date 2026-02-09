@@ -4,6 +4,13 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 
+import { Alert } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { EmptyState } from '@/components/ui/empty-state'
+import { PageHeader } from '@/components/ui/page-header'
+import { Spinner } from '@/components/ui/spinner'
+import { Table, Tbody, Td, Th, Thead, Tr } from '@/components/ui/table'
 import { apiFetch } from '@/lib/client-api'
 
 interface Item {
@@ -42,48 +49,51 @@ export default function LearningCategoryPage() {
   )
 
   return (
-    <div className="container report-grid">
-      <section className="card report-head">
-        <div>
-          <h3>学习分类：{params.category}</h3>
-          <p className="muted">按分类查看相关文章。</p>
-        </div>
-        <Link className="btn btn-soft" href="/learning">
-          返回学习中心
-        </Link>
-      </section>
+    <div className="space-y-6">
+      <PageHeader
+        title={`学习分类：${params.category}`}
+        description="按分类查看相关文章。"
+        actions={
+          <Link href="/learning">
+            <Button variant="soft">返回学习中心</Button>
+          </Link>
+        }
+      />
 
-      {loading ? <div className="card report-panel">加载中...</div> : null}
-      {error ? <div className="card board-error">{error}</div> : null}
-
-      <section className="card execution-list">
-        {filtered.length === 0 ? (
-          <p className="muted">该分类暂无文章。</p>
-        ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>标题</th>
-                <th>摘要</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
+      {loading ? (
+        <Spinner />
+      ) : error ? (
+        <Alert variant="error">{error}</Alert>
+      ) : filtered.length === 0 ? (
+        <EmptyState title="该分类暂无文章" />
+      ) : (
+        <Card padding={false}>
+          <Table>
+            <Thead>
+              <Tr>
+                <Th>标题</Th>
+                <Th>摘要</Th>
+                <Th>操作</Th>
+              </Tr>
+            </Thead>
+            <Tbody>
               {filtered.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.title}</td>
-                  <td>{item.summary}</td>
-                  <td>
-                    <Link className="btn btn-primary" href={`/learning/article/${item.id}`}>
-                      阅读
+                <Tr key={item.id}>
+                  <Td>{item.title}</Td>
+                  <Td>{item.summary}</Td>
+                  <Td>
+                    <Link href={`/learning/article/${item.id}`}>
+                      <Button variant="primary" size="sm">
+                        阅读
+                      </Button>
                     </Link>
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
-        )}
-      </section>
+            </Tbody>
+          </Table>
+        </Card>
+      )}
     </div>
   )
 }

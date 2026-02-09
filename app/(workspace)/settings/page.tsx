@@ -3,6 +3,12 @@
 import { FormEvent, useEffect, useState } from 'react'
 import Link from 'next/link'
 
+import { Alert } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Input, Select } from '@/components/ui/input'
+import { PageHeader } from '@/components/ui/page-header'
+import { Spinner } from '@/components/ui/spinner'
 import { apiFetch } from '@/lib/client-api'
 
 interface Preferences {
@@ -18,6 +24,16 @@ const defaultPreferences: Preferences = {
   refresh_interval: 3,
   language: 'zh-CN'
 }
+
+const systemLinks = [
+  { href: '/settings/database', label: '数据库管理' },
+  { href: '/settings/cache', label: '缓存管理' },
+  { href: '/settings/usage', label: '使用统计' },
+  { href: '/settings/logs', label: '操作日志' },
+  { href: '/settings/system-logs', label: '系统日志' },
+  { href: '/settings/sync', label: '多数据源同步' },
+  { href: '/settings/scheduler', label: '定时任务迁移说明' },
+]
 
 export default function SettingsPage() {
   const [form, setForm] = useState<Preferences>(defaultPreferences)
@@ -63,36 +79,32 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="container report-grid">
-      <section className="card report-head">
-        <div>
-          <h3>偏好设置</h3>
-          <p className="muted">设置默认市场和自动刷新行为。</p>
-        </div>
-      </section>
+    <div className="space-y-6">
+      <PageHeader title="偏好设置" description="设置默认市场和自动刷新行为。" />
 
-      <section className="card report-panel">
+      {message && <Alert variant="success">{message}</Alert>}
+      {error && <Alert variant="error">{error}</Alert>}
+
+      <Card>
         {loading ? (
-          <p className="muted">加载中...</p>
+          <div className="flex items-center justify-center py-12">
+            <Spinner size="lg" />
+          </div>
         ) : (
-          <form className="settings-form" onSubmit={save}>
-            <div className="field">
-              <label>默认市场</label>
-              <select
-                className="select"
+          <form onSubmit={save} className="space-y-5">
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              <Select
+                label="默认市场"
                 value={form.default_market}
                 onChange={(e) => setForm((prev) => ({ ...prev, default_market: e.target.value }))}
               >
                 <option value="A股">A股</option>
                 <option value="港股">港股</option>
                 <option value="美股">美股</option>
-              </select>
-            </div>
+              </Select>
 
-            <div className="field">
-              <label>自动刷新间隔（秒）</label>
-              <input
-                className="input"
+              <Input
+                label="自动刷新间隔（秒）"
                 type="number"
                 min={1}
                 max={60}
@@ -101,51 +113,38 @@ export default function SettingsPage() {
               />
             </div>
 
-            <label className="live-toggle">
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-[var(--fg-secondary)]">
               <input
                 type="checkbox"
                 checked={form.auto_refresh}
                 onChange={(e) => setForm((prev) => ({ ...prev, auto_refresh: e.target.checked }))}
+                className="rounded border-[var(--border)]"
               />
               默认启用自动刷新
             </label>
 
-            <button className="btn btn-primary" type="submit" disabled={saving}>
+            <Button variant="primary" type="submit" disabled={saving}>
               {saving ? '保存中...' : '保存设置'}
-            </button>
+            </Button>
           </form>
         )}
-      </section>
+      </Card>
 
-      <section className="card report-panel">
-        <h4>系统功能入口</h4>
-        <div className="quick-grid">
-          <Link className="quick-link" href="/settings/database">
-            数据库管理
-          </Link>
-          <Link className="quick-link" href="/settings/cache">
-            缓存管理
-          </Link>
-          <Link className="quick-link" href="/settings/usage">
-            使用统计
-          </Link>
-          <Link className="quick-link" href="/settings/logs">
-            操作日志
-          </Link>
-          <Link className="quick-link" href="/settings/system-logs">
-            系统日志
-          </Link>
-          <Link className="quick-link" href="/settings/sync">
-            多数据源同步
-          </Link>
-          <Link className="quick-link" href="/settings/scheduler">
-            定时任务迁移说明
-          </Link>
+      <Card>
+        <h4 className="text-sm font-semibold text-[var(--fg)] mb-4">系统功能入口</h4>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          {systemLinks.map((item) => (
+            <Link key={item.href} href={item.href} className="no-underline">
+              <Card
+                className="text-center text-sm font-medium text-[var(--fg-secondary)] hover:border-[var(--fg-muted)] transition-colors cursor-pointer"
+                padding={false}
+              >
+                <div className="px-4 py-3">{item.label}</div>
+              </Card>
+            </Link>
+          ))}
         </div>
-      </section>
-
-      {message ? <div className="card message-ok">{message}</div> : null}
-      {error ? <div className="card board-error">{error}</div> : null}
+      </Card>
     </div>
   )
 }

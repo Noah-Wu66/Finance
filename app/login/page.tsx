@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
 import { apiFetch } from '@/lib/client-api'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Alert } from '@/components/ui/alert'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -34,49 +37,56 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="login-page">
-      <div className="login-card card">
-        <h1>TradingAgents 网页版</h1>
-        <p>全功能现场执行模式：所有任务都在你当前页面里运行。</p>
+    <div className="min-h-screen flex items-center justify-center bg-[var(--bg)] px-4">
+      <div className="w-full max-w-sm">
+        {/* Brand */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-primary-600 text-white font-bold text-xl mb-4">
+            T
+          </div>
+          <h1 className="text-xl font-semibold text-[var(--fg)] m-0">登录 TradingAgents</h1>
+          <p className="mt-2 text-sm text-[var(--fg-muted)]">AI 驱动的智能股票分析平台</p>
+        </div>
 
-        <form onSubmit={onSubmit} className="login-form">
-          <div className="field">
-            <label htmlFor="email">邮箱</label>
-            <input
+        {/* Card */}
+        <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-2xl shadow-[var(--card-shadow-lg)] p-6">
+          <form onSubmit={onSubmit} className="space-y-4">
+            <Input
               id="email"
-              className="input"
+              label="邮箱"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="请输入邮箱"
+              placeholder="name@example.com"
               autoComplete="email"
               required
             />
-          </div>
 
-          <div className="field">
-            <label htmlFor="password">密码</label>
-            <input
+            <Input
               id="password"
-              className="input"
+              label="密码"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="请输入密码"
+              placeholder="输入密码"
               autoComplete="current-password"
             />
-          </div>
 
-          {error ? <div className="login-error">{error}</div> : null}
+            {error && <Alert variant="error">{error}</Alert>}
 
-          <button className="btn btn-primary" type="submit" disabled={loading}>
-            {loading ? '登录中...' : '登录'}
-          </button>
+            <Button variant="primary" type="submit" disabled={loading} className="w-full">
+              {loading ? '登录中...' : '登录'}
+            </Button>
+          </form>
+        </div>
 
-          <Link href="/register" className="muted">
-            没有账号？去注册
+        {/* Footer link */}
+        <p className="mt-6 text-center text-sm text-[var(--fg-muted)]">
+          没有账号？
+          <Link href="/register" className="text-primary-600 hover:text-primary-700 dark:text-primary-400 ml-1 font-medium">
+            注册
           </Link>
-        </form>
+        </p>
       </div>
     </div>
   )

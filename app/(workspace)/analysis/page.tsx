@@ -6,6 +6,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 import { apiFetch } from '@/lib/client-api'
+import { Card } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input, Select } from '@/components/ui/input'
+import { PageHeader } from '@/components/ui/page-header'
+import { Alert } from '@/components/ui/alert'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { ProgressBar } from '@/components/ui/progress-bar'
 
 type Status = 'running' | 'completed' | 'failed' | 'canceled' | 'stopped'
 
@@ -123,8 +130,7 @@ function AnalysisPageContent() {
         method: 'POST',
         credentials: 'include',
         keepalive: true
-      }).catch(() => {
-      })
+      }).catch(() => {})
     }
 
     window.addEventListener('beforeunload', handleBeforeUnload)
@@ -147,108 +153,125 @@ function AnalysisPageContent() {
         if (res.data.default_market) {
           setMarket(res.data.default_market)
         }
-      } catch {
-      }
+      } catch {}
     }
 
     void loadPreferences()
   }, [])
 
   return (
-    <div className="container live-grid">
-      <section className="card live-start">
-        <h3>创建现场执行任务</h3>
-        <p className="muted">你在这里点“开始”，页面就会一边执行一边展示过程。页面关闭后任务会自动停止。</p>
+    <div className="space-y-6">
+      <PageHeader title="现场分析" description="发起 AI 分析任务，实时查看执行过程" />
 
-        <div className="live-form">
-          <div className="field">
-            <label>股票代码</label>
-            <input
-              className="input mono"
+      <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6">
+        {/* Left: Create Task */}
+        <Card className="space-y-4 h-fit">
+          <h3 className="text-sm font-semibold text-[var(--fg)] m-0">创建分析任务</h3>
+          <p className="text-xs text-[var(--fg-muted)] m-0">
+            输入股票代码开始分析，页面关闭后任务自动停止。
+          </p>
+
+          <div className="space-y-3">
+            <Input
+              label="股票代码"
               placeholder="例如 000001 或 AAPL"
               value={symbol}
-              onChange={(event) => setSymbol(event.target.value)}
+              onChange={(e) => setSymbol(e.target.value)}
+              className="font-mono"
             />
-          </div>
 
-          <div className="field">
-            <label>市场</label>
-            <select className="select" value={market} onChange={(event) => setMarket(event.target.value)}>
+            <Select
+              label="市场"
+              value={market}
+              onChange={(e) => setMarket(e.target.value)}
+            >
               {marketList.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
+                <option key={item} value={item}>{item}</option>
               ))}
-            </select>
+            </Select>
           </div>
 
+          {error && <Alert variant="error">{error}</Alert>}
 
-        </div>
+          <div className="flex gap-2">
+            {isRunning ? (
+              <Button variant="danger" onClick={stop} className="flex-1">
+                停止
+              </Button>
+            ) : (
+              <Button variant="primary" onClick={start} disabled={loading} className="flex-1">
+                {loading ? '创建中...' : '开始分析'}
+              </Button>
+            )}
+          </div>
+        </Card>
 
-        {error ? <div className="board-error">{error}</div> : null}
+        {/* Right: Progress */}
+        <Card className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-[var(--fg)] m-0">执行过程</h3>
+            {execution && <StatusBadge status={execution.status} />}
+          </div>
 
-        <div className="live-actions">
-          {isRunning ? (
-            <button className="btn btn-danger" onClick={stop}>
-              立即停止
-            </button>
-          ) : (
-            <button className="btn btn-primary" onClick={start} disabled={loading}>
-              {loading ? '创建中...' : '开始现场执行'}
-            </button>
-          )}
-        </div>
-      </section>
-
-      <section className="card live-progress">
-        <div className="live-progress-head">
-          <h3>执行过程</h3>
-          {execution ? <span className={`status status-${execution.status}`}>{execution.status}</span> : null}
-        </div>
-
-        {execution ? (
-          <>
-            <div className="progress-wrap">
-              <div className="progress-bar">
-                <div className="progress-fill" style={{ width: `${execution.progress}%` }} />
+          {execution ? (
+            <div className="space-y-4">
+              {/* Progress */}
+              <div className="space-y-2">
+                <ProgressBar value={execution.progress} showLabel />
+                <span className="text-xs font-mono text-[var(--fg-muted)]">{progressText}</span>
               </div>
-              <span className="mono">{progressText}</span>
-            </div>
 
-            <div className="live-meta">
-              <div>任务ID：<span className="mono">{execution._id}</span></div>
-              <div>股票：<span className="mono">{execution.symbol}</span> · {execution.market}</div>
-            </div>
+              {/* Meta */}
+              <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-[var(--fg-secondary)]">
+                <span>任务 <span className="font-mono text-[var(--fg-muted)]">{execution._id.slice(0, 12)}</span></span>
+                <span>股票 <span className="font-mono font-medium">{execution.symbol}</span> · {execution.market}</span>
+              </div>
 
-            <div className="log-list">
-              {execution.logs?.map((log, idx) => (
-                <div className="log-item" key={`${log.at}-${idx}`}>
-                  <span className="mono">{new Date(log.at).toLocaleTimeString()}</span>
-                  <span>{log.text}</span>
+              {/* Logs */}
+              <div className="border border-[var(--border)] rounded-lg overflow-hidden max-h-72 overflow-y-auto">
+                {execution.logs?.map((log, idx) => (
+                  <div
+                    key={`${log.at}-${idx}`}
+                    className="flex gap-3 px-3 py-2 text-xs border-b border-dashed border-[var(--border)] last:border-b-0"
+                  >
+                    <span className="font-mono text-[var(--fg-muted)] shrink-0">
+                      {new Date(log.at).toLocaleTimeString()}
+                    </span>
+                    <span className="text-[var(--fg-secondary)]">{log.text}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Result */}
+              {execution.status === 'completed' && execution.result && (
+                <div className="rounded-lg border border-success-200 dark:border-success-700/30 bg-success-50 dark:bg-success-700/10 p-4 space-y-2">
+                  <h4 className="text-sm font-semibold text-success-700 dark:text-success-400 m-0">分析完成</h4>
+                  <p className="text-sm text-success-700 dark:text-success-300 m-0">{execution.result.summary}</p>
+                  <p className="text-sm text-success-700 dark:text-success-300 m-0">{execution.result.recommendation}</p>
+                  <p className="text-xs text-success-600 dark:text-success-400 m-0">
+                    置信度：{execution.result.confidence_score ?? '-'}，风险：{execution.result.risk_level ?? '-'}
+                  </p>
+                  {execution.result.report_id && (
+                    <Link href={`/reports/${execution.result.report_id}`}>
+                      <Button variant="soft" size="sm" className="mt-2">
+                        查看报告详情
+                      </Button>
+                    </Link>
+                  )}
                 </div>
-              ))}
+              )}
             </div>
-
-            {execution.status === 'completed' && execution.result ? (
-              <div className="result-box">
-                <h4>执行结果</h4>
-                <p>{execution.result.summary}</p>
-                <p>{execution.result.recommendation}</p>
-                <p>
-                  置信度：{execution.result.confidence_score ?? '-'}，风险：{execution.result.risk_level ?? '-'}
-                </p>
-                {execution.result.report_id ? (
-                  <Link className="btn btn-soft" href={`/reports/${execution.result.report_id}`}>
-                    打开报告详情
-                  </Link>
-                ) : null}
-              </div>
-            ) : null}
-          </>
-        ) : (
-          <p className="muted">还没有现场任务，先在左侧创建一个。</p>
-        )}
-      </section>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--fg-faint)] mb-3">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <p className="text-sm text-[var(--fg-muted)] m-0">在左侧输入股票代码开始分析</p>
+            </div>
+          )}
+        </Card>
+      </div>
     </div>
   )
 }

@@ -2,6 +2,11 @@
 
 import { useEffect, useState } from 'react'
 
+import { Alert } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { PageHeader } from '@/components/ui/page-header'
+import { Spinner } from '@/components/ui/spinner'
 import { apiFetch } from '@/lib/client-api'
 
 interface CacheStats {
@@ -44,41 +49,53 @@ export default function SettingsCachePage() {
   }
 
   return (
-    <div className="container report-grid">
-      <section className="card report-head">
-        <div>
-          <h3>缓存管理</h3>
-          <p className="muted">现场执行模式下缓存存储在 MongoDB 集合 `app_cache`。</p>
-        </div>
-        <div className="execution-actions">
-          <button className="btn btn-soft" onClick={load} disabled={loading}>
-            {loading ? '刷新中...' : '刷新'}
-          </button>
-          <button className="btn" onClick={cleanup}>
-            清理7天前缓存
-          </button>
-          <button className="btn btn-danger" onClick={clear}>
-            清空全部缓存
-          </button>
-        </div>
-      </section>
+    <div className="space-y-6">
+      <PageHeader
+        title="缓存管理"
+        description="现场执行模式下缓存存储在 MongoDB 集合 `app_cache`。"
+        actions={
+          <>
+            <Button variant="soft" onClick={load} disabled={loading}>
+              {loading ? '刷新中...' : '刷新'}
+            </Button>
+            <Button variant="secondary" onClick={cleanup}>
+              清理7天前缓存
+            </Button>
+            <Button variant="danger" onClick={clear}>
+              清空全部缓存
+            </Button>
+          </>
+        }
+      />
 
-      {error ? <div className="card board-error">{error}</div> : null}
+      {error && <Alert variant="error">{error}</Alert>}
 
-      <section className="board-cards">
-        <article className="card stat-card">
-          <h4>总条目</h4>
-          <div className="value">{stats?.totalFiles ?? '-'}</div>
-        </article>
-        <article className="card stat-card">
-          <h4>股票缓存</h4>
-          <div className="value">{stats?.stockDataCount ?? '-'}</div>
-        </article>
-        <article className="card stat-card">
-          <h4>新闻缓存</h4>
-          <div className="value">{stats?.newsDataCount ?? '-'}</div>
-        </article>
-      </section>
+      {loading && !stats ? (
+        <div className="flex items-center justify-center py-16">
+          <Spinner size="lg" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Card>
+            <p className="text-xs text-[var(--fg-muted)]">总条目</p>
+            <p className="text-2xl font-semibold text-[var(--fg)] mt-1">
+              {stats?.totalFiles ?? '-'}
+            </p>
+          </Card>
+          <Card>
+            <p className="text-xs text-[var(--fg-muted)]">股票缓存</p>
+            <p className="text-2xl font-semibold text-[var(--fg)] mt-1">
+              {stats?.stockDataCount ?? '-'}
+            </p>
+          </Card>
+          <Card>
+            <p className="text-xs text-[var(--fg-muted)]">新闻缓存</p>
+            <p className="text-2xl font-semibold text-[var(--fg)] mt-1">
+              {stats?.newsDataCount ?? '-'}
+            </p>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }

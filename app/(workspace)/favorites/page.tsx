@@ -3,6 +3,22 @@
 import { FormEvent, useEffect, useState } from 'react'
 
 import { apiFetch } from '@/lib/client-api'
+import {
+  Button,
+  Card,
+  Input,
+  Select,
+  PageHeader,
+  Alert,
+  Spinner,
+  EmptyState,
+  Table,
+  Thead,
+  Tbody,
+  Tr,
+  Th,
+  Td
+} from '@/components/ui'
 
 interface FavoriteItem {
   stock_code: string
@@ -67,76 +83,80 @@ export default function FavoritesPage() {
   }
 
   return (
-    <div className="container report-grid">
-      <section className="card report-head">
-        <div>
-          <h3>自选股</h3>
-          <p className="muted">管理你常看的股票，后续可直接在现场分析里调用。</p>
-        </div>
-      </section>
+    <div className="space-y-6">
+      <PageHeader title="自选股" description="管理你常看的股票，后续可直接在现场分析里调用。" />
 
-      <section className="card report-panel">
-        <h4>添加自选股</h4>
-        <form className="favorite-form" onSubmit={add}>
-          <input
-            className="input mono"
-            placeholder="股票代码"
-            value={stockCode}
-            onChange={(event) => setStockCode(event.target.value)}
-          />
-          <input
-            className="input"
-            placeholder="股票名称（可选）"
-            value={stockName}
-            onChange={(event) => setStockName(event.target.value)}
-          />
-          <select className="select" value={market} onChange={(event) => setMarket(event.target.value)}>
-            <option value="A股">A股</option>
-            <option value="港股">港股</option>
-            <option value="美股">美股</option>
-          </select>
-          <button className="btn btn-primary" type="submit">
-            添加
-          </button>
+      <Card>
+        <form onSubmit={add} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Input
+              label="股票代码"
+              placeholder="股票代码"
+              className="font-mono"
+              value={stockCode}
+              onChange={(event) => setStockCode(event.target.value)}
+            />
+
+            <Input
+              label="股票名称"
+              placeholder="股票名称（可选）"
+              value={stockName}
+              onChange={(event) => setStockName(event.target.value)}
+            />
+
+            <Select label="市场" value={market} onChange={(event) => setMarket(event.target.value)}>
+              <option value="A股">A股</option>
+              <option value="港股">港股</option>
+              <option value="美股">美股</option>
+            </Select>
+
+            <div className="flex items-end">
+              <Button variant="primary" type="submit" className="w-full">
+                添加
+              </Button>
+            </div>
+          </div>
         </form>
-      </section>
+      </Card>
 
-      {error ? <div className="card board-error">{error}</div> : null}
+      {error && <Alert variant="error">{error}</Alert>}
 
-      <section className="card execution-list">
+      <Card padding={false}>
         {loading ? (
-          <p className="muted">加载中...</p>
+          <div className="flex items-center justify-center py-16">
+            <Spinner size="lg" />
+          </div>
         ) : items.length === 0 ? (
-          <p className="muted">还没有自选股。</p>
+          <EmptyState title="还没有自选股" description="在上方添加你关注的股票" />
         ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>代码</th>
-                <th>名称</th>
-                <th>市场</th>
-                <th>添加时间</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <Thead>
+              <Tr>
+                <Th>代码</Th>
+                <Th>名称</Th>
+                <Th>市场</Th>
+                <Th>添加时间</Th>
+                <Th>操作</Th>
+              </Tr>
+            </Thead>
+            <Tbody>
               {items.map((item) => (
-                <tr key={item.stock_code}>
-                  <td className="mono">{item.stock_code}</td>
-                  <td>{item.stock_name}</td>
-                  <td>{item.market}</td>
-                  <td>{item.added_at ? new Date(item.added_at).toLocaleString() : '-'}</td>
-                  <td>
-                    <button className="btn btn-danger" onClick={() => remove(item.stock_code)}>
+                <Tr key={item.stock_code}>
+                  <Td className="font-mono">{item.stock_code}</Td>
+                  <Td>{item.stock_name}</Td>
+                  <Td>{item.market}</Td>
+                  <Td>{item.added_at ? new Date(item.added_at).toLocaleString() : '-'}</Td>
+                  <Td>
+                    <Button variant="danger" size="sm" onClick={() => remove(item.stock_code)}>
                       删除
-                    </button>
-                  </td>
-                </tr>
+                    </Button>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </Tbody>
+          </Table>
         )}
-      </section>
+      </Card>
     </div>
   )
 }

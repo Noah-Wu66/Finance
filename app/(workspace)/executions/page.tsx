@@ -4,6 +4,14 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
 import { apiFetch } from '@/lib/client-api'
+import { Card } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/ui/page-header'
+import { Alert } from '@/components/ui/alert'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { ProgressBar } from '@/components/ui/progress-bar'
+import { Table, Thead, Tbody, Tr, Th, Td } from '@/components/ui/table'
+import { EmptyState } from '@/components/ui/empty-state'
 
 type Status = 'running' | 'completed' | 'failed' | 'canceled' | 'stopped'
 
@@ -58,8 +66,7 @@ export default function ExecutionsPage() {
         method: 'POST',
         credentials: 'include',
         keepalive: true
-      }).catch(() => {
-      })
+      }).catch(() => {})
     }
 
     window.addEventListener('beforeunload', handleBeforeUnload)
@@ -67,10 +74,7 @@ export default function ExecutionsPage() {
   }, [items])
 
   const advanceRunning = async (withLoading = true) => {
-    if (withLoading) {
-      setLoading(true)
-    }
-
+    if (withLoading) setLoading(true)
     try {
       const runningIds = items.filter((item) => item.status === 'running').map((item) => item._id)
       for (const id of runningIds) {
@@ -79,9 +83,7 @@ export default function ExecutionsPage() {
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : '推进失败')
-      if (withLoading) {
-        setLoading(false)
-      }
+      if (withLoading) setLoading(false)
     }
   }
 
@@ -116,93 +118,110 @@ export default function ExecutionsPage() {
   }
 
   return (
-    <div className="container execution-grid">
-      <section className="card execution-top">
-        <div>
-          <h3>执行中心</h3>
-          <p className="muted">你可以在这里看所有现场任务，并手动推进或停止。</p>
-        </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="执行中心"
+        description="查看所有任务，手动推进或停止"
+        actions={
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={load} disabled={loading}>
+              刷新
+            </Button>
+            <Link href="/analysis">
+              <Button variant="primary">新建任务</Button>
+            </Link>
+          </div>
+        }
+      />
 
-        <div className="execution-actions">
-          <button className="btn btn-soft" onClick={load} disabled={loading}>
-            {loading ? '刷新中...' : '立即刷新'}
-          </button>
-          <Link className="btn btn-primary" href="/analysis">
-            新建任务
-          </Link>
-        </div>
-      </section>
+      {error && <Alert variant="error">{error}</Alert>}
 
-      {error ? <div className="card board-error">{error}</div> : null}
-
-      <section className="card execution-list">
+      <Card padding={false}>
         {items.length === 0 ? (
-          <p className="muted">暂无任务记录。</p>
+          <EmptyState
+            title="暂无任务"
+            description="去现场分析页面创建一个新任务"
+            action={
+              <Link href="/analysis">
+                <Button variant="soft">创建任务</Button>
+              </Link>
+            }
+          />
         ) : (
-          <table className="table">
-            <thead>
+          <Table>
+            <Thead>
               <tr>
-                <th>任务ID</th>
-                <th>股票</th>
-                <th>状态</th>
-                <th>进度</th>
-                <th>更新时间</th>
-                <th>操作</th>
+                <Th>任务ID</Th>
+                <Th>股票</Th>
+                <Th>状态</Th>
+                <Th>进度</Th>
+                <Th>更新时间</Th>
+                <Th>操作</Th>
               </tr>
-            </thead>
-            <tbody>
+            </Thead>
+            <Tbody>
               {items.map((item) => {
                 const reportId = item.result?.report_id || item.report_id
                 return (
-                  <tr key={item._id}>
-                    <td className="mono">{item._id.slice(0, 12)}...</td>
-                    <td>
-                      <div>{item.symbol}</div>
-                      <small className="muted">{item.market}</small>
-                    </td>
-                    <td>
-                      <span className={`status status-${item.status}`}>{item.status}</span>
-                    </td>
-                    <td>
-                      <div className="mini-progress">
-                        <div style={{ width: `${item.progress}%` }} />
+                  <Tr key={item._id}>
+                    <Td className="font-mono text-xs text-[var(--fg-muted)]">
+                      {item._id.slice(0, 12)}
+                    </Td>
+                    <Td>
+                      <div className="text-sm font-medium text-[var(--fg)]">{item.symbol}</div>
+                      <div className="text-xs text-[var(--fg-muted)]">{item.market}</div>
+                    </Td>
+                    <Td>
+                      <StatusBadge status={item.status} />
+                    </Td>
+                    <Td>
+                      <div className="w-28">
+                        <ProgressBar value={item.progress} size="sm" showLabel />
                       </div>
-                      <small className="mono">{item.progress}%</small>
-                    </td>
-                    <td>{new Date(item.updated_at).toLocaleString()}</td>
-                    <td>
-                      <div className="row-actions">
-                        <button
-                          className="btn btn-soft"
+                    </Td>
+                    <Td className="text-xs text-[var(--fg-muted)]">
+                      {new Date(item.updated_at).toLocaleString()}
+                    </Td>
+                    <Td>
+                      <div className="flex flex-wrap gap-1.5">
+                        <Button
+                          variant="soft"
+                          size="sm"
                           onClick={() => pushStep(item._id)}
                           disabled={item.status !== 'running' || busyId === item._id}
                         >
-                          推进一步
-                        </button>
-                        <button
-                          className="btn btn-danger"
+                          推进
+                        </Button>
+                        <Button
+                          variant="danger"
+                          size="sm"
                           onClick={() => cancel(item._id)}
                           disabled={item.status !== 'running' || busyId === item._id}
                         >
                           停止
-                        </button>
-                        <button className="btn" onClick={() => remove(item._id)} disabled={busyId === item._id}>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => remove(item._id)}
+                          disabled={busyId === item._id}
+                        >
                           删除
-                        </button>
-                        {reportId ? (
-                          <Link className="btn btn-primary" href={`/reports/${reportId}`}>
-                            查看报告
+                        </Button>
+                        {reportId && (
+                          <Link href={`/reports/${reportId}`}>
+                            <Button variant="primary" size="sm">报告</Button>
                           </Link>
-                        ) : null}
+                        )}
                       </div>
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 )
               })}
-            </tbody>
-          </table>
+            </Tbody>
+          </Table>
         )}
-      </section>
+      </Card>
     </div>
   )
 }

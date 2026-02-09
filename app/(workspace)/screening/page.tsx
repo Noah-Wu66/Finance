@@ -3,6 +3,22 @@
 import { FormEvent, useEffect, useState } from 'react'
 
 import { apiFetch } from '@/lib/client-api'
+import {
+  Button,
+  Card,
+  Input,
+  Select,
+  PageHeader,
+  Alert,
+  Spinner,
+  EmptyState,
+  Table,
+  Thead,
+  Tbody,
+  Tr,
+  Th,
+  Td
+} from '@/components/ui'
 
 interface ScreeningItem {
   code: string
@@ -85,74 +101,83 @@ export default function ScreeningPage() {
   }
 
   return (
-    <div className="container report-grid">
-      <section className="card report-head">
-        <div>
-          <h3>股票筛选</h3>
-          <p className="muted">使用本地数据快速筛选目标股票，筛完后可直接去现场分析。</p>
-        </div>
-      </section>
+    <div className="space-y-6">
+      <PageHeader title="股票筛选" description="使用本地数据快速筛选目标股票，筛完后可直接去现场分析。" />
 
-      <section className="card report-panel">
-        <form className="favorite-form" onSubmit={run}>
-          <select className="select" value={industry} onChange={(e) => setIndustry(e.target.value)}>
-            <option value="">全部行业</option>
-            {industryList.map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-
-          <input
-            className="input"
-            placeholder="最低价格"
-            value={closeMin}
-            onChange={(e) => setCloseMin(e.target.value)}
-          />
-          <input
-            className="input"
-            placeholder="最高价格"
-            value={closeMax}
-            onChange={(e) => setCloseMax(e.target.value)}
-          />
-          <input className="input" placeholder="PE上限" value={peMax} onChange={(e) => setPeMax(e.target.value)} />
-
-          <button className="btn btn-primary" type="submit" disabled={loading}>
-            {loading ? '筛选中...' : '开始筛选'}
-          </button>
-        </form>
-      </section>
-
-      {error ? <div className="card board-error">{error}</div> : null}
-
-      <section className="card execution-list">
-        <p className="muted">结果总数：{total}</p>
-        {items.length === 0 ? (
-          <p className="muted">暂无结果。</p>
-        ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>代码</th>
-                <th>最新价</th>
-                <th>涨跌幅</th>
-                <th>成交额</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.code}>
-                  <td className="mono">{item.code}</td>
-                  <td>{item.close?.toFixed(2) ?? '-'}</td>
-                  <td>{item.pct_chg?.toFixed(2) ?? '-'}%</td>
-                  <td>{item.amount?.toLocaleString() ?? '-'}</td>
-                </tr>
+      <Card>
+        <form onSubmit={run} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Select label="行业" value={industry} onChange={(e) => setIndustry(e.target.value)}>
+              <option value="">全部行业</option>
+              {industryList.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
               ))}
-            </tbody>
-          </table>
+            </Select>
+
+            <Input
+              label="最低价格"
+              placeholder="最低价格"
+              value={closeMin}
+              onChange={(e) => setCloseMin(e.target.value)}
+            />
+
+            <Input
+              label="最高价格"
+              placeholder="最高价格"
+              value={closeMax}
+              onChange={(e) => setCloseMax(e.target.value)}
+            />
+
+            <Input
+              label="PE上限"
+              placeholder="PE上限"
+              value={peMax}
+              onChange={(e) => setPeMax(e.target.value)}
+            />
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Button variant="primary" type="submit" disabled={loading}>
+              {loading && <Spinner size="sm" />}
+              {loading ? '筛选中...' : '开始筛选'}
+            </Button>
+            {total > 0 && (
+              <span className="text-sm text-[var(--fg-muted)]">共 {total} 条结果</span>
+            )}
+          </div>
+        </form>
+      </Card>
+
+      {error && <Alert variant="error">{error}</Alert>}
+
+      <Card padding={false}>
+        {items.length === 0 ? (
+          <EmptyState title="暂无结果" description="请设置筛选条件后点击开始筛选" />
+        ) : (
+          <Table>
+            <Thead>
+              <Tr>
+                <Th>代码</Th>
+                <Th>最新价</Th>
+                <Th>涨跌幅</Th>
+                <Th>成交额</Th>
+              </Tr>
+            </Thead>
+            <Tbody>
+              {items.map((item) => (
+                <Tr key={item.code}>
+                  <Td className="font-mono">{item.code}</Td>
+                  <Td>{item.close?.toFixed(2) ?? '-'}</Td>
+                  <Td>{item.pct_chg?.toFixed(2) ?? '-'}%</Td>
+                  <Td>{item.amount?.toLocaleString() ?? '-'}</Td>
+                </Tr>
+              ))}
+            </Tbody>
+          </Table>
         )}
-      </section>
+      </Card>
     </div>
   )
 }

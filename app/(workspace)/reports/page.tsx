@@ -4,6 +4,20 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
 import { apiFetch } from '@/lib/client-api'
+import {
+  Button,
+  Card,
+  PageHeader,
+  Alert,
+  Spinner,
+  EmptyState,
+  Table,
+  Thead,
+  Tbody,
+  Tr,
+  Th,
+  Td,
+} from '@/components/ui'
 
 interface ReportItem {
   _id: string
@@ -58,65 +72,81 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="container report-grid">
-      <section className="card report-head">
-        <div>
-          <h3>报告中心</h3>
-          <p className="muted">这里展示你在页面现场执行后生成的全部分析报告。</p>
-        </div>
-        <button className="btn btn-soft" onClick={load} disabled={loading}>
-          {loading ? '刷新中...' : '刷新列表'}
-        </button>
-      </section>
+    <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
+      <PageHeader
+        title="报告中心"
+        description="这里展示你在页面现场执行后生成的全部分析报告。"
+        actions={
+          <Button variant="soft" onClick={load} disabled={loading}>
+            {loading ? '刷新中...' : '刷新列表'}
+          </Button>
+        }
+      />
 
-      {error ? <div className="card board-error">{error}</div> : null}
+      {error ? <Alert variant="error">{error}</Alert> : null}
 
-      <section className="card execution-list">
-        {items.length === 0 ? (
-          <p className="muted">暂无报告。</p>
+      <Card padding={false}>
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <Spinner size="lg" />
+          </div>
+        ) : items.length === 0 ? (
+          <EmptyState
+            title="暂无报告"
+            description="还没有生成任何分析报告。"
+          />
         ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>股票</th>
-                <th>摘要</th>
-                <th>置信度</th>
-                <th>风险</th>
-                <th>生成时间</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <Thead>
+              <Tr>
+                <Th>股票</Th>
+                <Th>摘要</Th>
+                <Th>置信度</Th>
+                <Th>风险</Th>
+                <Th>生成时间</Th>
+                <Th>操作</Th>
+              </Tr>
+            </Thead>
+            <Tbody>
               {items.map((item) => (
-                <tr key={item._id}>
-                  <td>
-                    <div className="mono">{item.stock_symbol}</div>
-                    <small className="muted">{item.stock_name || '-'} · {item.market_type || '-'}</small>
-                  </td>
-                  <td>{item.summary || '-'}</td>
-                  <td>{item.confidence_score ?? '-'}</td>
-                  <td>{item.risk_level ?? '-'}</td>
-                  <td>{new Date(item.created_at).toLocaleString()}</td>
-                  <td>
-                    <div className="row-actions">
-                      <Link className="btn btn-primary" href={`/reports/${item._id}`}>
-                        查看详情
+                <Tr key={item._id}>
+                  <Td>
+                    <div className="font-mono text-[var(--fg)] font-medium">
+                      {item.stock_symbol}
+                    </div>
+                    <div className="text-xs text-[var(--fg-muted)] mt-0.5">
+                      {item.stock_name || '-'} · {item.market_type || '-'}
+                    </div>
+                  </Td>
+                  <Td className="max-w-xs truncate">{item.summary || '-'}</Td>
+                  <Td>{item.confidence_score ?? '-'}</Td>
+                  <Td>{item.risk_level ?? '-'}</Td>
+                  <Td className="whitespace-nowrap">
+                    {new Date(item.created_at).toLocaleString()}
+                  </Td>
+                  <Td>
+                    <div className="flex items-center gap-2">
+                      <Link href={`/reports/${item._id}`}>
+                        <Button variant="primary" size="sm">
+                          查看详情
+                        </Button>
                       </Link>
-                      <button
-                        className="btn btn-danger"
+                      <Button
+                        variant="danger"
+                        size="sm"
                         onClick={() => remove(item._id)}
                         disabled={busyId === item._id}
                       >
                         删除
-                      </button>
+                      </Button>
                     </div>
-                  </td>
-                </tr>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </Tbody>
+          </Table>
         )}
-      </section>
+      </Card>
     </div>
   )
 }

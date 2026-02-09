@@ -3,6 +3,14 @@
 import { useEffect, useState } from 'react'
 
 import { apiFetch } from '@/lib/client-api'
+import { Card } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { PageHeader } from '@/components/ui/page-header'
+import { Alert } from '@/components/ui/alert'
+import { Spinner } from '@/components/ui/spinner'
+import { Table, Thead, Tbody, Tr, Th, Td } from '@/components/ui/table'
+import { EmptyState } from '@/components/ui/empty-state'
 
 interface LogItem {
   id: string
@@ -42,45 +50,50 @@ export default function SettingsLogsPage() {
   }, [])
 
   return (
-    <div className="container report-grid">
-      <section className="card report-head">
-        <div>
-          <h3>操作日志</h3>
-          <p className="muted">记录你在网页里触发的操作行为，便于回溯。</p>
-        </div>
-        <button className="btn btn-soft" onClick={load} disabled={loading}>
-          {loading ? '刷新中...' : '刷新'}
-        </button>
-      </section>
+    <div className="space-y-6">
+      <PageHeader
+        title="操作日志"
+        description="记录你在网页里触发的操作行为，便于回溯"
+        actions={
+          <Button variant="secondary" onClick={load} disabled={loading}>
+            {loading && <Spinner size="sm" />}
+            刷新
+          </Button>
+        }
+      />
 
-      {error ? <div className="card board-error">{error}</div> : null}
+      {error && <Alert variant="error">{error}</Alert>}
 
-      <section className="card execution-list">
+      <Card padding={false}>
         {items.length === 0 ? (
-          <p className="muted">暂无日志。</p>
+          <EmptyState title="暂无日志" />
         ) : (
-          <table className="table">
-            <thead>
+          <Table>
+            <Thead>
               <tr>
-                <th>时间</th>
-                <th>类型</th>
-                <th>动作</th>
-                <th>结果</th>
+                <Th>时间</Th>
+                <Th>类型</Th>
+                <Th>动作</Th>
+                <Th>结果</Th>
               </tr>
-            </thead>
-            <tbody>
+            </Thead>
+            <Tbody>
               {items.map((item) => (
-                <tr key={item.id}>
-                  <td>{new Date(item.created_at).toLocaleString()}</td>
-                  <td>{item.action_type}</td>
-                  <td>{item.action}</td>
-                  <td>{item.success ? '成功' : '失败'}</td>
-                </tr>
+                <Tr key={item.id}>
+                  <Td className="text-xs text-[var(--fg-muted)]">{new Date(item.created_at).toLocaleString()}</Td>
+                  <Td>{item.action_type}</Td>
+                  <Td>{item.action}</Td>
+                  <Td>
+                    <span className={item.success ? 'text-success-600 dark:text-success-400' : 'text-danger-600 dark:text-danger-400'}>
+                      {item.success ? '成功' : '失败'}
+                    </span>
+                  </Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </Tbody>
+          </Table>
         )}
-      </section>
+      </Card>
     </div>
   )
 }

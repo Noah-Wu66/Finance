@@ -3,6 +3,13 @@
 import { useEffect, useState } from 'react'
 
 import { apiFetch } from '@/lib/client-api'
+import { Card } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/ui/page-header'
+import { Alert } from '@/components/ui/alert'
+import { Spinner } from '@/components/ui/spinner'
+import { Table, Thead, Tbody, Tr, Th, Td } from '@/components/ui/table'
+import { EmptyState } from '@/components/ui/empty-state'
 
 interface UsageStats {
   total_requests: number
@@ -54,70 +61,78 @@ export default function SettingsUsagePage() {
   }
 
   return (
-    <div className="container report-grid">
-      <section className="card report-head">
-        <div>
-          <h3>使用统计</h3>
-          <p className="muted">查看分析请求、Token 和成本统计。</p>
-        </div>
-        <div className="execution-actions">
-          <button className="btn btn-soft" onClick={load} disabled={loading}>
-            {loading ? '刷新中...' : '刷新'}
-          </button>
-          <button className="btn" onClick={cleanup}>
-            清理90天前记录
-          </button>
-        </div>
-      </section>
+    <div className="space-y-6">
+      <PageHeader
+        title="使用统计"
+        description="查看分析请求、Token 和成本统计"
+        actions={
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={load} disabled={loading}>
+              {loading && <Spinner size="sm" />}
+              刷新
+            </Button>
+            <Button variant="ghost" onClick={cleanup}>
+              清理90天前记录
+            </Button>
+          </div>
+        }
+      />
 
-      {error ? <div className="card board-error">{error}</div> : null}
+      {error && <Alert variant="error">{error}</Alert>}
 
-      <section className="board-cards">
-        <article className="card stat-card">
-          <h4>请求总数</h4>
-          <div className="value">{stats?.total_requests ?? '-'}</div>
-        </article>
-        <article className="card stat-card">
-          <h4>输入Token</h4>
-          <div className="value">{stats?.total_input_tokens ?? '-'}</div>
-        </article>
-        <article className="card stat-card">
-          <h4>输出Token</h4>
-          <div className="value">{stats?.total_output_tokens ?? '-'}</div>
-        </article>
-      </section>
+      {/* Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <Card className="p-4">
+          <p className="text-xs text-[var(--fg-muted)] m-0">请求总数</p>
+          <p className="text-2xl font-semibold mt-1 m-0 tabular-nums text-[var(--fg)]">
+            {stats?.total_requests ?? '-'}
+          </p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs text-[var(--fg-muted)] m-0">输入 Token</p>
+          <p className="text-2xl font-semibold mt-1 m-0 tabular-nums text-[var(--fg)]">
+            {stats?.total_input_tokens?.toLocaleString() ?? '-'}
+          </p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs text-[var(--fg-muted)] m-0">输出 Token</p>
+          <p className="text-2xl font-semibold mt-1 m-0 tabular-nums text-[var(--fg)]">
+            {stats?.total_output_tokens?.toLocaleString() ?? '-'}
+          </p>
+        </Card>
+      </div>
 
-      <section className="card execution-list">
-        <h4>最近记录</h4>
+      {/* Records */}
+      <Card padding={false}>
         {records.length === 0 ? (
-          <p className="muted">暂无记录。</p>
+          <EmptyState title="暂无记录" />
         ) : (
-          <table className="table">
-            <thead>
+          <Table>
+            <Thead>
               <tr>
-                <th>时间</th>
-                <th>提供方</th>
-                <th>模型</th>
-                <th>输入</th>
-                <th>输出</th>
-                <th>成本</th>
+                <Th>时间</Th>
+                <Th>提供方</Th>
+                <Th>模型</Th>
+                <Th>输入</Th>
+                <Th>输出</Th>
+                <Th>成本</Th>
               </tr>
-            </thead>
-            <tbody>
+            </Thead>
+            <Tbody>
               {records.map((item) => (
-                <tr key={item.id}>
-                  <td>{new Date(item.timestamp).toLocaleString()}</td>
-                  <td>{item.provider}</td>
-                  <td>{item.model_name}</td>
-                  <td>{item.input_tokens}</td>
-                  <td>{item.output_tokens}</td>
-                  <td>{item.cost}</td>
-                </tr>
+                <Tr key={item.id}>
+                  <Td className="text-xs text-[var(--fg-muted)]">{new Date(item.timestamp).toLocaleString()}</Td>
+                  <Td>{item.provider}</Td>
+                  <Td className="font-mono text-xs">{item.model_name}</Td>
+                  <Td className="tabular-nums">{item.input_tokens.toLocaleString()}</Td>
+                  <Td className="tabular-nums">{item.output_tokens.toLocaleString()}</Td>
+                  <Td className="tabular-nums">{item.cost}</Td>
+                </Tr>
               ))}
-            </tbody>
-          </table>
+            </Tbody>
+          </Table>
         )}
-      </section>
+      </Card>
     </div>
   )
 }
