@@ -7,7 +7,6 @@ import { maybeObjectId } from '@/lib/mongo-helpers'
 
 const defaultPreferences = {
   default_market: 'A股',
-  default_depth: '标准',
   auto_refresh: true,
   refresh_interval: 3,
   language: 'zh-CN'

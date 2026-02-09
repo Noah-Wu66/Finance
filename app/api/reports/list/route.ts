@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
     created_at: doc.created_at,
     analysis_date: doc.analysis_date || '',
     analysts: doc.analysts || [],
-    research_depth: doc.research_depth || '标准',
+    research_depth: doc.research_depth || '全面',
     summary: String(doc.summary || ''),
     file_size: JSON.stringify(doc.reports || {}).length,
     source: String(doc.source || 'next-live'),

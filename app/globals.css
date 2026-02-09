@@ -215,6 +215,9 @@ textarea {
 
 .shell-head {
   padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .shell-head h2 {
@@ -228,6 +231,133 @@ textarea {
 
 .shell-content {
   min-height: 0;
+}
+
+/* ---------- 通知铃铛 + 弹窗 ---------- */
+
+.notif-bell-wrap {
+  position: relative;
+}
+
+.notif-bell {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
+  color: var(--fg);
+  position: relative;
+  display: flex;
+  align-items: center;
+  transition: background 0.15s;
+}
+
+.notif-bell:hover {
+  background: var(--bg-hover, rgba(0,0,0,0.04));
+}
+
+.notif-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 9px;
+  padding: 0 4px;
+}
+
+.notif-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 360px;
+  max-height: 440px;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.notif-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.notif-popover-head strong {
+  font-size: 15px;
+}
+
+.btn-text {
+  background: none;
+  border: none;
+  color: #0f766e;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0;
+}
+
+.btn-text:hover {
+  text-decoration: underline;
+}
+
+.notif-popover-body {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.notif-empty {
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.notif-row {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.notif-row:last-child {
+  border-bottom: none;
+}
+
+.notif-row:hover {
+  background: var(--bg-hover, rgba(0,0,0,0.02));
+}
+
+.notif-unread {
+  background: rgba(15, 118, 110, 0.04);
+}
+
+.notif-unread .notif-row-title {
+  font-weight: 600;
+}
+
+.notif-row-title {
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+
+.notif-row-content {
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+
+.notif-row-time {
+  font-size: 11px;
 }
 
 @media (max-width: 1024px) {

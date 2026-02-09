@@ -4,8 +4,6 @@ import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
 import { listExecutions, startExecution } from '@/lib/execution-engine'
 
-const DEPTH_LIST = ['快速', '标准', '深度'] as const
-
 export async function GET(request: NextRequest) {
   const user = await getRequestUser(request)
   if (!user) {
@@ -28,7 +26,6 @@ export async function POST(request: NextRequest) {
   const body = (await request.json()) as {
     symbol?: string
     market?: string
-    depth?: (typeof DEPTH_LIST)[number]
   }
 
   const symbol = (body.symbol || '').trim()
@@ -37,15 +34,13 @@ export async function POST(request: NextRequest) {
   }
 
   const market = (body.market || 'A股').trim()
-  const depthInput = (body.depth || '标准') as (typeof DEPTH_LIST)[number]
-  const depth = DEPTH_LIST.includes(depthInput) ? depthInput : '标准'
 
   const executionId = await startExecution({
     userId: user.userId,
     userEmail: user.email,
     symbol,
     market,
-    depth
+    depth: '全面'
   })
 
   return ok(

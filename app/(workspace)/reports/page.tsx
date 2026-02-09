@@ -27,6 +27,7 @@ interface ReportResponse {
 export default function ReportsPage() {
   const [items, setItems] = useState<ReportItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [busyId, setBusyId] = useState('')
   const [error, setError] = useState('')
 
   const load = async () => {
@@ -45,6 +46,16 @@ export default function ReportsPage() {
   useEffect(() => {
     void load()
   }, [])
+
+  const remove = async (id: string) => {
+    setBusyId(id)
+    try {
+      await apiFetch(`/api/reports/${id}`, { method: 'DELETE' })
+      await load()
+    } finally {
+      setBusyId('')
+    }
+  }
 
   return (
     <div className="container report-grid">
@@ -87,9 +98,18 @@ export default function ReportsPage() {
                   <td>{item.risk_level ?? '-'}</td>
                   <td>{new Date(item.created_at).toLocaleString()}</td>
                   <td>
-                    <Link className="btn btn-primary" href={`/reports/${item._id}`}>
-                      查看详情
-                    </Link>
+                    <div className="row-actions">
+                      <Link className="btn btn-primary" href={`/reports/${item._id}`}>
+                        查看详情
+                      </Link>
+                      <button
+                        className="btn btn-danger"
+                        onClick={() => remove(item._id)}
+                        disabled={busyId === item._id}
+                      >
+                        删除
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -44,7 +44,6 @@ function jwtSecret() {
 
 const defaultPreferences = {
   default_market: 'A股',
-  default_depth: '标准',
   default_analysts: ['市场分析师', '基本面分析师'],
   auto_refresh: true,
   refresh_interval: 3,

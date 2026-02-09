@@ -7,34 +7,6 @@ export const capabilityDescriptions = {
 }
 
 export const depthRequirements = {
-  快速: {
-    min_capability: 1,
-    quick_model_min: 1,
-    deep_model_min: 2,
-    required_features: ['fast_response'],
-    description: '快速出结论，适合盘中查看'
-  },
-  基础: {
-    min_capability: 2,
-    quick_model_min: 2,
-    deep_model_min: 2,
-    required_features: [],
-    description: '基础分析，覆盖关键指标'
-  },
-  标准: {
-    min_capability: 2,
-    quick_model_min: 2,
-    deep_model_min: 3,
-    required_features: ['reasoning'],
-    description: '标准分析，适合大多数场景'
-  },
-  深度: {
-    min_capability: 3,
-    quick_model_min: 3,
-    deep_model_min: 4,
-    required_features: ['reasoning', 'long_context'],
-    description: '深度研究，适合中长期分析'
-  },
   全面: {
     min_capability: 4,
     quick_model_min: 4,
@@ -45,23 +17,14 @@ export const depthRequirements = {
 }
 
 export const defaultModelConfigs = {
-  'live-quick': {
-    model_name: 'live-quick',
-    capability_level: 2,
-    suitable_roles: ['quick_analysis'],
-    features: ['fast_response', 'cost_effective'],
-    recommended_depths: ['快速', '基础'],
-    performance_metrics: { speed: 5, cost: 5, quality: 3 },
-    description: '现场快速分析模型'
-  },
   'live-deep': {
     model_name: 'live-deep',
     capability_level: 4,
     suitable_roles: ['deep_analysis'],
     features: ['reasoning', 'long_context'],
-    recommended_depths: ['标准', '深度', '全面'],
+    recommended_depths: ['全面'],
     performance_metrics: { speed: 3, cost: 3, quality: 5 },
-    description: '现场深度分析模型'
+    description: '全面分析模型'
   }
 }
 
@@ -74,7 +37,6 @@ export const allBadges = {
     '5': { text: 'L5', color: '#ef4444', icon: 'Crown' }
   },
   roles: {
-    quick_analysis: { text: '快速', color: '#14b8a6', icon: 'Flash' },
     deep_analysis: { text: '深度', color: '#6366f1', icon: 'Brain' },
     both: { text: '通用', color: '#0ea5e9', icon: 'Layers' }
   },
@@ -87,27 +49,17 @@ export const allBadges = {
   }
 }
 
-export function recommendByDepth(researchDepth: string) {
-  if (researchDepth === '快速' || researchDepth === '基础') {
-    return {
-      quick_model: 'live-quick',
-      deep_model: 'live-deep',
-      quick_model_info: defaultModelConfigs['live-quick'],
-      deep_model_info: defaultModelConfigs['live-deep'],
-      reason: '快速场景优先使用响应更快的模型'
-    }
-  }
-
+export function recommendByDepth(_researchDepth: string) {
   return {
     quick_model: 'live-deep',
     deep_model: 'live-deep',
     quick_model_info: defaultModelConfigs['live-deep'],
     deep_model_info: defaultModelConfigs['live-deep'],
-    reason: '深度场景建议统一使用高能力模型'
+    reason: '全面分析统一使用高能力模型'
   }
 }
 
-export function validateModelPair(quickModel: string, deepModel: string, researchDepth: string) {
+export function validateModelPair(quickModel: string, deepModel: string, _researchDepth: string) {
   const warnings: string[] = []
   const recommendations: string[] = []
 
@@ -119,10 +71,6 @@ export function validateModelPair(quickModel: string, deepModel: string, researc
 
   if (quick && deep && quick.capability_level > deep.capability_level) {
     warnings.push('快速模型能力等级高于深度模型，建议对调')
-  }
-
-  if (researchDepth === '全面' && deep && deep.capability_level < 4) {
-    warnings.push('全面分析建议使用能力等级4以上模型')
   }
 
   if (warnings.length === 0) {

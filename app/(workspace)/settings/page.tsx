@@ -7,7 +7,6 @@ import { apiFetch } from '@/lib/client-api'
 
 interface Preferences {
   default_market: string
-  default_depth: string
   auto_refresh: boolean
   refresh_interval: number
   language: string
@@ -15,7 +14,6 @@ interface Preferences {
 
 const defaultPreferences: Preferences = {
   default_market: 'A股',
-  default_depth: '标准',
   auto_refresh: true,
   refresh_interval: 3,
   language: 'zh-CN'
@@ -69,7 +67,7 @@ export default function SettingsPage() {
       <section className="card report-head">
         <div>
           <h3>偏好设置</h3>
-          <p className="muted">设置默认市场、默认分析深度和自动刷新行为。</p>
+          <p className="muted">设置默认市场和自动刷新行为。</p>
         </div>
       </section>
 
@@ -88,19 +86,6 @@ export default function SettingsPage() {
                 <option value="A股">A股</option>
                 <option value="港股">港股</option>
                 <option value="美股">美股</option>
-              </select>
-            </div>
-
-            <div className="field">
-              <label>默认分析深度</label>
-              <select
-                className="select"
-                value={form.default_depth}
-                onChange={(e) => setForm((prev) => ({ ...prev, default_depth: e.target.value }))}
-              >
-                <option value="快速">快速</option>
-                <option value="标准">标准</option>
-                <option value="深度">深度</option>
               </select>
             </div>
 

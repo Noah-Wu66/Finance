@@ -1,7 +1,7 @@
 interface AnalyzeParams {
   systemPrompt: string
   messages: Array<{role: string, content: string}>
-  depth: 'quick' | 'standard' | 'deep' | 'comprehensive'
+  depth: 'deep'
 }
 
 interface AnalyzeResult {

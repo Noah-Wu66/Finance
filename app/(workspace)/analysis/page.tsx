@@ -18,7 +18,6 @@ interface Execution {
   _id: string
   symbol: string
   market: string
-  depth: '快速' | '标准' | '深度'
   status: Status
   progress: number
   step: number
@@ -34,18 +33,16 @@ interface Execution {
 }
 
 const marketList = ['A股', '港股', '美股']
-const depthList: Array<Execution['depth']> = ['快速', '标准', '深度']
 
 function AnalysisPageContent() {
   const searchParams = useSearchParams()
   const [symbol, setSymbol] = useState('')
   const [market, setMarket] = useState('A股')
-  const [depth, setDepth] = useState<Execution['depth']>('标准')
+  const depth = '全面' as const
   const [executionId, setExecutionId] = useState('')
   const [execution, setExecution] = useState<Execution | null>(null)
   const [loading, setLoading] = useState(false)
   const [ticking, setTicking] = useState(false)
-  const [autoRun, setAutoRun] = useState(true)
   const [error, setError] = useState('')
 
   const isRunning = execution?.status === 'running'
@@ -103,7 +100,7 @@ function AnalysisPageContent() {
   }
 
   useEffect(() => {
-    if (!executionId || !autoRun) return
+    if (!executionId) return
 
     const timer = window.setInterval(async () => {
       try {
@@ -117,7 +114,7 @@ function AnalysisPageContent() {
     }, 2200)
 
     return () => window.clearInterval(timer)
-  }, [autoRun, executionId])
+  }, [executionId])
 
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -146,17 +143,9 @@ function AnalysisPageContent() {
       try {
         const res = await apiFetch<{
           default_market?: string
-          default_depth?: string
-          auto_refresh?: boolean
         }>('/api/settings/preferences')
         if (res.data.default_market) {
           setMarket(res.data.default_market)
-        }
-        if (res.data.default_depth && depthList.includes(res.data.default_depth as Execution['depth'])) {
-          setDepth(res.data.default_depth as Execution['depth'])
-        }
-        if (typeof res.data.auto_refresh === 'boolean') {
-          setAutoRun(res.data.auto_refresh)
         }
       } catch {
       }
@@ -193,38 +182,22 @@ function AnalysisPageContent() {
             </select>
           </div>
 
-          <div className="field">
-            <label>深度</label>
-            <select className="select" value={depth} onChange={(event) => setDepth(event.target.value as Execution['depth'])}>
-              {depthList.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </div>
+
         </div>
 
         {error ? <div className="board-error">{error}</div> : null}
 
         <div className="live-actions">
-          <button className="btn btn-primary" onClick={start} disabled={loading}>
-            {loading ? '创建中...' : '开始现场执行'}
-          </button>
-
-          <button className="btn btn-soft" onClick={() => executionId && runTick(executionId)} disabled={!executionId || ticking}>
-            {ticking ? '推进中...' : '手动推进一步'}
-          </button>
-
-          <button className="btn btn-danger" onClick={stop} disabled={!isRunning}>
-            立即停止
-          </button>
+          {isRunning ? (
+            <button className="btn btn-danger" onClick={stop}>
+              立即停止
+            </button>
+          ) : (
+            <button className="btn btn-primary" onClick={start} disabled={loading}>
+              {loading ? '创建中...' : '开始现场执行'}
+            </button>
+          )}
         </div>
-
-        <label className="live-toggle">
-          <input type="checkbox" checked={autoRun} onChange={(e) => setAutoRun(e.target.checked)} />
-          自动持续推进（建议开启）
-        </label>
       </section>
 
       <section className="card live-progress">
@@ -244,7 +217,7 @@ function AnalysisPageContent() {
 
             <div className="live-meta">
               <div>任务ID：<span className="mono">{execution._id}</span></div>
-              <div>股票：<span className="mono">{execution.symbol}</span> · {execution.market} · {execution.depth}</div>
+              <div>股票：<span className="mono">{execution.symbol}</span> · {execution.market}</div>
             </div>
 
             <div className="log-list">

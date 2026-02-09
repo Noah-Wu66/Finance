@@ -25,7 +25,7 @@ export interface ExecutionDoc {
   type: 'analysis'
   symbol: string
   market: string
-  depth: '快速' | '标准' | '深度'
+  depth: '全面'
   status: ExecutionStatus
   step: number
   total_steps: number
@@ -386,7 +386,7 @@ export async function startExecution(input: {
   userEmail: string
   symbol: string
   market: string
-  depth: '快速' | '标准' | '深度'
+  depth: '全面'
 }) {
   const db = await getDb()
   const executions = db.collection<ExecutionDoc>(EXEC_COLLECTION)
@@ -784,9 +784,9 @@ export async function tickExecution(id: string, userId: string) {
       try {
         const fetchResult = await fetchAStockData(execution.symbol)
         if (fetchResult.success) {
-          logs.push({ at: now, text: `已从东方财富拉取最新数据：${fetchResult.realtime.message}` })
+          logs.push({ at: now, text: `已从东方财富拉取最新数据：${fetchResult.message}` })
         } else {
-          logs.push({ at: now, text: `在线拉取部分失败（${fetchResult.message}），将使用数据库已有数据` })
+          logs.push({ at: now, text: `在线拉取失败（${fetchResult.message}），将使用数据库已有数据` })
         }
       } catch {
         logs.push({ at: now, text: '在线数据拉取异常，将使用数据库已有数据' })

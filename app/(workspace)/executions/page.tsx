@@ -11,7 +11,6 @@ interface Execution {
   _id: string
   symbol: string
   market: string
-  depth: string
   status: Status
   progress: number
   updated_at: string
@@ -23,8 +22,6 @@ interface Execution {
 export default function ExecutionsPage() {
   const [items, setItems] = useState<Execution[]>([])
   const [loading, setLoading] = useState(true)
-  const [autoRefresh, setAutoRefresh] = useState(true)
-  const [autoAdvance, setAutoAdvance] = useState(true)
   const [busyId, setBusyId] = useState('')
   const [error, setError] = useState('')
 
@@ -46,16 +43,11 @@ export default function ExecutionsPage() {
   }, [])
 
   useEffect(() => {
-    if (!autoRefresh) return
     const timer = window.setInterval(() => {
-      if (autoAdvance) {
-        void advanceRunning(false)
-      } else {
-        void load()
-      }
+      void advanceRunning(false)
     }, 3000)
     return () => window.clearInterval(timer)
-  }, [autoAdvance, autoRefresh, items])
+  }, [items])
 
   useEffect(() => {
     const hasRunning = items.some((item) => item.status === 'running')
@@ -132,17 +124,6 @@ export default function ExecutionsPage() {
         </div>
 
         <div className="execution-actions">
-          <label className="live-toggle">
-            <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
-            自动刷新
-          </label>
-          <label className="live-toggle">
-            <input type="checkbox" checked={autoAdvance} onChange={(e) => setAutoAdvance(e.target.checked)} />
-            自动推进运行中任务
-          </label>
-          <button className="btn btn-primary" onClick={() => advanceRunning()} disabled={loading}>
-            推进全部运行中
-          </button>
           <button className="btn btn-soft" onClick={load} disabled={loading}>
             {loading ? '刷新中...' : '立即刷新'}
           </button>
@@ -177,7 +158,7 @@ export default function ExecutionsPage() {
                     <td className="mono">{item._id.slice(0, 12)}...</td>
                     <td>
                       <div>{item.symbol}</div>
-                      <small className="muted">{item.market} · {item.depth}</small>
+                      <small className="muted">{item.market}</small>
                     </td>
                     <td>
                       <span className={`status status-${item.status}`}>{item.status}</span>

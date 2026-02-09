@@ -4,6 +4,9 @@ import { getDb } from '@/lib/db'
  * 从东方财富 API 拉取 A 股最新行情 + 近期 K 线，写入 MongoDB。
  * 在分析任务启动时自动调用，确保数据库里有最新数据。
  *
+ * K 线接口使用日期范围参数（beg/end），无论是否开盘都能获取历史数据。
+ * 实时行情接口仅在交易时段返回数据，非交易时段会自动跳过。
+ *
  * 东方财富接口无需 API Key，免费可用。
  */
 
@@ -32,20 +35,6 @@ interface EastMoneyQuoteRaw {
   f103: string // 代码前缀
 }
 
-interface EastMoneyKlineItem {
-  trade_date: string
-  open: number
-  close: number
-  high: number
-  low: number
-  volume: number
-  amount: number
-  amplitude: number
-  pct_chg: number
-  change: number
-  turnover_rate: number
-}
-
 // ---------- 工具函数 ----------
 
 /** 根据 6 位代码判断沪/深市场前缀 */
@@ -55,6 +44,13 @@ function getSecId(code: string): string {
     return `1.${code}`
   }
   return `0.${code}`
+}
+
+/** 计算 N 天前的日期字符串 YYYYMMDD */
+function daysAgo(n: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - n)
+  return d.toISOString().slice(0, 10).replace(/-/g, '')
 }
 
 /** 安全 fetch，带超时 */
@@ -95,7 +91,8 @@ export async function fetchRealtimeQuote(code: string): Promise<{
     const json = await res.json()
     const d = json?.data as EastMoneyQuoteRaw | undefined
     if (!d || !d.f12) {
-      return { success: false, message: '东方财富未返回有效数据，可能代码不存在' }
+      // 非交易时段接口返回空数据是正常的，不算错误
+      return { success: false, message: '非交易时段，实时行情不可用' }
     }
 
     const now = new Date()
@@ -174,15 +171,20 @@ export async function fetchRealtimeQuote(code: string): Promise<{
   }
 }
 
-// ---------- 拉取近期 K 线 ----------
+// ---------- 拉取近期 K 线（使用日期范围，收盘后也能获取） ----------
 
-export async function fetchDailyKline(code: string, days = 30): Promise<{
+export async function fetchDailyKline(code: string, days = 60): Promise<{
   success: boolean
   message: string
   count: number
+  stockName?: string
 }> {
   const secId = getSecId(code)
-  const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secId}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=1&lmt=${days}&ut=fa5fd1943c7b386f172d6893dbbd1`
+  const begDate = daysAgo(days)
+  const endDate = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+
+  // 使用 beg/end 日期范围参数（与 AkShare 一致），无论是否开盘都能获取历史数据
+  const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secId}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=0&beg=${begDate}&end=${endDate}&ut=7eea3edcaed734bea9cbfc24409ed989`
 
   try {
     const res = await safeFetch(url)
@@ -192,13 +194,34 @@ export async function fetchDailyKline(code: string, days = 30): Promise<{
 
     const json = await res.json()
     const klines = json?.data?.klines as string[] | undefined
+    const stockName = json?.data?.name as string | undefined
+
     if (!klines || klines.length === 0) {
-      return { success: false, message: '未获取到K线数据', count: 0 }
+      return { success: false, message: '未获取到K线数据，可能股票代码不存在', count: 0 }
     }
 
     const db = await getDb()
     const now = new Date()
     let upserted = 0
+
+    // 同时更新 stock_basic_info（K线接口也返回股票名称）
+    if (stockName) {
+      await db.collection('stock_basic_info').updateOne(
+        { $or: [{ symbol: code }, { code }] },
+        {
+          $set: {
+            symbol: code,
+            code: code,
+            name: stockName,
+            market: 'A股',
+            source: 'eastmoney',
+            updated_at: now
+          },
+          $setOnInsert: { created_at: now }
+        },
+        { upsert: true }
+      )
+    }
 
     for (const line of klines) {
       // 格式: 日期,开,收,高,低,成交量,成交额,振幅,涨跌幅,涨跌额,换手率
@@ -210,6 +233,7 @@ export async function fetchDailyKline(code: string, days = 30): Promise<{
         symbol: code,
         stock_code: code,
         code: code,
+        name: stockName || code,
         trade_date: tradeDate,
         open: Number(parts[1]),
         close: Number(parts[2]),
@@ -235,8 +259,9 @@ export async function fetchDailyKline(code: string, days = 30): Promise<{
 
     return {
       success: true,
-      message: `已拉取 ${code} 近 ${upserted} 天K线数据`,
-      count: upserted
+      message: `已拉取 ${stockName || code} 近 ${upserted} 天K线数据`,
+      count: upserted,
+      stockName
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : '未知错误'
@@ -270,16 +295,24 @@ export async function fetchAStockData(code: string): Promise<{
   // 并行拉取实时行情和 K 线
   const [realtime, kline] = await Promise.all([
     fetchRealtimeQuote(normalized),
-    fetchDailyKline(normalized, 30)
+    fetchDailyKline(normalized, 60)
   ])
 
-  const allOk = realtime.success && kline.success
-  const msg = allOk
-    ? `${normalized} 数据拉取完成：${realtime.message}，${kline.message}`
-    : `${normalized} 部分数据拉取失败：实时=${realtime.message}，K线=${kline.message}`
+  // K 线是核心数据，只要 K 线成功就算成功
+  // 实时行情在非交易时段拿不到是正常的
+  const success = kline.success
+  let msg: string
+
+  if (realtime.success && kline.success) {
+    msg = `${normalized} 数据拉取完成：${realtime.message}，${kline.message}`
+  } else if (kline.success && !realtime.success) {
+    msg = `${normalized} K线数据拉取成功（${kline.message}），实时行情：${realtime.message}`
+  } else {
+    msg = `${normalized} 数据拉取失败：实时=${realtime.message}，K线=${kline.message}`
+  }
 
   return {
-    success: allOk,
+    success,
     message: msg,
     realtime,
     kline
