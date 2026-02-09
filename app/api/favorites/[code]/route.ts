@@ -85,7 +85,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
         favorite_stocks: {
           stock_code: stockCode
         }
-      },
+      } as unknown as { favorite_stocks: { stock_code: string } },
       $set: {
         updated_at: new Date()
       }
