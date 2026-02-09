@@ -7,7 +7,7 @@ import { fail, ok } from '@/lib/http'
 import { userIdOrFilter } from '@/lib/mongo-helpers'
 
 interface Params {
-  params: { report_id: string }
+  params: { id: string }
 }
 
 export async function GET(request: NextRequest, { params }: Params) {
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     return fail('未登录', 401)
   }
 
-  const reportId = params.report_id
+  const reportId = params.id
   const db = await getDb()
 
   const query: Array<Record<string, unknown>> = [{ analysis_id: reportId }, { execution_id: reportId }]
