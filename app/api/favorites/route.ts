@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
       $set: {
         updated_at: new Date()
       }
-    }
+    } as any
   )
 
   const doc = await users.findOne({ _id: userObjectId }, { projection: { favorite_stocks: 1 } })
