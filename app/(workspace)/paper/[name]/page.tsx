@@ -1,11 +1,12 @@
 import { redirect } from 'next/navigation'
 
 interface Props {
-  params: {
+  params: Promise<{
     name: string
-  }
+  }>
 }
 
-export default function PaperNameRedirectPage({ params }: Props) {
-  redirect(`/learning/article/${params.name}`)
+export default async function PaperNameRedirectPage({ params }: Props) {
+  const { name } = await params
+  redirect(`/learning/article/${name}`)
 }
