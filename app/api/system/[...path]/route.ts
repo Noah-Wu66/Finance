@@ -4,7 +4,7 @@ import { getRequestUser } from '@/lib/auth'
 import { fail } from '@/lib/http'
 
 interface Params {
-  params: { path: string[] }
+  params: Promise<{ path: string[] }>
 }
 
 function message(path: string[]) {
@@ -14,23 +14,27 @@ function message(path: string[]) {
 export async function GET(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
-  return fail(message(params.path), 410)
+  const { path } = await params
+  return fail(message(path), 410)
 }
 
 export async function POST(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
-  return fail(message(params.path), 410)
+  const { path } = await params
+  return fail(message(path), 410)
 }
 
 export async function PUT(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
-  return fail(message(params.path), 410)
+  const { path } = await params
+  return fail(message(path), 410)
 }
 
 export async function DELETE(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
-  return fail(message(params.path), 410)
+  const { path } = await params
+  return fail(message(path), 410)
 }

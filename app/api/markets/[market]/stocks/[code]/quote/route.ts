@@ -5,14 +5,15 @@ import { fail, ok } from '@/lib/http'
 import { getLatestQuoteByCode } from '@/lib/stock-data'
 
 interface Params {
-  params: { market: string; code: string }
+  params: Promise<{ market: string; code: string }>
 }
 
 export async function GET(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
 
-  const quote = await getLatestQuoteByCode(params.code)
+  const { code } = await params
+  const quote = await getLatestQuoteByCode(code)
   if (!quote) {
     return fail('行情不存在', 404)
   }

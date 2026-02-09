@@ -6,7 +6,7 @@ import { getDb } from '@/lib/db'
 import { fail, ok } from '@/lib/http'
 
 interface Params {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
 export async function GET(request: NextRequest, { params }: Params) {
@@ -15,13 +15,15 @@ export async function GET(request: NextRequest, { params }: Params) {
     return fail('未登录', 401)
   }
 
-  if (!ObjectId.isValid(params.id)) {
+  const { id } = await params
+
+  if (!ObjectId.isValid(id)) {
     return fail('日志ID无效', 400)
   }
 
   const db = await getDb()
   const row = await db.collection('operation_logs').findOne({
-    _id: new ObjectId(params.id),
+    _id: new ObjectId(id),
     $or: [{ user_id: user.userId }, { user_id: user.userId.toString() }]
   })
 

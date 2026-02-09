@@ -5,7 +5,7 @@ import { tickExecution } from '@/lib/execution-engine'
 import { fail, ok } from '@/lib/http'
 
 interface Params {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
 export async function POST(request: NextRequest, { params }: Params) {
@@ -15,7 +15,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   }
 
   try {
-    const { id } = params
+    const { id } = await params
     const item = await tickExecution(id, user.userId)
     return ok(item, '执行推进成功')
   } catch (error) {

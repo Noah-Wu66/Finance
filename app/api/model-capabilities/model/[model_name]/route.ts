@@ -6,14 +6,14 @@ import { fail, ok } from '@/lib/http'
 import { defaultModelConfigs } from '@/lib/model-capabilities'
 
 interface Params {
-  params: { model_name: string }
+  params: Promise<{ model_name: string }>
 }
 
 export async function GET(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
 
-  const modelName = params.model_name
+  const { model_name: modelName } = await params
   const db = await getDb()
   const row = await db.collection('model_capabilities').findOne({ user_id: user.userId, model_name: modelName })
 

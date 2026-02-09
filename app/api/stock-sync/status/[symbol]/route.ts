@@ -5,14 +5,15 @@ import { fail, ok } from '@/lib/http'
 import { getDailyQuotesByCode, getFundamentalsByCode } from '@/lib/stock-data'
 
 interface Params {
-  params: { symbol: string }
+  params: Promise<{ symbol: string }>
 }
 
 export async function GET(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
 
-  const symbol = params.symbol.toUpperCase()
+  const { symbol: rawSymbol } = await params
+  const symbol = rawSymbol.toUpperCase()
   const [quotes, financial] = await Promise.all([
     getDailyQuotesByCode(symbol, { limit: 1 }),
     getFundamentalsByCode(symbol)

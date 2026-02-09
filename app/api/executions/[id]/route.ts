@@ -5,7 +5,7 @@ import { deleteExecution, getExecutionById } from '@/lib/execution-engine'
 import { fail, ok } from '@/lib/http'
 
 interface Params {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
 export async function GET(request: NextRequest, { params }: Params) {
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest, { params }: Params) {
   }
 
   try {
-    const { id } = params
+    const { id } = await params
     const item = await getExecutionById(id, user.userId)
     if (!item) {
       return fail('任务不存在', 404)
@@ -33,7 +33,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
   }
 
   try {
-    const { id } = params
+    const { id } = await params
     await deleteExecution(id, user.userId)
     return ok({ id }, '任务已删除')
   } catch (error) {

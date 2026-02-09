@@ -5,14 +5,15 @@ import { fail, ok } from '@/lib/http'
 import { getLatestQuoteByCode } from '@/lib/stock-data'
 
 interface Params {
-  params: { symbol: string }
+  params: Promise<{ symbol: string }>
 }
 
 export async function GET(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
 
-  const symbol = params.symbol.toUpperCase()
+  const { symbol: rawSymbol } = await params
+  const symbol = rawSymbol.toUpperCase()
   const quote = await getLatestQuoteByCode(symbol)
   if (!quote) return fail('行情不存在', 404)
 

@@ -6,14 +6,15 @@ import { fail, ok } from '@/lib/http'
 import { maybeObjectId } from '@/lib/mongo-helpers'
 
 interface Params {
-  params: { symbol: string }
+  params: Promise<{ symbol: string }>
 }
 
 export async function GET(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
 
-  const symbol = params.symbol.trim().toUpperCase()
+  const { symbol: rawSymbol } = await params
+  const symbol = rawSymbol.trim().toUpperCase()
   const userObjectId = maybeObjectId(user.userId)
   if (!userObjectId) return fail('用户ID无效', 400)
 

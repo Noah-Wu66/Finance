@@ -5,7 +5,7 @@ import { fail, ok } from '@/lib/http'
 import { searchStockBasics } from '@/lib/stock-data'
 
 interface Params {
-  params: { market: string }
+  params: Promise<{ market: string }>
 }
 
 export async function GET(request: NextRequest, { params }: Params) {
@@ -18,7 +18,8 @@ export async function GET(request: NextRequest, { params }: Params) {
     return ok({ stocks: [], total: 0 }, '请输入关键词')
   }
 
-  const marketCode = params.market.toUpperCase()
+  const { market } = await params
+  const marketCode = market.toUpperCase()
   const marketMap: Record<string, string> = {
     CN: 'A股',
     HK: '港股',

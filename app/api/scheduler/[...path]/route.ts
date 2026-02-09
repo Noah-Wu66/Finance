@@ -4,7 +4,7 @@ import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
 
 interface Params {
-  params: { path: string[] }
+  params: Promise<{ path: string[] }>
 }
 
 function schedulerDisabledMessage(path: string[]) {
@@ -15,7 +15,8 @@ export async function GET(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
 
-  const joined = params.path.join('/')
+  const { path } = await params
+  const joined = path.join('/')
   if (joined === 'stats') {
     return ok(
       {
@@ -45,23 +46,26 @@ export async function GET(request: NextRequest, { params }: Params) {
     return ok([], '后台调度已停用')
   }
 
-  return fail(schedulerDisabledMessage(params.path), 410)
+  return fail(schedulerDisabledMessage(path), 410)
 }
 
 export async function POST(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
-  return fail(schedulerDisabledMessage(params.path), 410)
+  const { path } = await params
+  return fail(schedulerDisabledMessage(path), 410)
 }
 
 export async function PUT(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
-  return fail(schedulerDisabledMessage(params.path), 410)
+  const { path } = await params
+  return fail(schedulerDisabledMessage(path), 410)
 }
 
 export async function DELETE(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
-  return fail(schedulerDisabledMessage(params.path), 410)
+  const { path } = await params
+  return fail(schedulerDisabledMessage(path), 410)
 }

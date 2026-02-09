@@ -5,14 +5,15 @@ import { fail, ok } from '@/lib/http'
 import { getStockBasicByCode } from '@/lib/stock-data'
 
 interface Params {
-  params: { market: string; code: string }
+  params: Promise<{ market: string; code: string }>
 }
 
 export async function GET(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
 
-  const info = await getStockBasicByCode(params.code)
+  const { code } = await params
+  const info = await getStockBasicByCode(code)
   if (!info) {
     return fail('股票不存在', 404)
   }

@@ -6,7 +6,7 @@ import { getDb } from '@/lib/db'
 import { fail, ok } from '@/lib/http'
 
 interface Params {
-  params: { notif_id: string }
+  params: Promise<{ notif_id: string }>
 }
 
 export async function POST(request: NextRequest, { params }: Params) {
@@ -15,7 +15,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     return fail('未登录', 401)
   }
 
-  const id = params.notif_id
+  const { notif_id: id } = await params
   if (!ObjectId.isValid(id)) {
     return fail('通知ID无效', 400)
   }

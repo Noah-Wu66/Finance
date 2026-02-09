@@ -8,7 +8,7 @@ import { fail, ok } from '@/lib/http'
 import { learningArticles } from '@/lib/learning-content'
 
 interface Params {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
 export async function GET(request: NextRequest, { params }: Params) {
@@ -17,7 +17,8 @@ export async function GET(request: NextRequest, { params }: Params) {
     return fail('未登录', 401)
   }
 
-  const article = learningArticles.find((item) => item.id === params.id)
+  const { id } = await params
+  const article = learningArticles.find((item) => item.id === id)
   if (!article) {
     return fail('文章不存在', 404)
   }

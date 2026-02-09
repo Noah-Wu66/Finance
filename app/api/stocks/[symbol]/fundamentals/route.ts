@@ -5,14 +5,15 @@ import { fail, ok } from '@/lib/http'
 import { getFundamentalsByCode, getStockBasicByCode } from '@/lib/stock-data'
 
 interface Params {
-  params: { symbol: string }
+  params: Promise<{ symbol: string }>
 }
 
 export async function GET(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
 
-  const symbol = params.symbol.toUpperCase()
+  const { symbol: rawSymbol } = await params
+  const symbol = rawSymbol.toUpperCase()
   const [basic, funda] = await Promise.all([getStockBasicByCode(symbol), getFundamentalsByCode(symbol)])
   if (!basic && !funda) return fail('基本面数据不存在', 404)
 

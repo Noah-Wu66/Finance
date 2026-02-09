@@ -5,7 +5,7 @@ import { cancelExecution } from '@/lib/execution-engine'
 import { fail, ok } from '@/lib/http'
 
 interface Params {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
 export async function POST(request: NextRequest, { params }: Params) {
@@ -15,7 +15,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   }
 
   try {
-    const { id } = params
+    const { id } = await params
     await cancelExecution(id, user.userId)
     return ok({ id }, '任务已停止')
   } catch (error) {

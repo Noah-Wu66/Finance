@@ -4,7 +4,7 @@ import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
 
 interface Params {
-  params: { filename: string }
+  params: Promise<{ filename: string }>
 }
 
 export async function DELETE(request: NextRequest, { params }: Params) {
@@ -13,5 +13,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     return fail('未登录', 401)
   }
 
-  return ok({ filename: params.filename }, '现场执行模式下日志为数据库记录，文件删除已忽略')
+  const { filename } = await params
+
+  return ok({ filename }, '现场执行模式下日志为数据库记录，文件删除已忽略')
 }

@@ -5,14 +5,15 @@ import { fail, ok } from '@/lib/http'
 import { getNewsByCode } from '@/lib/stock-data'
 
 interface Params {
-  params: { symbol: string }
+  params: Promise<{ symbol: string }>
 }
 
 export async function GET(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
 
-  const symbol = params.symbol.toUpperCase()
+  const { symbol: rawSymbol } = await params
+  const symbol = rawSymbol.toUpperCase()
   const days = Math.min(365, Math.max(1, Number(request.nextUrl.searchParams.get('days') || '30')))
   const limit = Math.min(200, Math.max(1, Number(request.nextUrl.searchParams.get('limit') || '50')))
 

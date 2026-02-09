@@ -6,7 +6,7 @@ import { getDb } from '@/lib/db'
 import { fail, ok } from '@/lib/http'
 
 interface Params {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
 interface Payload {
@@ -18,7 +18,8 @@ interface Payload {
 export async function PUT(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
-  if (!ObjectId.isValid(params.id)) return fail('标签ID无效', 400)
+  const { id } = await params
+  if (!ObjectId.isValid(id)) return fail('标签ID无效', 400)
 
   const body = (await request.json().catch(() => ({}))) as Payload
   const update: Record<string, unknown> = { updated_at: new Date() }
@@ -28,24 +29,25 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
   const db = await getDb()
   const res = await db.collection('tags').updateOne(
-    { _id: new ObjectId(params.id), user_id: user.userId },
+    { _id: new ObjectId(id), user_id: user.userId },
     { $set: update }
   )
 
   if (!res.matchedCount) return fail('标签不存在', 404)
-  return ok({ id: params.id }, '标签更新成功')
+  return ok({ id }, '标签更新成功')
 }
 
 export async function DELETE(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
-  if (!ObjectId.isValid(params.id)) return fail('标签ID无效', 400)
+  const { id } = await params
+  if (!ObjectId.isValid(id)) return fail('标签ID无效', 400)
 
   const db = await getDb()
   const res = await db.collection('tags').deleteOne({
-    _id: new ObjectId(params.id),
+    _id: new ObjectId(id),
     user_id: user.userId
   })
   if (!res.deletedCount) return fail('标签不存在', 404)
-  return ok({ id: params.id }, '标签删除成功')
+  return ok({ id }, '标签删除成功')
 }

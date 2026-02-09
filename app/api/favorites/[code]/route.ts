@@ -6,7 +6,7 @@ import { fail, ok } from '@/lib/http'
 import { maybeObjectId } from '@/lib/mongo-helpers'
 
 interface Params {
-  params: { code: string }
+  params: Promise<{ code: string }>
 }
 
 interface UpdatePayload {
@@ -22,7 +22,8 @@ export async function PUT(request: NextRequest, { params }: Params) {
     return fail('未登录', 401)
   }
 
-  const stockCode = params.code.trim().toUpperCase()
+  const { code } = await params
+  const stockCode = code.trim().toUpperCase()
   const userObjectId = maybeObjectId(user.userId)
   if (!userObjectId) return fail('用户ID无效', 400)
 
@@ -70,7 +71,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     return fail('未登录', 401)
   }
 
-  const { code } = params
+  const { code } = await params
   const stockCode = code.trim().toUpperCase()
   const userObjectId = maybeObjectId(user.userId)
   if (!userObjectId) return fail('用户ID无效', 400)

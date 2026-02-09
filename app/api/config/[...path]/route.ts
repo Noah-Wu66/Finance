@@ -7,7 +7,7 @@ import { getDb } from '@/lib/db'
 import { fail, ok } from '@/lib/http'
 
 interface Params {
-  params: { path: string[] }
+  params: Promise<{ path: string[] }>
 }
 
 const COLLECTIONS = {
@@ -248,7 +248,7 @@ export async function GET(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
 
-  const segments = params.path
+  const segments = (await params).path
   const key = segments.join('/')
   const db = await getDb()
 
@@ -343,7 +343,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
 
-  const segments = params.path
+  const segments = (await params).path
   const key = segments.join('/')
   const db = await getDb()
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
@@ -562,7 +562,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
 
-  const segments = params.path
+  const segments = (await params).path
   const key = segments.join('/')
   const db = await getDb()
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
@@ -668,7 +668,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
 
-  const segments = params.path
+  const segments = (await params).path
   const key = segments.join('/')
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
 
@@ -695,7 +695,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
 
-  const segments = params.path
+  const segments = (await params).path
   const key = segments.join('/')
   const db = await getDb()
 

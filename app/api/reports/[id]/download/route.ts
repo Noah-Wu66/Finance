@@ -6,7 +6,7 @@ import { getDb } from '@/lib/db'
 import { userIdOrFilter } from '@/lib/mongo-helpers'
 
 interface Params {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
 export async function GET(request: NextRequest, { params }: Params) {
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     return NextResponse.json({ success: false, message: '未登录' }, { status: 401 })
   }
 
-  const id = params.id
+  const { id } = await params
   const format = (request.nextUrl.searchParams.get('format') || 'markdown').toLowerCase()
 
   const db = await getDb()
