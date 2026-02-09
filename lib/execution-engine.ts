@@ -1,6 +1,8 @@
 import { ObjectId } from 'mongodb'
 
 import { getDb } from '@/lib/db'
+import { fetchAStockData } from '@/lib/fetch-a-stock'
+import { inferMarketFromCode } from '@/lib/market'
 import { createOperationLog } from '@/lib/operation-logs'
 
 const EXEC_COLLECTION = 'web_executions'
@@ -776,6 +778,21 @@ export async function tickExecution(id: string, userId: string) {
     }
     nextStep += 1
   } else if (execution.step === 1) {
+    // A 股自动拉取最新行情数据
+    const market = inferMarketFromCode(execution.symbol)
+    if (market === 'A股') {
+      try {
+        const fetchResult = await fetchAStockData(execution.symbol)
+        if (fetchResult.success) {
+          logs.push({ at: now, text: `已从东方财富拉取最新数据：${fetchResult.realtime.message}` })
+        } else {
+          logs.push({ at: now, text: `在线拉取部分失败（${fetchResult.message}），将使用数据库已有数据` })
+        }
+      } catch {
+        logs.push({ at: now, text: '在线数据拉取异常，将使用数据库已有数据' })
+      }
+    }
+
     const basic = await loadStockBasic(execution.symbol)
     context.basic = basic
     logs.push({ at: now, text: `已加载基础信息：${basic.name}（${basic.source}）` })
