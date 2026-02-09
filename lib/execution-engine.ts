@@ -17,7 +17,7 @@ export interface ExecutionLog {
 }
 
 export interface ExecutionDoc {
-  _id: ObjectId
+  _id?: ObjectId
   user_id: string
   username: string
   type: 'analysis'
@@ -38,7 +38,7 @@ export interface ExecutionDoc {
 }
 
 interface BatchDoc {
-  _id: ObjectId
+  _id?: ObjectId
   user_id: string
   title: string
   symbols: string[]
