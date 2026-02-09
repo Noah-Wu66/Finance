@@ -19,7 +19,7 @@ export interface SyncStatusRecord {
 export async function runStockBasicsSync(force = false, preferredSources?: string[]) {
   const db = await getDb()
   const basics = db.collection('stock_basic_info')
-  const history = db.collection('sync_history')
+  const history = db.collection<SyncStatusRecord>('sync_history')
 
   const startedAt = new Date()
   const total = await basics.countDocuments()
@@ -52,7 +52,8 @@ export async function runStockBasicsSync(force = false, preferredSources?: strin
 
 export async function getLatestSyncStatus() {
   const db = await getDb()
-  const row = await db.collection('sync_history').find({ job: 'stock_basics_sync' }).sort({ created_at: -1 }).limit(1).next()
+  const history = db.collection<SyncStatusRecord>('sync_history')
+  const row = await history.find({ job: 'stock_basics_sync' }).sort({ created_at: -1 }).limit(1).next()
   if (!row) {
     return {
       job: 'stock_basics_sync',
@@ -65,11 +66,13 @@ export async function getLatestSyncStatus() {
     }
   }
 
-  return row as SyncStatusRecord
+  const { _id: _ignored, ...record } = row
+  return record
 }
 
 export async function getSyncHistory(page = 1, pageSize = 20, status?: string) {
   const db = await getDb()
+  const history = db.collection<SyncStatusRecord>('sync_history')
   const skip = (page - 1) * pageSize
 
   const query: Record<string, unknown> = { job: 'stock_basics_sync' }
@@ -78,12 +81,12 @@ export async function getSyncHistory(page = 1, pageSize = 20, status?: string) {
   }
 
   const [records, total] = await Promise.all([
-    db.collection('sync_history').find(query).sort({ created_at: -1 }).skip(skip).limit(pageSize).toArray(),
-    db.collection('sync_history').countDocuments(query)
+    history.find(query).sort({ created_at: -1 }).skip(skip).limit(pageSize).toArray(),
+    history.countDocuments(query)
   ])
 
   return {
-    records: records as SyncStatusRecord[],
+    records: records.map(({ _id: _ignored, ...record }) => record),
     total,
     page,
     page_size: pageSize,

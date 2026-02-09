@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { Suspense } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 
@@ -35,7 +36,7 @@ interface Execution {
 const marketList = ['A股', '港股', '美股']
 const depthList: Array<Execution['depth']> = ['快速', '标准', '深度']
 
-export default function AnalysisPage() {
+function AnalysisPageContent() {
   const searchParams = useSearchParams()
   const [symbol, setSymbol] = useState('')
   const [market, setMarket] = useState('A股')
@@ -276,5 +277,13 @@ export default function AnalysisPage() {
         )}
       </section>
     </div>
+  )
+}
+
+export default function AnalysisPage() {
+  return (
+    <Suspense fallback={null}>
+      <AnalysisPageContent />
+    </Suspense>
   )
 }

@@ -25,20 +25,21 @@ function buildMongoUri(): string {
 
 const uri = buildMongoUri()
 
-const clientPromise =
-  global.__mongoClientPromise__ ||
-  new MongoClient(uri, {
-    maxPoolSize: 20,
-    minPoolSize: 2,
-    serverSelectionTimeoutMS: 5000
-  }).connect()
+function getClientPromise() {
+  if (!global.__mongoClientPromise__) {
+    const client = new MongoClient(uri, {
+      maxPoolSize: 20,
+      minPoolSize: 2,
+      serverSelectionTimeoutMS: 5000
+    })
+    global.__mongoClientPromise__ = client.connect()
+  }
 
-if (!global.__mongoClientPromise__) {
-  global.__mongoClientPromise__ = clientPromise
+  return global.__mongoClientPromise__
 }
 
 export async function getDb() {
-  const client = await clientPromise
+  const client = await getClientPromise()
   const dbName = process.env.MONGODB_DB || process.env.MONGODB_DATABASE || 'tradingagents'
   return client.db(dbName)
 }
