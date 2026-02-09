@@ -309,7 +309,7 @@ async function buildReport(execution: ExecutionDoc) {
 
   const doc = {
     analysis_id: analysisId,
-    execution_id: execution._id.toHexString(),
+    execution_id: execution._id!.toHexString(),
     user_id: execution.user_id,
     stock_symbol: execution.symbol,
     stock_name: basic.name,
