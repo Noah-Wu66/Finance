@@ -5,9 +5,9 @@ import { getDb } from '@/lib/db'
 import { fail, ok } from '@/lib/http'
 
 interface Payload {
-  username?: string
   email?: string
   password?: string
+  nickname?: string
   is_admin?: boolean
 }
 
@@ -17,24 +17,24 @@ export async function POST(request: NextRequest) {
   if (!current.isAdmin) return fail('仅管理员可创建用户', 403)
 
   const body = (await request.json().catch(() => ({}))) as Payload
-  const username = (body.username || '').trim()
   const email = (body.email || '').trim()
   const password = body.password || ''
+  const nickname = (body.nickname || '').trim()
 
-  if (!username || !email || !password) {
-    return fail('用户名、邮箱、密码不能为空', 400)
+  if (!email || !password) {
+    return fail('邮箱和密码不能为空', 400)
   }
 
   const db = await getDb()
-  const exists = await db.collection('users').findOne({ $or: [{ username }, { email }] })
+  const exists = await db.collection('users').findOne({ email })
   if (exists) {
-    return fail('用户名或邮箱已存在', 409)
+    return fail('邮箱已存在', 409)
   }
 
   const user = await createUserAccount({
-    username,
     email,
     password,
+    nickname: nickname || undefined,
     isAdmin: body.is_admin === true
   })
 

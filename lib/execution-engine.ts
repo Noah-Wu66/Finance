@@ -19,7 +19,7 @@ export interface ExecutionLog {
 export interface ExecutionDoc {
   _id?: ObjectId
   user_id: string
-  username: string
+  user_email: string
   type: 'analysis'
   symbol: string
   market: string
@@ -125,7 +125,7 @@ async function createNotificationSafe(input: {
 
 async function createOperationLogSafe(input: {
   userId: string
-  username: string
+  userEmail: string
   actionType: string
   action: string
   details?: Record<string, unknown>
@@ -135,7 +135,7 @@ async function createOperationLogSafe(input: {
   try {
     await createOperationLog({
       userId: input.userId,
-      username: input.username,
+      userEmail: input.userEmail,
       actionType: input.actionType,
       action: input.action,
       details: input.details,
@@ -381,7 +381,7 @@ export async function markStaleExecutions(userId: string) {
 
 export async function startExecution(input: {
   userId: string
-  username: string
+  userEmail: string
   symbol: string
   market: string
   depth: '快速' | '标准' | '深度'
@@ -393,7 +393,7 @@ export async function startExecution(input: {
   const now = new Date()
   const doc = {
     user_id: input.userId,
-    username: input.username,
+    user_email: input.userEmail,
     type: 'analysis' as const,
     symbol,
     market: input.market,
@@ -419,7 +419,7 @@ export async function startExecution(input: {
   })
   await createOperationLogSafe({
     userId: input.userId,
-    username: input.username,
+    userEmail: input.userEmail,
     actionType: 'stock_analysis',
     action: `创建分析任务 ${symbol}`,
     details: {
@@ -609,7 +609,7 @@ export async function cancelExecution(id: string, userId: string) {
 
   await createOperationLogSafe({
     userId,
-    username: current?.username || 'current_user',
+    userEmail: current?.user_email || 'current_user',
     actionType: 'stock_analysis',
     action: `停止任务 ${current?.symbol || id}`,
     success: true
@@ -698,7 +698,7 @@ export async function markExecutionFailed(id: string, userId: string, reason?: s
 
   await createOperationLogSafe({
     userId,
-    username: current?.username || 'current_user',
+    userEmail: current?.user_email || 'current_user',
     actionType: 'stock_analysis',
     action: `标记任务失败 ${current?.symbol || id}`,
     success: false,
@@ -831,7 +831,7 @@ export async function tickExecution(id: string, userId: string) {
 
     await createOperationLogSafe({
       userId,
-      username: execution.username,
+      userEmail: execution.user_email,
       actionType: 'report_generation',
       action: `${execution.symbol} 分析完成并生成报告`,
       success: true,

@@ -4,26 +4,26 @@ import { applyAuthCookie, getUserById, signUserToken, toPublicUserProfile, verif
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as { username?: string; password?: string }
-    const username = (body.username || '').trim()
+    const body = (await request.json()) as { email?: string; password?: string }
+    const email = (body.email || '').trim()
     const password = body.password || ''
 
-    if (!username || !password) {
+    if (!email || !password) {
       return NextResponse.json(
         {
           success: false,
-          message: '用户名和密码不能为空'
+          message: '邮箱和密码不能为空'
         },
         { status: 400 }
       )
     }
 
-    const user = await verifyUserPassword(username, password)
+    const user = await verifyUserPassword(email, password)
     if (!user) {
       return NextResponse.json(
         {
           success: false,
-          message: '用户名或密码错误'
+          message: '邮箱或密码错误'
         },
         { status: 401 }
       )
@@ -33,8 +33,8 @@ export async function POST(request: NextRequest) {
     const userDoc = await getUserById(user.userId)
     const userProfile = userDoc ? toPublicUserProfile(userDoc) : {
       id: user.userId,
-      username: user.username,
-      email: user.email || '',
+      email: user.email,
+      nickname: user.nickname,
       is_active: true,
       is_verified: false,
       is_admin: user.isAdmin,

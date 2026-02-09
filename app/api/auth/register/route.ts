@@ -4,25 +4,25 @@ import { applyAuthCookie, createUserAccount, signUserToken, toPublicUserProfile 
 import { getDb } from '@/lib/db'
 
 interface RegisterPayload {
-  username?: string
   email?: string
   password?: string
   confirm_password?: string
+  nickname?: string
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as RegisterPayload
-    const username = (body.username || '').trim()
     const email = (body.email || '').trim()
     const password = body.password || ''
     const confirmPassword = body.confirm_password || ''
+    const nickname = (body.nickname || '').trim()
 
-    if (!username || !email || !password) {
+    if (!email || !password) {
       return NextResponse.json(
         {
           success: false,
-          message: '用户名、邮箱、密码不能为空'
+          message: '邮箱和密码不能为空'
         },
         { status: 400 }
       )
@@ -50,22 +50,29 @@ export async function POST(request: NextRequest) {
 
     const db = await getDb()
     const users = db.collection('users')
-    const exists = await users.findOne({ $or: [{ username }, { email }] })
+    const exists = await users.findOne({ email })
     if (exists) {
       return NextResponse.json(
         {
           success: false,
-          message: '用户名或邮箱已存在'
+          message: '邮箱已存在'
         },
         { status: 409 }
       )
     }
 
+    // 检查是否为管理员：
+    // 1. 如果是第一个用户，自动成为管理员
+    // 2. 如果邮箱匹配环境变量 ADMIN_EMAIL
+    const userCount = await users.countDocuments()
+    const adminEmail = process.env.ADMIN_EMAIL
+    const isAdmin = userCount === 0 || !!(adminEmail && email.toLowerCase() === adminEmail.toLowerCase())
+
     const userDoc = await createUserAccount({
-      username,
       email,
       password,
-      isAdmin: false
+      nickname: nickname || undefined,
+      isAdmin
     })
 
     if (!userDoc) {
@@ -80,9 +87,9 @@ export async function POST(request: NextRequest) {
 
     const token = await signUserToken({
       userId: String(userDoc._id),
-      username,
-      isAdmin: false,
-      email
+      email,
+      isAdmin,
+      nickname: nickname || undefined
     })
 
     const response = NextResponse.json({

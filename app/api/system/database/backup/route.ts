@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
       size: 0,
       collections: [],
       created_at: new Date().toISOString(),
-      created_by: user.username
+      created_by: user.email
     },
     '现场执行模式下不提供服务器备份，建议使用 MongoDB 云端备份策略'
   )

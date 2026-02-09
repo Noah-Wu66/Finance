@@ -10,15 +10,15 @@ const MAX_AGE_SECONDS = 60 * 60 * 12
 
 export interface SessionUser {
   userId: string
-  username: string
+  email: string
   isAdmin: boolean
-  email?: string
+  nickname?: string
 }
 
 export interface UserPublicProfile {
   id: string
-  username: string
   email: string
+  nickname?: string
   is_active: boolean
   is_verified: boolean
   is_admin: boolean
@@ -68,8 +68,8 @@ export function toPublicUserProfile(user: Record<string, unknown>): UserPublicPr
   const id = (user._id as ObjectId).toHexString()
   return {
     id,
-    username: String(user.username || ''),
     email: String(user.email || ''),
+    nickname: user.nickname ? String(user.nickname) : undefined,
     is_active: user.is_active !== false,
     is_verified: Boolean(user.is_verified),
     is_admin: Boolean(user.is_admin),
@@ -94,7 +94,7 @@ export async function getUserById(userId: string): Promise<Record<string, unknow
   return db.collection('users').findOne({ _id: new ObjectId(userId) }) as Promise<Record<string, unknown> | null>
 }
 
-export async function createUserAccount(input: { username: string; email: string; password: string; isAdmin?: boolean }) {
+export async function createUserAccount(input: { email: string; password: string; nickname?: string; isAdmin?: boolean }) {
   const db = await getDb()
   const users = db.collection('users')
 
@@ -102,8 +102,8 @@ export async function createUserAccount(input: { username: string; email: string
   const passwordHash = await hashPassword(input.password)
 
   const result = await users.insertOne({
-    username: input.username,
     email: input.email,
+    nickname: input.nickname,
     hashed_password: passwordHash,
     is_active: true,
     is_verified: false,
@@ -125,6 +125,7 @@ export async function createUserAccount(input: { username: string; email: string
 
 export async function updateUserProfile(userId: string, updates: {
   email?: string
+  nickname?: string
   preferences?: Record<string, unknown>
   daily_quota?: number
   concurrent_limit?: number
@@ -138,6 +139,7 @@ export async function updateUserProfile(userId: string, updates: {
   }
 
   if (updates.email !== undefined) patch.email = updates.email
+  if (updates.nickname !== undefined) patch.nickname = updates.nickname
   if (updates.preferences !== undefined) patch.preferences = updates.preferences
   if (updates.daily_quota !== undefined) patch.daily_quota = updates.daily_quota
   if (updates.concurrent_limit !== undefined) patch.concurrent_limit = updates.concurrent_limit
@@ -166,9 +168,9 @@ export async function updateUserPassword(userId: string, newPassword: string) {
 export async function signUserToken(user: SessionUser) {
   return new SignJWT({
     userId: user.userId,
-    username: user.username,
+    email: user.email,
     isAdmin: user.isAdmin,
-    email: user.email
+    nickname: user.nickname
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
@@ -180,11 +182,14 @@ export async function verifyUserToken(token: string): Promise<SessionUser | null
   try {
     const { payload } = await jwtVerify(token, jwtSecret())
     const data = payload as unknown as JwtPayload
+    // 检查是否为管理员邮箱（环境变量配置优先）
+    const adminEmail = process.env.ADMIN_EMAIL
+    const isAdmin = adminEmail && (data.email || '').toLowerCase() === adminEmail.toLowerCase()
     return {
       userId: data.userId,
-      username: data.username,
-      isAdmin: Boolean(data.isAdmin),
-      email: data.email
+      email: data.email,
+      isAdmin: isAdmin || Boolean(data.isAdmin),
+      nickname: data.nickname
     }
   } catch {
     return null
@@ -229,11 +234,11 @@ export function clearAuthCookie(response: NextResponse) {
   })
 }
 
-export async function verifyUserPassword(username: string, password: string): Promise<SessionUser | null> {
+export async function verifyUserPassword(email: string, password: string): Promise<SessionUser | null> {
   const db = await getDb()
   const users = db.collection('users')
 
-  const user = await users.findOne({ username })
+  const user = await users.findOne({ email })
   if (!user || user.is_active === false) {
     return null
   }
@@ -265,11 +270,15 @@ export async function verifyUserPassword(username: string, password: string): Pr
     }
   )
 
+  // 检查是否为管理员邮箱（环境变量配置优先）
+  const adminEmail = process.env.ADMIN_EMAIL
+  const isAdmin = adminEmail && (user.email as string).toLowerCase() === adminEmail.toLowerCase()
+
   return {
     userId: (user._id as ObjectId).toHexString(),
-    username: user.username as string,
-    isAdmin: Boolean(user.is_admin),
-    email: (user.email as string | undefined) || undefined
+    email: user.email as string,
+    isAdmin: isAdmin || Boolean(user.is_admin),
+    nickname: (user.nickname as string | undefined) || undefined
   }
 }
 

@@ -16,7 +16,7 @@ function userFilter(userId: string) {
 
 export async function createOperationLog(input: {
   userId: string
-  username: string
+  userEmail: string
   actionType: string
   action: string
   details?: Record<string, unknown>
@@ -31,7 +31,7 @@ export async function createOperationLog(input: {
   const now = new Date()
   const res = await db.collection('operation_logs').insertOne({
     user_id: input.userId,
-    username: input.username,
+    user_email: input.userEmail,
     action_type: input.actionType,
     action: input.action,
     details: input.details || {},
@@ -92,7 +92,7 @@ export async function listOperationLogs(userId: string, options?: {
     logs: rows.map((row) => ({
       id: String(row._id),
       user_id: String(row.user_id || ''),
-      username: String(row.username || ''),
+      user_email: String(row.user_email || ''),
       action_type: String(row.action_type || ''),
       action: String(row.action || ''),
       details: row.details || {},

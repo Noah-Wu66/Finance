@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
 
   const executionId = await startExecution({
     userId: user.userId,
-    username: user.username,
+    userEmail: user.email,
     symbol,
     market,
     depth

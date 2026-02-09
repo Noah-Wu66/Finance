@@ -5,8 +5,8 @@ declare global {
 }
 
 function buildMongoUri(): string {
-  if (process.env.MONGODB_URI) {
-    return process.env.MONGODB_URI
+  if (process.env.MONGO_URI) {
+    return process.env.MONGO_URI
   }
 
   const host = process.env.MONGODB_HOST || '127.0.0.1'
@@ -39,6 +39,6 @@ if (!global.__mongoClientPromise__) {
 
 export async function getDb() {
   const client = await clientPromise
-  const dbName = process.env.MONGODB_DB || process.env.MONGODB_DATABASE || 'tradingagents'
+  const dbName = process.env.MONGODB_DB || 'tradingagents'
   return client.db(dbName)
 }

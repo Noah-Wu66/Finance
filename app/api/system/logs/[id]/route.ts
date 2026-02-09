@@ -35,7 +35,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     {
       id: String(row._id),
       user_id: String(row.user_id || ''),
-      username: String(row.username || ''),
+      user_email: String(row.user_email || ''),
       action_type: String(row.action_type || ''),
       action: String(row.action || ''),
       details: row.details || {},

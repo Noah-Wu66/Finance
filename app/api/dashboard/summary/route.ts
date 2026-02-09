@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     db.collection('analysis_reports').countDocuments(userIdOrFilter(user.userId)),
     db
       .collection('users')
-      .findOne(userObjectId ? { _id: userObjectId } : { username: user.username }, { projection: { favorite_stocks: 1 } })
+      .findOne(userObjectId ? { _id: userObjectId } : { email: user.email }, { projection: { favorite_stocks: 1 } })
   ])
 
   return ok(

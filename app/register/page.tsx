@@ -8,10 +8,10 @@ import { apiFetch } from '@/lib/client-api'
 
 export default function RegisterPage() {
   const router = useRouter()
-  const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [nickname, setNickname] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -23,10 +23,10 @@ export default function RegisterPage() {
       await apiFetch('/api/auth/register', {
         method: 'POST',
         body: JSON.stringify({
-          username,
           email,
           password,
-          confirm_password: confirmPassword
+          confirm_password: confirmPassword,
+          nickname: nickname || undefined
         })
       })
       router.replace('/dashboard')
@@ -46,12 +46,12 @@ export default function RegisterPage() {
 
         <form className="login-form" onSubmit={submit}>
           <div className="field">
-            <label>用户名</label>
-            <input className="input" value={username} onChange={(e) => setUsername(e.target.value)} />
+            <label>邮箱</label>
+            <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} type="email" required />
           </div>
           <div className="field">
-            <label>邮箱</label>
-            <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} type="email" />
+            <label>昵称（选填）</label>
+            <input className="input" value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="设置一个昵称" />
           </div>
           <div className="field">
             <label>密码</label>

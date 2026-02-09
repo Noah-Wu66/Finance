@@ -8,7 +8,7 @@ import { apiFetch } from '@/lib/client-api'
 
 export default function LoginPage() {
   const router = useRouter()
-  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -21,7 +21,7 @@ export default function LoginPage() {
     try {
       await apiFetch('/api/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify({ email, password })
       })
 
       router.replace('/dashboard')
@@ -41,14 +41,16 @@ export default function LoginPage() {
 
         <form onSubmit={onSubmit} className="login-form">
           <div className="field">
-            <label htmlFor="username">用户名</label>
+            <label htmlFor="email">邮箱</label>
             <input
-              id="username"
+              id="email"
               className="input"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="请输入用户名"
-              autoComplete="username"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="请输入邮箱"
+              autoComplete="email"
+              required
             />
           </div>
 

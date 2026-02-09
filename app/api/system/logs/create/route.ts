@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
 
   const logId = await createOperationLog({
     userId: user.userId,
-    username: user.username,
+    userEmail: user.email,
     actionType: body.action_type,
     action: body.action,
     details: body.details,
