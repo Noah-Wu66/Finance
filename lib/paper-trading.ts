@@ -9,7 +9,7 @@ const ORDER_COLL = 'paper_orders'
 const INITIAL_CASH = 1_000_000
 
 interface PaperAccount {
-  _id: ObjectId
+  _id?: ObjectId
   user_id: string
   cash: number
   realized_pnl: number
@@ -17,7 +17,7 @@ interface PaperAccount {
 }
 
 interface PaperPosition {
-  _id: ObjectId
+  _id?: ObjectId
   user_id: string
   code: string
   quantity: number
