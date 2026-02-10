@@ -280,46 +280,84 @@ export async function fetchDailyKline(code: string, days = 60): Promise<{
   }
 }
 
-// ---------- 拉取财务数据（ROE + 营收增长率） ----------
+// ---------- 拉取财务数据（ROE + 营收增长率 + PE + PB） ----------
 
 export async function fetchFinancialData(code: string): Promise<{
   success: boolean
   message: string
-  data?: { roe: number; revenueGrowth: number; reportDate: string }
+  data?: { roe: number; revenueGrowth: number; pe: number; pb: number; reportDate: string }
 }> {
-  const columns = 'SECURITY_CODE,SECURITY_NAME_ABBR,REPORTDATE,WEIGHTAVG_ROE,YSTZ'
-  const filter = `(SECURITY_CODE="${code}")`
-  const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?sortColumns=NOTICE_DATE,SECURITY_CODE&sortTypes=-1,1&pageSize=1&pageNumber=1&reportName=RPT_LICO_FN_CPD&columns=${columns}&filter=${encodeURIComponent(filter)}`
-
   try {
-    const res = await safeFetch(url)
-    if (!res.ok) {
-      return { success: false, message: `财务数据接口返回 HTTP ${res.status}` }
+    // 并行请求两个接口：业绩报表（ROE/营收/BPS） + 估值数据（PE/收盘价）
+    const yjbbColumns = 'SECURITY_CODE,SECURITY_NAME_ABBR,REPORTDATE,WEIGHTAVG_ROE,YSTZ,BPS'
+    const yjbbFilter = `(SECURITY_CODE="${code}")`
+    const yjbbUrl = `https://datacenter-web.eastmoney.com/api/data/v1/get?sortColumns=NOTICE_DATE,SECURITY_CODE&sortTypes=-1,1&pageSize=1&pageNumber=1&reportName=RPT_LICO_FN_CPD&columns=${yjbbColumns}&filter=${encodeURIComponent(yjbbFilter)}`
+
+    const valColumns = 'SECURITY_CODE,TRADE_DATE,PE_DYNAMIC,CLOSE_PRICE'
+    const valFilter = `(SECURITY_CODE="${code}")`
+    const valUrl = `https://datacenter-web.eastmoney.com/api/data/v1/get?sortColumns=TRADE_DATE&sortTypes=-1&pageSize=1&pageNumber=1&reportName=RPT_DMSK_TS_STOCKNEW&columns=${valColumns}&filter=${encodeURIComponent(valFilter)}`
+
+    const [yjbbRes, valRes] = await Promise.all([
+      safeFetch(yjbbUrl),
+      safeFetch(valUrl)
+    ])
+
+    // 解析业绩报表
+    let roe = 0
+    let revenueGrowth = 0
+    let bps = 0
+    let reportDate = ''
+    let stockName = code
+
+    if (yjbbRes.ok) {
+      const yjbbJson = await yjbbRes.json()
+      const row = yjbbJson?.result?.data?.[0]
+      if (row) {
+        roe = Number(row.WEIGHTAVG_ROE ?? 0)
+        revenueGrowth = Number(row.YSTZ ?? 0)
+        bps = Number(row.BPS ?? 0)
+        reportDate = (row.REPORTDATE as string || '').slice(0, 10)
+        stockName = row.SECURITY_NAME_ABBR || code
+      }
     }
 
-    const json = await res.json()
-    const row = json?.result?.data?.[0]
-    if (!row) {
+    // 解析估值数据
+    let pe = 0
+    let closePrice = 0
+
+    if (valRes.ok) {
+      const valJson = await valRes.json()
+      const row = valJson?.result?.data?.[0]
+      if (row) {
+        pe = Number(row.PE_DYNAMIC ?? 0)
+        closePrice = Number(row.CLOSE_PRICE ?? 0)
+      }
+    }
+
+    // 用收盘价和每股净资产计算 PB
+    const pb = bps > 0 && closePrice > 0 ? Number((closePrice / bps).toFixed(4)) : 0
+
+    // 如果两个接口都没拿到数据
+    if (!reportDate && !pe) {
       return { success: false, message: '未获取到财务数据' }
     }
-
-    const roe = Number(row.WEIGHTAVG_ROE ?? 0)
-    const revenueGrowth = Number(row.YSTZ ?? 0)
-    const reportDate = (row.REPORTDATE as string || '').slice(0, 10)
 
     const now = new Date()
     const db = await getDb()
 
     // 写入 financial_data 集合
     await db.collection('financial_data').updateOne(
-      { symbol: code, report_date: reportDate },
+      { symbol: code, report_date: reportDate || 'latest' },
       {
         $set: {
           symbol: code,
           code: code,
-          name: row.SECURITY_NAME_ABBR || code,
+          name: stockName,
           roe,
+          pe,
+          pb,
           revenue_yoy: revenueGrowth,
+          bps,
           report_date: reportDate,
           data_source: 'eastmoney_yjbb',
           updated_at: now
@@ -329,12 +367,14 @@ export async function fetchFinancialData(code: string): Promise<{
       { upsert: true }
     )
 
-    // 同时更新 stock_basic_info 中的 ROE
+    // 同时更新 stock_basic_info
     await db.collection('stock_basic_info').updateOne(
       { $or: [{ symbol: code }, { code }] },
       {
         $set: {
           roe,
+          pe,
+          pb,
           revenue_yoy: revenueGrowth,
           updated_at: now
         }
@@ -343,8 +383,8 @@ export async function fetchFinancialData(code: string): Promise<{
 
     return {
       success: true,
-      message: `已拉取 ${row.SECURITY_NAME_ABBR}(${code}) 财务数据：ROE ${roe.toFixed(2)}%，营收增长 ${revenueGrowth.toFixed(2)}%`,
-      data: { roe, revenueGrowth, reportDate }
+      message: `已拉取 ${stockName}(${code}) 财务数据：ROE ${roe.toFixed(2)}%，PE ${pe.toFixed(2)}，PB ${pb.toFixed(2)}，营收增长 ${revenueGrowth.toFixed(2)}%`,
+      data: { roe, revenueGrowth, pe, pb, reportDate }
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : '未知错误'
