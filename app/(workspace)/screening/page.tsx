@@ -106,7 +106,7 @@ export default function ScreeningPage() {
 
       <Card>
         <form onSubmit={run} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <Select label="行业" value={industry} onChange={(e) => setIndustry(e.target.value)}>
               <option value="">全部行业</option>
               {industryList.map((item) => (
@@ -138,8 +138,8 @@ export default function ScreeningPage() {
             />
           </div>
 
-          <div className="flex items-center gap-3">
-            <Button variant="primary" type="submit" disabled={loading}>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <Button variant="primary" type="submit" disabled={loading} className="w-full sm:w-auto">
               {loading && <Spinner size="sm" />}
               {loading ? '筛选中...' : '开始筛选'}
             </Button>
@@ -156,26 +156,51 @@ export default function ScreeningPage() {
         {items.length === 0 ? (
           <EmptyState title="暂无结果" description="请设置筛选条件后点击开始筛选" />
         ) : (
-          <Table>
-            <Thead>
-              <Tr>
-                <Th>代码</Th>
-                <Th>最新价</Th>
-                <Th>涨跌幅</Th>
-                <Th>成交额</Th>
-              </Tr>
-            </Thead>
-            <Tbody>
+          <>
+            <div className="sm:hidden divide-y divide-[var(--border)]">
               {items.map((item) => (
-                <Tr key={item.code}>
-                  <Td className="font-mono">{item.code}</Td>
-                  <Td>{item.close?.toFixed(2) ?? '-'}</Td>
-                  <Td>{item.pct_chg?.toFixed(2) ?? '-'}%</Td>
-                  <Td>{item.amount?.toLocaleString() ?? '-'}</Td>
-                </Tr>
+                <div key={item.code} className="p-3.5">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-mono font-medium text-[var(--fg)]">{item.code}</span>
+                    <span className="text-sm font-mono text-[var(--fg-secondary)]">{item.close?.toFixed(2) ?? '-'}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-md bg-[var(--bg-secondary)] px-2.5 py-2">
+                      <span className="text-[var(--fg-muted)]">涨跌幅</span>
+                      <p className="m-0 mt-0.5 font-mono text-[var(--fg-secondary)]">{item.pct_chg?.toFixed(2) ?? '-'}%</p>
+                    </div>
+                    <div className="rounded-md bg-[var(--bg-secondary)] px-2.5 py-2">
+                      <span className="text-[var(--fg-muted)]">成交额</span>
+                      <p className="m-0 mt-0.5 font-mono text-[var(--fg-secondary)]">{item.amount?.toLocaleString() ?? '-'}</p>
+                    </div>
+                  </div>
+                </div>
               ))}
-            </Tbody>
-          </Table>
+            </div>
+
+            <div className="hidden sm:block">
+              <Table>
+                <Thead>
+                  <Tr>
+                    <Th>代码</Th>
+                    <Th>最新价</Th>
+                    <Th>涨跌幅</Th>
+                    <Th>成交额</Th>
+                  </Tr>
+                </Thead>
+                <Tbody>
+                  {items.map((item) => (
+                    <Tr key={item.code}>
+                      <Td className="font-mono">{item.code}</Td>
+                      <Td>{item.close?.toFixed(2) ?? '-'}</Td>
+                      <Td>{item.pct_chg?.toFixed(2) ?? '-'}%</Td>
+                      <Td>{item.amount?.toLocaleString() ?? '-'}</Td>
+                    </Tr>
+                  ))}
+                </Tbody>
+              </Table>
+            </div>
+          </>
         )}
       </Card>
     </div>

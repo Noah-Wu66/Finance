@@ -37,10 +37,10 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--bg)] px-4">
+    <div className="min-h-dvh flex items-center justify-center bg-[var(--bg)] px-4 py-6 sm:py-8">
       <div className="w-full max-w-sm">
         {/* Brand */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-6 sm:mb-8">
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-primary-600 text-white font-bold text-xl mb-4">
             T
           </div>
@@ -49,7 +49,7 @@ export default function LoginPage() {
         </div>
 
         {/* Card */}
-        <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-2xl shadow-[var(--card-shadow-lg)] p-6">
+        <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-2xl shadow-[var(--card-shadow-lg)] p-5 sm:p-6">
           <form onSubmit={onSubmit} className="space-y-4">
             <Input
               id="email"

@@ -250,7 +250,7 @@ function AnalysisPageContent() {
     <div className="space-y-6">
       <PageHeader title="量化分析" description="发起 AI 分析任务，实时查看执行过程" />
 
-      <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-4 sm:gap-6">
         {/* Left: Create Task */}
         <Card className="space-y-4 h-fit">
           <h3 className="text-sm font-semibold text-[var(--fg)] m-0">创建分析任务</h3>
@@ -281,10 +281,10 @@ function AnalysisPageContent() {
                 value={keyword}
                 onChange={(e) => onKeywordChange(e.target.value)}
                 onFocus={() => { if (results.length > 0) setShowResults(true) }}
-                className="
-                  w-full h-10 pl-9 pr-4
-                  rounded-lg border border-[var(--border)]
-                  bg-[var(--bg)] text-sm text-[var(--fg)]
+                  className="
+                    w-full h-10 sm:h-11 pl-9 pr-4
+                    rounded-lg border border-[var(--border)]
+                    bg-[var(--bg)] text-sm text-[var(--fg)]
                   placeholder:text-[var(--fg-muted)]
                   focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400
                   transition-all
@@ -314,10 +314,10 @@ function AnalysisPageContent() {
                     <button
                       key={`${item.symbol}-${item.market}`}
                       onClick={() => selectStock(item)}
-                      className="
-                        w-full flex items-center gap-2.5 px-3 py-2
-                        text-left cursor-pointer
-                        border-b border-[var(--border)] last:border-b-0
+                    className="
+                      w-full flex items-center gap-2.5 px-3 py-2.5
+                      text-left cursor-pointer
+                      border-b border-[var(--border)] last:border-b-0
                         hover:bg-[var(--bg-hover)] transition-colors
                       "
                     >
@@ -362,7 +362,7 @@ function AnalysisPageContent() {
 
           {error && <Alert variant="error">{error}</Alert>}
 
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             {isRunning ? (
               <Button variant="danger" onClick={stop} className="flex-1">
                 停止
@@ -376,7 +376,7 @@ function AnalysisPageContent() {
         </Card>
 
         {/* Right: Progress */}
-        <Card className="h-[420px] flex flex-col overflow-hidden">
+        <Card className="h-[360px] sm:h-[420px] flex flex-col overflow-hidden">
           <div className="flex items-center justify-between shrink-0 mb-4">
             <h3 className="text-sm font-semibold text-[var(--fg)] m-0">执行过程</h3>
             {execution && <StatusBadge status={execution.status} />}
@@ -392,7 +392,7 @@ function AnalysisPageContent() {
                 </div>
 
                 {/* Meta */}
-                <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-[var(--fg-secondary)]">
+                <div className="flex flex-wrap gap-x-4 sm:gap-x-6 gap-y-1 text-xs text-[var(--fg-secondary)]">
                   <span>任务 <span className="font-mono text-[var(--fg-muted)]">{execution._id.slice(0, 12)}</span></span>
                   <span>股票 <span className="font-mono font-medium">{execution.symbol}</span> · {execution.market}</span>
                 </div>
@@ -402,7 +402,7 @@ function AnalysisPageContent() {
                   {execution.logs?.map((log, idx) => (
                     <div
                       key={`${log.at}-${idx}`}
-                      className="flex gap-3 px-3 py-2 text-xs border-b border-dashed border-[var(--border)] last:border-b-0"
+                      className="flex flex-col sm:flex-row gap-1 sm:gap-3 px-3 py-2 text-xs border-b border-dashed border-[var(--border)] last:border-b-0"
                     >
                       <span className="font-mono text-[var(--fg-muted)] shrink-0">
                         {new Date(log.at).toLocaleTimeString()}
@@ -426,7 +426,7 @@ function AnalysisPageContent() {
       </div>
 
       {/* 分析结果 */}
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <h3 className="text-sm font-semibold text-[var(--fg)] m-0 mb-4 flex items-center gap-2">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--fg-muted)]">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -473,7 +473,7 @@ function AnalysisPageContent() {
 
       {/* 股票详情数据面板 */}
       {symbol && (
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <h3 className="text-sm font-semibold text-[var(--fg)] m-0 mb-4 flex items-center gap-2">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--fg-muted)]">
               <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />

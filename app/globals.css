@@ -105,6 +105,7 @@
 html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-size-adjust: 100%;
 }
 
 body {
@@ -117,6 +118,25 @@ body {
   font-size: 14px;
   line-height: 1.6;
   transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+html,
+body {
+  overflow-x: hidden;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 640px) {
+  body {
+    font-size: 13px;
+  }
 }
 
 a {

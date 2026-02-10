@@ -187,6 +187,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     setMobileOpen(false)
   }, [pathname])
 
+  useEffect(() => {
+    document.body.style.overflow = mobileOpen ? 'hidden' : ''
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [mobileOpen])
+
   const logout = async () => {
     setLoggingOut(true)
     try {
@@ -229,6 +236,16 @@ export function AppShell({ children }: { children: ReactNode }) {
             <p className="text-[11px] text-[var(--fg-muted)] m-0">AI 股票分析平台</p>
           </div>
         )}
+        <button
+          onClick={() => setMobileOpen(false)}
+          className="ml-auto flex lg:hidden items-center justify-center h-8 w-8 rounded-lg text-[var(--fg-secondary)] hover:bg-[var(--bg-hover)]"
+          aria-label="关闭菜单"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
       </div>
 
       {/* Nav */}
@@ -316,7 +333,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   )
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[var(--bg)]">
+    <div className="flex h-dvh overflow-hidden bg-[var(--bg)]">
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
@@ -333,7 +350,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           transition-all duration-200 ease-out
           lg:relative lg:z-auto
           ${collapsed ? 'lg:w-16' : 'lg:w-60'}
-          ${mobileOpen ? 'w-60 translate-x-0' : 'w-60 -translate-x-full lg:translate-x-0'}
+          ${mobileOpen ? 'w-72 max-w-[86vw] translate-x-0' : 'w-72 max-w-[86vw] -translate-x-full lg:w-60 lg:max-w-none lg:translate-x-0'}
         `}
       >
         {sidebarContent}
@@ -344,7 +361,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {/* Header */}
         <header className="
           flex items-center justify-between gap-4
-          h-14 px-4 lg:px-6
+          h-[52px] sm:h-14 px-3 sm:px-4 lg:px-6
           border-b border-[var(--border)]
           bg-[var(--card-bg)]
           shrink-0
@@ -369,8 +386,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               </svg>
             </button>
 
-            <h2 className="text-sm font-semibold text-[var(--fg)] m-0 truncate">{title}</h2>
-          </div>
+              <h2 className="text-sm font-semibold text-[var(--fg)] m-0 truncate">{title}</h2>
+            </div>
 
           <div className="flex items-center gap-1">
             <ThemeToggle />
@@ -402,7 +419,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               {notifOpen && (
                 <div className="
                   absolute top-full right-0 mt-2
-                  w-80 max-h-[420px]
+                  w-[calc(100vw-1.5rem)] max-w-80 max-h-[70vh] sm:max-h-[420px]
                   bg-[var(--card-bg)] border border-[var(--border)]
                   rounded-xl shadow-[var(--card-shadow-lg)]
                   z-50 flex flex-col overflow-hidden
@@ -451,7 +468,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto">
-          <div className="max-w-6xl mx-auto px-4 lg:px-6 py-6">
+          <div className="max-w-6xl mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6">
             {children}
           </div>
         </main>

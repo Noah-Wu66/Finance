@@ -96,7 +96,7 @@ export default function DashboardPage() {
       />
 
       {/* 四大指数 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid max-[430px]:grid-cols-1 grid-cols-2 lg:grid-cols-4 gap-3">
         {loadingIndices && indices.length === 0 ? (
           Array.from({ length: 4 }).map((_, i) => (
             <Card key={i} className="p-4">
@@ -121,14 +121,14 @@ export default function DashboardPage() {
                 : ''
 
             return (
-              <Card key={item.code} className={`p-4 border ${bgClass}`}>
+              <Card key={item.code} className={`p-3.5 sm:p-4 border ${bgClass}`}>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-medium text-[var(--fg-muted)]">{item.name}</span>
                   <span className="text-[11px] text-[var(--fg-faint)] font-mono">{item.code}</span>
                 </div>
                 {item.price > 0 ? (
                   <>
-                    <p className={`text-xl font-semibold tabular-nums m-0 ${colorClass}`}>
+                    <p className={`text-lg sm:text-xl font-semibold tabular-nums m-0 ${colorClass}`}>
                       {item.price.toFixed(2)}
                     </p>
                     <div className="flex items-center gap-3 mt-1.5">
@@ -156,7 +156,7 @@ export default function DashboardPage() {
 
       {/* 自选股行情 */}
       <div>
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between gap-3 mb-3">
           <h3 className="text-sm font-medium text-[var(--fg-secondary)] m-0">自选股行情</h3>
           <Link
             href="/favorites"
@@ -202,9 +202,7 @@ export default function DashboardPage() {
                   key={fav.stock_code}
                   href={`/analysis?symbol=${encodeURIComponent(fav.stock_code)}`}
                 >
-                  <Card
-                    className={`p-3.5 cursor-pointer transition-all duration-200 hover:shadow-[var(--card-shadow-lg)] ${bgClass}`}
-                  >
+                    <Card className={`p-3.5 cursor-pointer transition-all duration-200 hover:shadow-[var(--card-shadow-lg)] ${bgClass}`}>
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-sm font-medium text-[var(--fg)] truncate">
                         {fav.stock_name}
@@ -222,7 +220,7 @@ export default function DashboardPage() {
                     </p>
                     {q ? (
                       <div className="flex items-baseline justify-between">
-                        <span className={`text-lg font-semibold tabular-nums ${colorClass}`}>
+                        <span className={`text-base sm:text-lg font-semibold tabular-nums ${colorClass}`}>
                           {q.price.toFixed(2)}
                         </span>
                         <span className={`text-xs font-mono tabular-nums font-medium ${colorClass}`}>

@@ -2,8 +2,8 @@ import type { TdHTMLAttributes, ThHTMLAttributes, HTMLAttributes, TableHTMLAttri
 
 export function Table({ className = '', ...props }: TableHTMLAttributes<HTMLTableElement>) {
   return (
-    <div className="overflow-x-auto">
-      <table className={`w-full border-collapse text-sm ${className}`} {...props} />
+    <div className="w-full overflow-x-auto overscroll-x-contain [scrollbar-gutter:stable]">
+      <table className={`min-w-full border-collapse text-sm ${className}`} {...props} />
     </div>
   )
 }
@@ -27,7 +27,7 @@ export function Th({ className = '', ...props }: ThHTMLAttributes<HTMLTableCellE
         px-4 py-3 text-left text-xs font-medium
         text-[var(--fg-muted)] uppercase tracking-wider
         border-b border-[var(--border)]
-        bg-[var(--bg-secondary)]
+        bg-[var(--bg-secondary)] whitespace-nowrap
         ${className}
       `}
       {...props}
@@ -38,7 +38,7 @@ export function Th({ className = '', ...props }: ThHTMLAttributes<HTMLTableCellE
 export function Td({ className = '', ...props }: TdHTMLAttributes<HTMLTableCellElement>) {
   return (
     <td
-      className={`px-4 py-3 text-sm text-[var(--fg-secondary)] ${className}`}
+      className={`px-4 py-3 text-sm text-[var(--fg-secondary)] align-middle ${className}`}
       {...props}
     />
   )

@@ -11,7 +11,7 @@ export function Card({ children, padding = true, className = '', ...props }: Car
       className={`
         bg-[var(--card-bg)] border border-[var(--border)]
         rounded-xl shadow-[var(--card-shadow)]
-        ${padding ? 'p-5' : ''}
+        ${padding ? 'p-4 sm:p-5' : ''}
         ${className}
       `}
       {...props}

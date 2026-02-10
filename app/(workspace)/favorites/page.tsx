@@ -285,18 +285,8 @@ export default function FavoritesPage() {
         ) : items.length === 0 ? (
           <EmptyState title="还没有自选股" description="在上方搜索框中搜索并添加你关注的股票" />
         ) : (
-          <Table>
-            <Thead>
-              <Tr>
-                <Th>代码</Th>
-                <Th>名称</Th>
-                <Th>市场</Th>
-                <Th className="text-right">最新价</Th>
-                <Th className="text-right">涨跌幅</Th>
-                <Th>操作</Th>
-              </Tr>
-            </Thead>
-            <Tbody>
+          <>
+            <div className="sm:hidden divide-y divide-[var(--border)]">
               {items.map((item) => {
                 const q = quotes[item.stock_code]
                 const pct = q?.pct_chg ?? 0
@@ -308,69 +298,133 @@ export default function FavoritesPage() {
                       : 'text-[var(--fg-secondary)]'
 
                 return (
-                  <Tr key={item.stock_code}>
-                    <Td
-                      className="font-mono font-medium cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+                  <div key={item.stock_code} className="p-3.5 space-y-3">
+                    <div
+                      className="cursor-pointer"
                       onClick={() => { setDetailStock({ symbol: item.stock_code, name: item.stock_name, market: item.market }); setDetailOpen(true) }}
                     >
-                      {item.stock_code}
-                    </Td>
-                    <Td
-                      className="cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
-                      onClick={() => { setDetailStock({ symbol: item.stock_code, name: item.stock_name, market: item.market }); setDetailOpen(true) }}
-                    >
-                      {item.stock_name}
-                    </Td>
-                    <Td>
-                      <span className="
-                        text-[11px] px-1.5 py-0.5 rounded
-                        bg-[var(--bg-secondary)] text-[var(--fg-muted)]
-                      ">
-                        {item.market}
-                      </span>
-                    </Td>
-                    <Td className="text-right">
-                      {q ? (
-                        <span className={`font-mono tabular-nums ${colorClass}`}>
-                          {q.price.toFixed(2)}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-[var(--fg)] truncate">{item.stock_name}</span>
+                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-[var(--bg-secondary)] text-[var(--fg-muted)] shrink-0">
+                          {item.market}
                         </span>
-                      ) : (
-                        <span className="text-[var(--fg-muted)]">-</span>
-                      )}
-                    </Td>
-                    <Td className="text-right">
-                      {q ? (
-                        <span className={`font-mono tabular-nums font-medium ${colorClass}`}>
-                          {pct > 0 ? '+' : ''}{pct.toFixed(2)}%
-                        </span>
-                      ) : (
-                        <span className="text-[var(--fg-muted)]">-</span>
-                      )}
-                    </Td>
-                    <Td>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="soft"
-                          size="sm"
-                          onClick={() => { setDetailStock({ symbol: item.stock_code, name: item.stock_name, market: item.market }); setDetailOpen(true) }}
-                        >
-                          详情
-                        </Button>
-                        <Link href={`/analysis?symbol=${encodeURIComponent(item.stock_code)}`}>
-                          <Button variant="primary" size="sm">
-                            量化分析
-                          </Button>
-                        </Link>
-                        <Button variant="danger" size="sm" onClick={() => removeFavorite(item.stock_code)}>
-                          删除
-                        </Button>
                       </div>
-                    </Td>
-                  </Tr>
+                      <div className="flex items-center justify-between gap-2 mt-1">
+                        <span className="font-mono text-xs text-[var(--fg-muted)]">{item.stock_code}</span>
+                        <div className="flex items-center gap-3">
+                          <span className={`font-mono text-sm ${colorClass}`}>{q ? q.price.toFixed(2) : '-'}</span>
+                          <span className={`font-mono text-sm font-medium ${colorClass}`}>
+                            {q ? `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%` : '-'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <Button
+                        variant="soft"
+                        size="sm"
+                        onClick={() => { setDetailStock({ symbol: item.stock_code, name: item.stock_name, market: item.market }); setDetailOpen(true) }}
+                      >
+                        详情
+                      </Button>
+                      <Link href={`/analysis?symbol=${encodeURIComponent(item.stock_code)}`}>
+                        <Button variant="primary" size="sm" className="w-full">量化分析</Button>
+                      </Link>
+                      <Button variant="danger" size="sm" onClick={() => removeFavorite(item.stock_code)}>
+                        删除
+                      </Button>
+                    </div>
+                  </div>
                 )
               })}
-            </Tbody>
-          </Table>
+            </div>
+
+            <div className="hidden sm:block">
+              <Table>
+                <Thead>
+                  <Tr>
+                    <Th>代码</Th>
+                    <Th>名称</Th>
+                    <Th>市场</Th>
+                    <Th className="text-right">最新价</Th>
+                    <Th className="text-right">涨跌幅</Th>
+                    <Th>操作</Th>
+                  </Tr>
+                </Thead>
+                <Tbody>
+                  {items.map((item) => {
+                    const q = quotes[item.stock_code]
+                    const pct = q?.pct_chg ?? 0
+                    const colorClass =
+                      pct > 0
+                        ? 'text-danger-600 dark:text-danger-400'
+                        : pct < 0
+                          ? 'text-success-600 dark:text-success-400'
+                          : 'text-[var(--fg-secondary)]'
+
+                    return (
+                      <Tr key={item.stock_code}>
+                        <Td
+                          className="font-mono font-medium cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+                          onClick={() => { setDetailStock({ symbol: item.stock_code, name: item.stock_name, market: item.market }); setDetailOpen(true) }}
+                        >
+                          {item.stock_code}
+                        </Td>
+                        <Td
+                          className="cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+                          onClick={() => { setDetailStock({ symbol: item.stock_code, name: item.stock_name, market: item.market }); setDetailOpen(true) }}
+                        >
+                          {item.stock_name}
+                        </Td>
+                        <Td>
+                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-[var(--bg-secondary)] text-[var(--fg-muted)]">
+                            {item.market}
+                          </span>
+                        </Td>
+                        <Td className="text-right">
+                          {q ? (
+                            <span className={`font-mono tabular-nums ${colorClass}`}>
+                              {q.price.toFixed(2)}
+                            </span>
+                          ) : (
+                            <span className="text-[var(--fg-muted)]">-</span>
+                          )}
+                        </Td>
+                        <Td className="text-right">
+                          {q ? (
+                            <span className={`font-mono tabular-nums font-medium ${colorClass}`}>
+                              {pct > 0 ? '+' : ''}{pct.toFixed(2)}%
+                            </span>
+                          ) : (
+                            <span className="text-[var(--fg-muted)]">-</span>
+                          )}
+                        </Td>
+                        <Td>
+                          <div className="flex items-center gap-2 whitespace-nowrap">
+                            <Button
+                              variant="soft"
+                              size="sm"
+                              onClick={() => { setDetailStock({ symbol: item.stock_code, name: item.stock_name, market: item.market }); setDetailOpen(true) }}
+                            >
+                              详情
+                            </Button>
+                            <Link href={`/analysis?symbol=${encodeURIComponent(item.stock_code)}`}>
+                              <Button variant="primary" size="sm">
+                                量化分析
+                              </Button>
+                            </Link>
+                            <Button variant="danger" size="sm" onClick={() => removeFavorite(item.stock_code)}>
+                              删除
+                            </Button>
+                          </div>
+                        </Td>
+                      </Tr>
+                    )
+                  })}
+                </Tbody>
+              </Table>
+            </div>
+          </>
         )}
       </Card>
 

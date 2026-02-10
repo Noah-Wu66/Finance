@@ -102,7 +102,7 @@ export default function ReportDetailPage() {
   }, [params.id])
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+    <div className="max-w-4xl mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-8 space-y-4 sm:space-y-6">
       <PageHeader
         title="报告详情"
         description={
@@ -130,19 +130,19 @@ export default function ReportDetailPage() {
       {detail ? (
         <>
           <Card>
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5 sm:gap-3">
               <div className="px-3 py-2 rounded-lg bg-primary-100 dark:bg-primary-700/20 border border-primary-200 dark:border-primary-700/40">
                 <p className="text-[11px] text-primary-700 dark:text-primary-300 m-0">置信度</p>
-                <p className="text-xl font-bold text-primary-700 dark:text-primary-300 m-0 mt-0.5">
-                  {detail.confidence_score ?? '-'}%
-                </p>
-              </div>
+                  <p className="text-lg sm:text-xl font-bold text-primary-700 dark:text-primary-300 m-0 mt-0.5">
+                    {detail.confidence_score ?? '-'}%
+                  </p>
+                </div>
               <div className="px-3 py-2 rounded-lg bg-orange-100 dark:bg-orange-700/20 border border-orange-200 dark:border-orange-700/40">
                 <p className="text-[11px] text-orange-700 dark:text-orange-300 m-0">风险等级</p>
-                <p className="text-xl font-bold text-orange-700 dark:text-orange-300 m-0 mt-0.5">
-                  {detail.risk_level || '-'}
-                </p>
-              </div>
+                  <p className="text-lg sm:text-xl font-bold text-orange-700 dark:text-orange-300 m-0 mt-0.5">
+                    {detail.risk_level || '-'}
+                  </p>
+                </div>
             </div>
           </Card>
 
@@ -244,13 +244,15 @@ export default function ReportDetailPage() {
 
               return (
                 <>
-                  <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-3 overflow-x-auto">
-                    <KlineChart
-                      data={merged}
-                      width={720}
-                      height={340}
-                      predictStartIndex={predictStartIndex}
-                    />
+                  <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-2 sm:p-3 overflow-x-auto">
+                    <div className="min-w-[700px]">
+                      <KlineChart
+                        data={merged}
+                        width={760}
+                        height={320}
+                        predictStartIndex={predictStartIndex}
+                      />
+                    </div>
                   </div>
                   {predicted.length > 0 && (
                     <p className="text-[11px] text-[var(--fg-muted)] mt-2 m-0">

@@ -156,8 +156,8 @@ export function StockDataPanel({
   return (
     <div className={`space-y-5 ${className}`}>
       {/* 行情概览 */}
-      <div className="flex items-baseline gap-4 flex-wrap">
-        <span className={`text-3xl font-semibold tabular-nums ${colorClass}`}>
+      <div className="flex items-baseline gap-3 sm:gap-4 flex-wrap">
+        <span className={`text-2xl sm:text-3xl font-semibold tabular-nums ${colorClass}`}>
           {quote ? quote.price.toFixed(2) : '-'}
         </span>
         {quote && (
@@ -171,16 +171,16 @@ export function StockDataPanel({
 
       {/* 交易数据 */}
       {quote && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
           {[
             { label: '成交额', value: fmtMv(quote.amount) },
             { label: '换手率', value: fmtPct(quote.turnover_rate) },
             { label: '振幅', value: fmtPct(quote.amplitude) },
             { label: '交易日', value: quote.trade_date || '-' }
           ].map((item) => (
-            <div key={item.label} className="rounded-lg bg-[var(--bg-secondary)] px-3 py-2">
+            <div key={item.label} className="rounded-lg bg-[var(--bg-secondary)] px-2.5 sm:px-3 py-2">
               <p className="text-[11px] text-[var(--fg-muted)] m-0">{item.label}</p>
-              <p className="text-sm font-medium text-[var(--fg-secondary)] m-0 mt-0.5 tabular-nums font-mono">
+              <p className="text-xs sm:text-sm font-medium text-[var(--fg-secondary)] m-0 mt-0.5 tabular-nums font-mono">
                 {item.value}
               </p>
             </div>
@@ -193,17 +193,15 @@ export function StockDataPanel({
         <h4 className="text-xs font-semibold text-[var(--fg-muted)] uppercase tracking-wider mb-2">
           日K线 (近 {kline.length} 日)
         </h4>
-        <div className="
-          rounded-xl border border-[var(--border)]
-          bg-[var(--bg-secondary)] p-3
-          overflow-x-auto
-        ">
-          <KlineChart
-            data={mergedKline}
-            width={660}
-            height={320}
-            predictStartIndex={predictStartIndex}
-          />
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-2 sm:p-3 overflow-x-auto">
+          <div className="min-w-[620px]">
+            <KlineChart
+              data={mergedKline}
+              width={700}
+              height={300}
+              predictStartIndex={predictStartIndex}
+            />
+          </div>
         </div>
         {sortedPredicted.length > 0 && (
           <p className="text-[11px] text-[var(--fg-muted)] m-0 mt-2">
@@ -218,7 +216,7 @@ export function StockDataPanel({
           <h4 className="text-xs font-semibold text-[var(--fg-muted)] uppercase tracking-wider mb-2">
             基本面指标
           </h4>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
             {[
               { label: '市盈率(PE)', value: fmtVal(funda.pe) },
               { label: '市净率(PB)', value: fmtVal(funda.pb) },
@@ -229,9 +227,9 @@ export function StockDataPanel({
               { label: '资产负债率', value: fmtPct(funda.debt_ratio) },
               { label: '所属行业', value: funda.industry || '-' }
             ].map((item) => (
-              <div key={item.label} className="rounded-lg bg-[var(--bg-secondary)] px-3 py-2">
+              <div key={item.label} className="rounded-lg bg-[var(--bg-secondary)] px-2.5 sm:px-3 py-2">
                 <p className="text-[11px] text-[var(--fg-muted)] m-0">{item.label}</p>
-                <p className="text-sm font-medium text-[var(--fg-secondary)] m-0 mt-0.5 tabular-nums">
+                <p className="text-xs sm:text-sm font-medium text-[var(--fg-secondary)] m-0 mt-0.5 tabular-nums">
                   {item.value}
                 </p>
               </div>

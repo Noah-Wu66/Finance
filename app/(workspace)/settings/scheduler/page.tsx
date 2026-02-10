@@ -11,12 +11,12 @@ export default function SettingsSchedulerPage() {
           系统已重构为"网页现场执行"模式：不再提供后台常驻调度器。
         </p>
         <p className="mt-1 text-sm text-[var(--fg-muted)] m-0">你可以在下面两个入口完成同样目标：</p>
-        <div className="flex gap-2 mt-4">
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <Link href="/executions">
-            <Button variant="primary">去执行中心手动推进任务</Button>
+            <Button variant="primary" className="w-full">去执行中心手动推进任务</Button>
           </Link>
           <Link href="/settings/sync">
-            <Button variant="soft">去数据同步页手动触发同步</Button>
+            <Button variant="soft" className="w-full">去数据同步页手动触发同步</Button>
           </Link>
         </div>
       </Card>

@@ -99,28 +99,40 @@ export default function SettingsDatabasePage() {
           </div>
 
           <Card padding={false}>
-            <div className="px-5 pt-5 pb-3">
+            <div className="px-4 sm:px-5 pt-4 sm:pt-5 pb-3">
               <h4 className="text-sm font-semibold text-[var(--fg)] m-0">集合明细</h4>
             </div>
             {!stats || stats.collections.length === 0 ? (
               <EmptyState description="暂无数据。" />
             ) : (
-              <Table>
-                <Thead>
-                  <Tr>
-                    <Th>集合名</Th>
-                    <Th>文档数</Th>
-                  </Tr>
-                </Thead>
-                <Tbody>
+              <>
+                <div className="sm:hidden divide-y divide-[var(--border)]">
                   {stats.collections.map((item) => (
-                    <Tr key={item.name}>
-                      <Td>{item.name}</Td>
-                      <Td>{item.documents}</Td>
-                    </Tr>
+                    <div key={item.name} className="px-4 py-3.5 flex items-center justify-between gap-3">
+                      <span className="text-sm text-[var(--fg-secondary)] break-all">{item.name}</span>
+                      <span className="font-mono text-sm text-[var(--fg)] shrink-0">{item.documents}</span>
+                    </div>
                   ))}
-                </Tbody>
-              </Table>
+                </div>
+                <div className="hidden sm:block">
+                  <Table>
+                    <Thead>
+                      <Tr>
+                        <Th>集合名</Th>
+                        <Th>文档数</Th>
+                      </Tr>
+                    </Thead>
+                    <Tbody>
+                      {stats.collections.map((item) => (
+                        <Tr key={item.name}>
+                          <Td>{item.name}</Td>
+                          <Td>{item.documents}</Td>
+                        </Tr>
+                      ))}
+                    </Tbody>
+                  </Table>
+                </div>
+              </>
             )}
           </Card>
         </>

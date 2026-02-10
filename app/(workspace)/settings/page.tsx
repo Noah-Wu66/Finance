@@ -123,7 +123,7 @@ export default function SettingsPage() {
               默认启用自动刷新
             </label>
 
-            <Button variant="primary" type="submit" disabled={saving}>
+            <Button variant="primary" type="submit" disabled={saving} className="w-full sm:w-auto">
               {saving ? '保存中...' : '保存设置'}
             </Button>
           </form>

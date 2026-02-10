@@ -34,15 +34,12 @@ export function StockDetailModal({ symbol, name, market, open, onClose }: StockD
       />
 
       {/* Modal */}
-      <div className="
-        fixed inset-0 z-[101] flex items-center justify-center p-4
-        pointer-events-none
-      ">
+      <div className="fixed inset-0 z-[101] flex items-end sm:items-center justify-center p-0 sm:p-4 pointer-events-none">
         <div
           className="
-            pointer-events-auto w-full max-w-3xl max-h-[90vh] overflow-y-auto
+            pointer-events-auto w-full max-w-none sm:max-w-3xl h-[100dvh] sm:h-auto sm:max-h-[90vh] overflow-y-auto
             bg-[var(--card-bg)] border border-[var(--border)]
-            rounded-2xl shadow-[var(--card-shadow-lg)]
+            rounded-none sm:rounded-2xl shadow-[var(--card-shadow-lg)]
           "
           onClick={(e) => e.stopPropagation()}
         >
@@ -50,15 +47,15 @@ export function StockDetailModal({ symbol, name, market, open, onClose }: StockD
           <div className="
             sticky top-0 z-10
             flex items-center justify-between gap-4
-            px-6 py-4
+            px-4 sm:px-6 py-3.5 sm:py-4
             border-b border-[var(--border)]
             bg-[var(--card-bg)]
-            rounded-t-2xl
+            rounded-t-none sm:rounded-t-2xl
           ">
             <div className="flex items-center gap-3 min-w-0">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-base font-semibold text-[var(--fg)] m-0 truncate">
+                  <h2 className="text-sm sm:text-base font-semibold text-[var(--fg)] m-0 truncate">
                     {name}
                   </h2>
                   <span className="
@@ -90,7 +87,7 @@ export function StockDetailModal({ symbol, name, market, open, onClose }: StockD
           </div>
 
           {/* Content - 使用可复用组件 */}
-          <div className="p-6">
+           <div className="p-4 sm:p-6">
             <StockDataPanel symbol={symbol} />
           </div>
         </div>

@@ -10,7 +10,6 @@ import { PageHeader } from '@/components/ui/page-header'
 import { Alert } from '@/components/ui/alert'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { ProgressBar } from '@/components/ui/progress-bar'
-import { Table, Thead, Tbody, Tr, Th, Td } from '@/components/ui/table'
 import { EmptyState } from '@/components/ui/empty-state'
 
 type Status = 'running' | 'completed' | 'failed' | 'canceled' | 'stopped'
@@ -174,21 +173,20 @@ export default function ExecutionsPage() {
               return (
                 <div key={item._id}>
                   {/* 主行 */}
-                  <div className="flex items-center gap-4 px-4 py-3">
+                  <div className="px-4 py-3 space-y-3 md:space-y-0 md:flex md:items-center md:gap-4">
                     {/* 股票信息 */}
-                    <div className="w-24 shrink-0">
+                    <div className="w-full md:w-24 md:shrink-0">
                       <div className="text-sm font-medium text-[var(--fg)]">{item.symbol}</div>
                       <div className="text-xs text-[var(--fg-muted)]">{item.market}</div>
                     </div>
 
-                    {/* 状态 */}
-                    <div className="w-20 shrink-0">
-                      <StatusBadge status={item.status} />
-                    </div>
-
-                    {/* 进度 */}
-                    <div className="w-28 shrink-0">
-                      <ProgressBar value={item.progress} size="sm" showLabel />
+                    <div className="flex items-center gap-3 md:gap-4">
+                      <div className="shrink-0">
+                        <StatusBadge status={item.status} />
+                      </div>
+                      <div className="w-[120px] shrink-0">
+                        <ProgressBar value={item.progress} size="sm" showLabel />
+                      </div>
                     </div>
 
                     {/* 报告摘要（已完成的任务） */}
@@ -217,7 +215,7 @@ export default function ExecutionsPage() {
                     </div>
 
                     {/* 操作按钮 */}
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex flex-wrap items-center gap-1.5 md:shrink-0">
                       {item.status === 'running' && (
                         <>
                           <Button
@@ -301,7 +299,7 @@ export default function ExecutionsPage() {
                               删除报告
                             </Button>
                           )}
-                          <span className="text-xs text-[var(--fg-muted)] ml-auto">
+                          <span className="text-xs text-[var(--fg-muted)] md:ml-auto">
                             {new Date(item.updated_at).toLocaleString()}
                           </span>
                         </div>

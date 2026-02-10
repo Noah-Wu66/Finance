@@ -5,7 +5,6 @@ import { useEffect, useState } from 'react'
 import { apiFetch } from '@/lib/client-api'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { PageHeader } from '@/components/ui/page-header'
 import { Alert } from '@/components/ui/alert'
 import { Spinner } from '@/components/ui/spinner'
@@ -59,7 +58,7 @@ export default function SettingsSystemLogsPage() {
         title="系统日志"
         description="现场执行模式下系统日志来自数据库操作记录"
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
             <input
               className="
                 rounded-lg border border-[var(--input-border)]
@@ -67,7 +66,7 @@ export default function SettingsSystemLogsPage() {
                 placeholder:text-[var(--fg-muted)]
                 outline-none transition-all duration-150
                 focus:border-[var(--input-focus)] focus:ring-2 focus:ring-[var(--input-focus)]/20
-                w-40
+                w-full sm:w-44
               "
               placeholder="关键词过滤"
               value={keyword}
@@ -85,7 +84,7 @@ export default function SettingsSystemLogsPage() {
 
       <Card>
         <h4 className="text-sm font-semibold text-[var(--fg)] m-0 mb-3">日志内容</h4>
-        <pre className="whitespace-pre-wrap font-mono text-xs bg-[var(--bg-secondary)] text-[var(--fg-secondary)] rounded-lg p-4 overflow-auto max-h-[500px] border border-[var(--border)] m-0">
+        <pre className="whitespace-pre-wrap font-mono text-xs bg-[var(--bg-secondary)] text-[var(--fg-secondary)] rounded-lg p-3 sm:p-4 overflow-auto max-h-[65vh] sm:max-h-[500px] border border-[var(--border)] m-0">
           {content?.lines?.join('\n') || '暂无日志内容'}
         </pre>
       </Card>

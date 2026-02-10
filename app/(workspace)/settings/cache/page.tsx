@@ -54,7 +54,7 @@ export default function SettingsCachePage() {
         title="缓存管理"
         description="现场执行模式下缓存存储在 MongoDB 集合 `app_cache`。"
         actions={
-          <>
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
             <Button variant="soft" onClick={load} disabled={loading}>
               {loading ? '刷新中...' : '刷新'}
             </Button>
@@ -64,7 +64,7 @@ export default function SettingsCachePage() {
             <Button variant="danger" onClick={clear}>
               清空全部缓存
             </Button>
-          </>
+          </div>
         }
       />
 
@@ -75,22 +75,22 @@ export default function SettingsCachePage() {
           <Spinner size="lg" />
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:gap-4 sm:grid-cols-3">
           <Card>
             <p className="text-xs text-[var(--fg-muted)]">总条目</p>
-            <p className="text-2xl font-semibold text-[var(--fg)] mt-1">
+            <p className="text-xl sm:text-2xl font-semibold text-[var(--fg)] mt-1">
               {stats?.totalFiles ?? '-'}
             </p>
           </Card>
           <Card>
             <p className="text-xs text-[var(--fg-muted)]">股票缓存</p>
-            <p className="text-2xl font-semibold text-[var(--fg)] mt-1">
+            <p className="text-xl sm:text-2xl font-semibold text-[var(--fg)] mt-1">
               {stats?.stockDataCount ?? '-'}
             </p>
           </Card>
           <Card>
             <p className="text-xs text-[var(--fg-muted)]">新闻缓存</p>
-            <p className="text-2xl font-semibold text-[var(--fg)] mt-1">
+            <p className="text-xl sm:text-2xl font-semibold text-[var(--fg)] mt-1">
               {stats?.newsDataCount ?? '-'}
             </p>
           </Card>
