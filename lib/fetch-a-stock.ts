@@ -142,29 +142,6 @@ export async function fetchRealtimeQuote(code: string): Promise<{
       { upsert: true }
     )
 
-    // 同时更新 stock_basic_info（名称、行业等）
-    if (d.f14) {
-      await db.collection('stock_basic_info').updateOne(
-        { $or: [{ symbol: code }, { code }] },
-        {
-          $set: {
-            symbol: code,
-            code: code,
-            name: d.f14,
-            industry: d.f100 || '',
-            market: 'A股',
-            total_mv: d.f20,
-            pe: d.f9,
-            pb: d.f23,
-            source: 'eastmoney',
-            updated_at: now
-          },
-          $setOnInsert: { created_at: now }
-        },
-        { upsert: true }
-      )
-    }
-
     return {
       success: true,
       message: `已拉取 ${d.f14}(${code}) 最新行情：${d.f2}`,
@@ -211,25 +188,6 @@ export async function fetchDailyKline(code: string, days = 60): Promise<{
     const db = await getDb()
     const now = new Date()
     let upserted = 0
-
-    // 同时更新 stock_basic_info（K线接口也返回股票名称）
-    if (stockName) {
-      await db.collection('stock_basic_info').updateOne(
-        { $or: [{ symbol: code }, { code }] },
-        {
-          $set: {
-            symbol: code,
-            code: code,
-            name: stockName,
-            market: 'A股',
-            source: 'eastmoney',
-            updated_at: now
-          },
-          $setOnInsert: { created_at: now }
-        },
-        { upsert: true }
-      )
-    }
 
     for (const line of klines) {
       // 格式: 日期,开,收,高,低,成交量,成交额,振幅,涨跌幅,涨跌额,换手率
@@ -367,20 +325,6 @@ export async function fetchFinancialData(code: string): Promise<{
       { upsert: true }
     )
 
-    // 同时更新 stock_basic_info
-    await db.collection('stock_basic_info').updateOne(
-      { $or: [{ symbol: code }, { code }] },
-      {
-        $set: {
-          roe,
-          pe,
-          pb,
-          revenue_yoy: revenueGrowth,
-          updated_at: now
-        }
-      }
-    )
-
     return {
       success: true,
       message: `已拉取 ${stockName}(${code}) 财务数据：ROE ${roe.toFixed(2)}%，PE ${pe.toFixed(2)}，PB ${pb.toFixed(2)}，营收增长 ${revenueGrowth.toFixed(2)}%`,
@@ -428,21 +372,6 @@ export async function fetchStockProfile(code: string): Promise<{
       return { success: false, message: '个股资料中无行业信息' }
     }
 
-    const now = new Date()
-    const db = await getDb()
-
-    // 更新 stock_basic_info 中的行业信息
-    await db.collection('stock_basic_info').updateOne(
-      { $or: [{ symbol: code }, { code }] },
-      {
-        $set: {
-          industry,
-          industry_detail: industryDetail,
-          updated_at: now
-        }
-      }
-    )
-
     return {
       success: true,
       message: `已拉取 ${code} 行业信息：${industry}`,
@@ -481,13 +410,77 @@ export async function fetchAStockData(code: string): Promise<{
     }
   }
 
-  // 并行拉取所有数据
+  // ---------- 时效性检查：10 分钟内拉取过则跳过，避免重复调用外部接口 ----------
+  const FRESHNESS_MS = 10 * 60 * 1000
+  const db = await getDb()
+  const latestQuote = await db.collection('stock_quotes').findOne(
+    { symbol: normalized, data_source: 'eastmoney_kline' },
+    { sort: { updated_at: -1 }, projection: { updated_at: 1 } }
+  )
+  if (latestQuote?.updated_at && (Date.now() - new Date(latestQuote.updated_at as string | Date).getTime()) < FRESHNESS_MS) {
+    return {
+      success: true,
+      message: `${normalized} 数据在 10 分钟内已拉取过，跳过重复请求`,
+      realtime: { success: true, message: '使用缓存数据' },
+      kline: { success: true, message: '使用缓存数据', count: 0 },
+      financial: { success: true, message: '使用缓存数据' },
+      profile: { success: true, message: '使用缓存数据' }
+    }
+  }
+
+  // ---------- 并行拉取所有数据 ----------
   const [realtime, kline, financial, profile] = await Promise.all([
     fetchRealtimeQuote(normalized),
     fetchDailyKline(normalized, 60),
     fetchFinancialData(normalized),
     fetchStockProfile(normalized)
   ])
+
+  // ---------- 统一合并写入 stock_basic_info（原本 4 个子函数各写 1 次，现在合并为 1 次） ----------
+  const now = new Date()
+  const basicInfoPatch: Record<string, unknown> = {
+    symbol: normalized,
+    code: normalized,
+    market: 'A股',
+    source: 'eastmoney',
+    updated_at: now
+  }
+
+  // 从实时行情获取：名称、行业、市值、PE、PB
+  if (realtime.success && realtime.data) {
+    const d = realtime.data
+    if (d.name) basicInfoPatch.name = d.name
+    if (d.industry) basicInfoPatch.industry = d.industry
+    if (d.total_mv) basicInfoPatch.total_mv = d.total_mv
+    if (d.pe) basicInfoPatch.pe = d.pe
+    if (d.pb) basicInfoPatch.pb = d.pb
+  }
+
+  // 从 K 线获取：名称（如果实时行情没拿到）
+  if (kline.success && kline.stockName && !basicInfoPatch.name) {
+    basicInfoPatch.name = kline.stockName
+  }
+
+  // 从财务数据获取：ROE、PE、PB（更精确，覆盖实时行情的粗略值）、营收增长
+  if (financial.success && financial.data) {
+    basicInfoPatch.roe = financial.data.roe
+    if (financial.data.pe) basicInfoPatch.pe = financial.data.pe
+    if (financial.data.pb) basicInfoPatch.pb = financial.data.pb
+    basicInfoPatch.revenue_yoy = financial.data.revenueGrowth
+  }
+
+  // 从个股资料获取：详细行业分类（覆盖实时行情的粗略行业）
+  if (profile.success && profile.data) {
+    if (profile.data.industry) basicInfoPatch.industry = profile.data.industry
+    basicInfoPatch.industry_detail = profile.data.industryDetail
+  }
+
+  // 一次性写入
+  await db.collection('stock_basic_info').updateOne(
+    { $or: [{ symbol: normalized }, { code: normalized }] },
+    { $set: basicInfoPatch, $setOnInsert: { created_at: now } },
+    { upsert: true }
+  )
 
   // K 线是核心数据，只要 K 线成功就算成功
   const success = kline.success
