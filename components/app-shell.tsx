@@ -26,7 +26,7 @@ const navItems = [
   },
   {
     href: '/analysis',
-    label: '现场分析',
+    label: '量化分析',
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="11" cy="11" r="8" />

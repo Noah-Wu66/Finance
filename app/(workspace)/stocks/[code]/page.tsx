@@ -53,7 +53,7 @@ export default function StockDetailPage() {
         description={params.code}
         actions={
           <Link href={`/analysis?symbol=${encodeURIComponent(params.code)}`}>
-            <Button variant="primary">去现场分析</Button>
+            <Button variant="primary">去量化分析</Button>
           </Link>
         }
       />

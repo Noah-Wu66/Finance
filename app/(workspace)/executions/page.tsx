@@ -157,7 +157,7 @@ export default function ExecutionsPage() {
         {items.length === 0 ? (
           <EmptyState
             title="暂无任务"
-            description="去现场分析页面创建一个新任务"
+            description="去量化分析页面创建一个新任务"
             action={
               <Link href="/analysis">
                 <Button variant="soft">创建任务</Button>

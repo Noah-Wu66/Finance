@@ -2,17 +2,18 @@
 
 import Link from 'next/link'
 import { Suspense } from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 import { apiFetch } from '@/lib/client-api'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input, Select } from '@/components/ui/input'
 import { PageHeader } from '@/components/ui/page-header'
 import { Alert } from '@/components/ui/alert'
+import { Spinner } from '@/components/ui/spinner'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { ProgressBar } from '@/components/ui/progress-bar'
+import { StockDataPanel } from '@/components/stock-data-panel'
 
 type Status = 'running' | 'completed' | 'failed' | 'canceled' | 'stopped'
 
@@ -39,11 +40,16 @@ interface Execution {
   }
 }
 
-const marketList = ['A股', '港股', '美股']
+interface SearchResult {
+  symbol: string
+  name: string
+  market: string
+}
 
 function AnalysisPageContent() {
   const searchParams = useSearchParams()
   const [symbol, setSymbol] = useState('')
+  const [selectedName, setSelectedName] = useState('')
   const [market, setMarket] = useState('A股')
   const depth = '全面' as const
   const [executionId, setExecutionId] = useState('')
@@ -51,6 +57,14 @@ function AnalysisPageContent() {
   const [loading, setLoading] = useState(false)
   const [ticking, setTicking] = useState(false)
   const [error, setError] = useState('')
+
+  // 搜索相关
+  const [keyword, setKeyword] = useState('')
+  const [results, setResults] = useState<SearchResult[]>([])
+  const [searching, setSearching] = useState(false)
+  const [showResults, setShowResults] = useState(false)
+  const searchRef = useRef<HTMLDivElement>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const isRunning = execution?.status === 'running'
 
@@ -79,7 +93,7 @@ function AnalysisPageContent() {
   const start = async () => {
     setError('')
     if (!symbol.trim()) {
-      setError('请先输入股票代码')
+      setError('请先选择一只股票')
       return
     }
 
@@ -105,6 +119,61 @@ function AnalysisPageContent() {
     await apiFetch(`/api/executions/${executionId}/cancel`, { method: 'POST' })
     await fetchExecution(executionId)
   }
+
+  // 搜索股票（防抖）
+  const doSearch = useCallback(async (q: string) => {
+    if (!q.trim()) {
+      setResults([])
+      setShowResults(false)
+      return
+    }
+    setSearching(true)
+    try {
+      const res = await apiFetch<SearchResult[]>(
+        `/api/analysis/search?query=${encodeURIComponent(q.trim())}`
+      )
+      setResults(res.data || [])
+      setShowResults(true)
+    } catch {
+      setResults([])
+    } finally {
+      setSearching(false)
+    }
+  }, [])
+
+  const onKeywordChange = (value: string) => {
+    setKeyword(value)
+    // 清除已选中状态
+    setSymbol('')
+    setSelectedName('')
+    if (timerRef.current) clearTimeout(timerRef.current)
+    if (!value.trim()) {
+      setResults([])
+      setShowResults(false)
+      return
+    }
+    timerRef.current = setTimeout(() => doSearch(value), 350)
+  }
+
+  const selectStock = (item: SearchResult) => {
+    setSymbol(item.symbol)
+    setSelectedName(item.name)
+    setMarket(item.market)
+    setKeyword(`${item.symbol} ${item.name}`)
+    setShowResults(false)
+    setResults([])
+  }
+
+  // 点击外部关闭搜索结果
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setShowResults(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   useEffect(() => {
     if (!executionId) return
@@ -137,10 +206,25 @@ function AnalysisPageContent() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [execution?.status, executionId])
 
+  // URL 参数中带 symbol 时自动填入
   useEffect(() => {
     const symbolFromQuery = (searchParams.get('symbol') || '').trim()
     if (symbolFromQuery) {
       setSymbol(symbolFromQuery)
+      setKeyword(symbolFromQuery)
+      // 尝试搜索获取股票名称
+      apiFetch<SearchResult[]>(
+        `/api/analysis/search?query=${encodeURIComponent(symbolFromQuery)}`
+      ).then((res) => {
+        const match = (res.data || []).find(
+          (r) => r.symbol.toUpperCase() === symbolFromQuery.toUpperCase()
+        )
+        if (match) {
+          setSelectedName(match.name)
+          setMarket(match.market)
+          setKeyword(`${match.symbol} ${match.name}`)
+        }
+      }).catch(() => {})
     }
   }, [searchParams])
 
@@ -161,35 +245,117 @@ function AnalysisPageContent() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="现场分析" description="发起 AI 分析任务，实时查看执行过程" />
+      <PageHeader title="量化分析" description="发起 AI 分析任务，实时查看执行过程" />
 
       <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6">
         {/* Left: Create Task */}
         <Card className="space-y-4 h-fit">
           <h3 className="text-sm font-semibold text-[var(--fg)] m-0">创建分析任务</h3>
           <p className="text-xs text-[var(--fg-muted)] m-0">
-            输入股票代码开始分析，页面关闭后任务自动停止。
+            搜索并选择股票，点击开始分析。页面关闭后任务自动停止。
           </p>
 
-          <div className="space-y-3">
-            <Input
-              label="股票代码"
-              placeholder="例如 000001 或 AAPL"
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value)}
-              className="font-mono"
-            />
+          {/* 搜索选择股票 */}
+          <div ref={searchRef} className="relative">
+            <div className="relative">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-muted)] pointer-events-none"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                type="text"
+                placeholder="输入代码或名称搜索 …"
+                value={keyword}
+                onChange={(e) => onKeywordChange(e.target.value)}
+                onFocus={() => { if (results.length > 0) setShowResults(true) }}
+                className="
+                  w-full h-10 pl-9 pr-4
+                  rounded-lg border border-[var(--border)]
+                  bg-[var(--bg)] text-sm text-[var(--fg)]
+                  placeholder:text-[var(--fg-muted)]
+                  focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400
+                  transition-all
+                "
+              />
+              {searching && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <Spinner size="sm" />
+                </div>
+              )}
+            </div>
 
-            <Select
-              label="市场"
-              value={market}
-              onChange={(e) => setMarket(e.target.value)}
-            >
-              {marketList.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </Select>
+            {/* 搜索结果下拉 */}
+            {showResults && (
+              <div className="
+                absolute z-50 left-0 right-0 mt-1
+                max-h-64 overflow-y-auto
+                bg-[var(--card-bg)] border border-[var(--border)]
+                rounded-lg shadow-[var(--card-shadow-lg)]
+              ">
+                {results.length === 0 ? (
+                  <p className="py-6 text-center text-xs text-[var(--fg-muted)]">
+                    未找到匹配的股票
+                  </p>
+                ) : (
+                  results.map((item) => (
+                    <button
+                      key={`${item.symbol}-${item.market}`}
+                      onClick={() => selectStock(item)}
+                      className="
+                        w-full flex items-center gap-2.5 px-3 py-2
+                        text-left cursor-pointer
+                        border-b border-[var(--border)] last:border-b-0
+                        hover:bg-[var(--bg-hover)] transition-colors
+                      "
+                    >
+                      <span className="font-mono text-sm font-medium text-[var(--fg)] shrink-0">
+                        {item.symbol}
+                      </span>
+                      <span className="text-sm text-[var(--fg-secondary)] truncate">
+                        {item.name}
+                      </span>
+                      <span className="
+                        text-[11px] px-1.5 py-0.5 rounded ml-auto
+                        bg-[var(--bg-secondary)] text-[var(--fg-muted)]
+                        shrink-0
+                      ">
+                        {item.market}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
           </div>
+
+          {/* 已选中提示 */}
+          {symbol && selectedName && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary-50 dark:bg-primary-700/10 border border-primary-200 dark:border-primary-700/30">
+              <span className="font-mono text-sm font-medium text-primary-700 dark:text-primary-300">
+                {symbol}
+              </span>
+              <span className="text-sm text-primary-600 dark:text-primary-400">
+                {selectedName}
+              </span>
+              <span className="
+                text-[11px] px-1.5 py-0.5 rounded ml-auto
+                bg-primary-100 dark:bg-primary-700/20 text-primary-600 dark:text-primary-400
+                shrink-0
+              ">
+                {market}
+              </span>
+            </div>
+          )}
 
           {error && <Alert variant="error">{error}</Alert>}
 
@@ -199,7 +365,7 @@ function AnalysisPageContent() {
                 停止
               </Button>
             ) : (
-              <Button variant="primary" onClick={start} disabled={loading} className="flex-1">
+              <Button variant="primary" onClick={start} disabled={loading || !symbol} className="flex-1">
                 {loading ? '创建中...' : '开始分析'}
               </Button>
             )}
@@ -267,11 +433,26 @@ function AnalysisPageContent() {
                 <circle cx="11" cy="11" r="8" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
-              <p className="text-sm text-[var(--fg-muted)] m-0">在左侧输入股票代码开始分析</p>
+              <p className="text-sm text-[var(--fg-muted)] m-0">在左侧搜索并选择股票开始分析</p>
             </div>
           )}
         </Card>
       </div>
+
+      {/* 股票详情数据面板 */}
+      {symbol && (
+        <Card className="p-5">
+          <h3 className="text-sm font-semibold text-[var(--fg)] m-0 mb-4 flex items-center gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--fg-muted)]">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <line x1="3" y1="9" x2="21" y2="9" />
+              <line x1="9" y1="21" x2="9" y2="9" />
+            </svg>
+            股票详情
+          </h3>
+          <StockDataPanel symbol={symbol} />
+        </Card>
+      )}
     </div>
   )
 }

@@ -102,7 +102,7 @@ export default function ScreeningPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="股票筛选" description="使用本地数据快速筛选目标股票，筛完后可直接去现场分析。" />
+      <PageHeader title="股票筛选" description="使用本地数据快速筛选目标股票，筛完后可直接去量化分析。" />
 
       <Card>
         <form onSubmit={run} className="space-y-4">
