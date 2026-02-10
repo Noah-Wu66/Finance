@@ -22,14 +22,14 @@ export async function GET(request: NextRequest) {
   const rows = await db
     .collection('stock_basic_info')
     .find({
-      $or: [{ symbol: { $regex: keyword, $options: 'i' } }, { code: { $regex: keyword, $options: 'i' } }, { name: { $regex: keyword, $options: 'i' } }]
+      $or: [{ symbol: { $regex: keyword, $options: 'i' } }, { name: { $regex: keyword, $options: 'i' } }]
     })
     .limit(30)
     .toArray()
 
   const items = rows
     .map((item) => {
-      const symbol = String(item.symbol || item.code || item.ts_code || '').slice(0, 6).toUpperCase()
+      const symbol = String(item.symbol || '').slice(0, 6).toUpperCase()
       const rowMarket = normalizeMarketName((item.market as string | undefined) || inferMarketFromCode(symbol))
       return {
         symbol,

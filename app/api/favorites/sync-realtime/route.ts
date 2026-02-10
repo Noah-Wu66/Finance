@@ -41,8 +41,8 @@ export async function POST(request: NextRequest) {
 
     const quote = await db
       .collection('stock_quotes')
-      .find({ $or: [{ symbol }, { stock_code: symbol }, { code: symbol }] })
-      .sort({ trade_date: -1, date: -1, updated_at: -1, created_at: -1 })
+      .find({ symbol })
+      .sort({ trade_date: -1 })
       .limit(1)
       .next()
 
@@ -51,9 +51,9 @@ export async function POST(request: NextRequest) {
       continue
     }
 
-    const price = Number(quote.close ?? quote.price ?? quote.last ?? 0)
-    const changePercent = Number(quote.pct_chg ?? quote.change_percent ?? 0)
-    const volume = Number(quote.volume ?? quote.vol ?? 0)
+    const price = Number(quote.close ?? 0)
+    const changePercent = Number(quote.pct_chg ?? 0)
+    const volume = Number(quote.volume ?? 0)
 
     await users.updateOne(
       { _id: userObjectId, 'favorite_stocks.stock_code': symbol },

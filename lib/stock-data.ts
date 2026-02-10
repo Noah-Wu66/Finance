@@ -12,7 +12,6 @@ export async function searchStockBasics(keyword: string, limit = 20) {
     .find({
       $or: [
         { symbol: { $regex: keyword, $options: 'i' } },
-        { code: { $regex: keyword, $options: 'i' } },
         { name: { $regex: keyword, $options: 'i' } }
       ]
     })
@@ -20,16 +19,15 @@ export async function searchStockBasics(keyword: string, limit = 20) {
     .toArray()
 
   return rows.map((row) => {
-    const code = normCode(String(row.symbol || row.code || row.ts_code || ''))
+    const code = normCode(String(row.symbol || ''))
     const market = normalizeMarketName((row.market as string | undefined) || inferMarketFromCode(code))
     return {
       code,
       name: String(row.name || code),
       name_en: String(row.name_en || row.name || code),
       market,
-      source: String(row.source || 'mongodb'),
-      total_mv: Number(row.total_mv || row.market_cap || 0),
-      pe: Number(row.pe || row.pe_ttm || 0),
+      total_mv: Number(row.total_mv || 0),
+      pe: Number(row.pe || 0),
       pb: Number(row.pb || 0),
       lot_size: Number(row.lot_size || 100),
       currency: String(row.currency || (market === '美股' ? 'USD' : market === '港股' ? 'HKD' : 'CNY')),
@@ -44,9 +42,7 @@ export async function searchStockBasics(keyword: string, limit = 20) {
 export async function getStockBasicByCode(code: string) {
   const normalized = normCode(code)
   const db = await getDb()
-  const row = await db.collection('stock_basic_info').findOne({
-    $or: [{ symbol: normalized }, { code: normalized }, { ts_code: { $regex: `^${normalized}` } }]
-  })
+  const row = await db.collection('stock_basic_info').findOne({ symbol: normalized })
 
   if (!row) return null
 
@@ -56,9 +52,8 @@ export async function getStockBasicByCode(code: string) {
     name: String(row.name || normalized),
     name_en: String(row.name_en || row.name || normalized),
     market,
-    source: String(row.source || 'mongodb'),
-    total_mv: Number(row.total_mv || row.market_cap || 0),
-    pe: Number(row.pe || row.pe_ttm || 0),
+    total_mv: Number(row.total_mv || 0),
+    pe: Number(row.pe || 0),
     pb: Number(row.pb || 0),
     lot_size: Number(row.lot_size || 100),
     currency: String(row.currency || (market === '美股' ? 'USD' : market === '港股' ? 'HKD' : 'CNY')),
@@ -74,10 +69,8 @@ export async function getLatestQuoteByCode(code: string) {
   const db = await getDb()
   const row = await db
     .collection('stock_quotes')
-    .find({
-      $or: [{ symbol: normalized }, { stock_code: normalized }, { code: normalized }, { ts_code: { $regex: `^${normalized}` } }]
-    })
-    .sort({ trade_date: -1, date: -1, updated_at: -1, created_at: -1 })
+    .find({ symbol: normalized })
+    .sort({ trade_date: -1 })
     .limit(1)
     .next()
 
@@ -85,14 +78,14 @@ export async function getLatestQuoteByCode(code: string) {
 
   return {
     code: normalized,
-    close: Number(row.close ?? row.price ?? row.last ?? 0),
-    pct_chg: Number(row.pct_chg ?? row.change_percent ?? 0),
+    close: Number(row.close ?? 0),
+    pct_chg: Number(row.pct_chg ?? 0),
     open: Number(row.open ?? 0),
     high: Number(row.high ?? 0),
     low: Number(row.low ?? 0),
-    volume: Number(row.volume ?? row.vol ?? 0),
-    amount: Number(row.amount ?? row.turnover ?? 0),
-    trade_date: String(row.trade_date || row.date || ''),
+    volume: Number(row.volume ?? 0),
+    amount: Number(row.amount ?? 0),
+    trade_date: String(row.trade_date || ''),
     currency: String(row.currency || ''),
     turnover_rate: Number(row.turnover_rate ?? 0),
     amplitude: Number(row.amplitude ?? 0)
@@ -104,9 +97,7 @@ export async function getDailyQuotesByCode(code: string, options?: { startDate?:
   const db = await getDb()
   const limit = Math.min(Math.max(options?.limit || 100, 1), 500)
 
-  const query: Record<string, unknown> = {
-    $or: [{ symbol: normalized }, { stock_code: normalized }, { code: normalized }, { ts_code: { $regex: `^${normalized}` } }]
-  }
+  const query: Record<string, unknown> = { symbol: normalized }
 
   if (options?.startDate || options?.endDate) {
     const dateRange: Record<string, string> = {}
@@ -118,18 +109,18 @@ export async function getDailyQuotesByCode(code: string, options?: { startDate?:
   const rows = await db
     .collection('stock_quotes')
     .find(query)
-    .sort({ trade_date: -1, date: -1 })
+    .sort({ trade_date: -1 })
     .limit(limit)
     .toArray()
 
   return rows.map((row) => ({
-    trade_date: String(row.trade_date || row.date || ''),
+    trade_date: String(row.trade_date || ''),
     open: Number(row.open ?? 0),
     high: Number(row.high ?? 0),
     low: Number(row.low ?? 0),
-    close: Number(row.close ?? row.price ?? row.last ?? 0),
-    volume: Number(row.volume ?? row.vol ?? 0),
-    amount: Number(row.amount ?? row.turnover ?? 0)
+    close: Number(row.close ?? 0),
+    volume: Number(row.volume ?? 0),
+    amount: Number(row.amount ?? 0)
   }))
 }
 
@@ -138,8 +129,8 @@ export async function getFundamentalsByCode(code: string) {
   const db = await getDb()
   const row = await db
     .collection('financial_data')
-    .find({ $or: [{ symbol: normalized }, { stock_code: normalized }, { code: normalized }, { ts_code: { $regex: `^${normalized}` } }] })
-    .sort({ report_date: -1, updated_at: -1, created_at: -1 })
+    .find({ symbol: normalized })
+    .sort({ report_date: -1, updated_at: -1 })
     .limit(1)
     .next()
 
@@ -147,13 +138,13 @@ export async function getFundamentalsByCode(code: string) {
 
   return {
     code: normalized,
-    pe: Number(row.pe ?? row.pe_ttm ?? 0),
+    pe: Number(row.pe ?? 0),
     pb: Number(row.pb ?? 0),
-    ps: Number(row.ps ?? row.ps_ttm ?? 0),
+    ps: Number(row.ps ?? 0),
     pe_ttm: Number(row.pe_ttm ?? row.pe ?? 0),
     pb_mrq: Number(row.pb_mrq ?? row.pb ?? 0),
     ps_ttm: Number(row.ps_ttm ?? row.ps ?? 0),
-    roe: Number(row.roe ?? row.roe_avg ?? 0),
+    roe: Number(row.roe ?? 0),
     debt_ratio: Number(row.debt_ratio ?? 0),
     total_mv: Number(row.total_mv ?? 0),
     circ_mv: Number(row.circ_mv ?? 0),
@@ -174,10 +165,10 @@ export async function getNewsByCode(code: string, options?: { hoursBack?: number
   const rows = await db
     .collection('news_data')
     .find({
-      $or: [{ symbol: normalized }, { stock_code: normalized }, { code: normalized }],
+      symbol: normalized,
       publish_time: { $gte: cutoff.toISOString() }
     })
-    .sort({ publish_time: -1, created_at: -1 })
+    .sort({ publish_time: -1 })
     .limit(limit)
     .toArray()
 

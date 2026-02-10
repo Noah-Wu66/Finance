@@ -108,8 +108,6 @@ export async function fetchRealtimeQuote(code: string): Promise<{
 
     const doc = {
       symbol: code,
-      stock_code: code,
-      code: code,
       name: d.f14 || code,
       close: d.f2,
       pct_chg: d.f3,
@@ -197,8 +195,6 @@ export async function fetchDailyKline(code: string, days = 60): Promise<{
       const tradeDate = parts[0].replace(/-/g, '')
       const doc: Record<string, unknown> = {
         symbol: code,
-        stock_code: code,
-        code: code,
         name: stockName || code,
         trade_date: tradeDate,
         open: Number(parts[1]),
@@ -309,7 +305,6 @@ export async function fetchFinancialData(code: string): Promise<{
       {
         $set: {
           symbol: code,
-          code: code,
           name: stockName,
           roe,
           pe,
@@ -477,7 +472,7 @@ export async function fetchAStockData(code: string): Promise<{
 
   // 一次性写入
   await db.collection('stock_basic_info').updateOne(
-    { $or: [{ symbol: normalized }, { code: normalized }] },
+    { symbol: normalized },
     { $set: basicInfoPatch, $setOnInsert: { created_at: now } },
     { upsert: true }
   )

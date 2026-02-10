@@ -36,8 +36,8 @@ export async function GET(request: NextRequest) {
 
     const quote = await db
       .collection('stock_quotes')
-      .find({ $or: [{ symbol }, { stock_code: symbol }, { code: symbol }] })
-      .sort({ trade_date: -1, date: -1, updated_at: -1 })
+      .find({ symbol })
+      .sort({ trade_date: -1 })
       .limit(1)
       .next()
 
@@ -45,9 +45,9 @@ export async function GET(request: NextRequest) {
       symbol,
       name: String(row.name || symbol),
       market: mkt,
-      current_price: Number(quote?.close ?? quote?.price ?? quote?.last ?? 0),
-      change_percent: Number(quote?.change_percent ?? quote?.pct_chg ?? 0),
-      volume: Number(quote?.volume ?? quote?.vol ?? 0),
+      current_price: Number(quote?.close ?? 0),
+      change_percent: Number(quote?.pct_chg ?? 0),
+      volume: Number(quote?.volume ?? 0),
       analysis_count: Number(row.count || 0)
     })
   }

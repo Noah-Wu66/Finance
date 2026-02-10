@@ -158,89 +158,38 @@ function appendLog(execution: ExecutionDoc, text: string): ExecutionLog[] {
 
 async function loadStockBasic(symbol: string) {
   const db = await getDb()
-  const names = ['stock_basic_info', 'stock_basics', 'stocks']
-
-  let foundName = symbol
-  let foundIndustry = ''
-  let foundSource = 'none'
-
-  for (const name of names) {
-    const coll = db.collection(name)
-    const doc = await coll.findOne({
-      $or: [
-        { symbol },
-        { code: symbol },
-        { ts_code: { $regex: `^${symbol}` } }
-      ]
-    })
-
-    if (doc) {
-      foundSource = name
-      foundName = (doc.name as string | undefined) || symbol
-      foundIndustry = (doc.industry as string | undefined) || ''
-      break
-    }
-  }
-
-  // 如果行业信息为空，尝试从 stock_quotes 的实时行情记录中补充
-  if (!foundIndustry) {
-    const quoteDoc = await db.collection('stock_quotes').findOne(
-      {
-        $or: [{ symbol }, { stock_code: symbol }, { code: symbol }],
-        data_source: 'eastmoney_realtime',
-        industry: { $exists: true, $ne: '' }
-      },
-      { sort: { trade_date: -1, updated_at: -1 } }
-    )
-    if (quoteDoc?.industry) {
-      foundIndustry = quoteDoc.industry as string
-      // 如果名称还是默认值，也从这里补充
-      if (foundName === symbol && quoteDoc.name) {
-        foundName = quoteDoc.name as string
-      }
-    }
-  }
+  const doc = await db.collection('stock_basic_info').findOne({ symbol })
 
   return {
-    source: foundSource,
     symbol,
-    name: foundName,
-    industry: foundIndustry || '未知行业'
+    name: (doc?.name as string | undefined) || symbol,
+    industry: (doc?.industry as string | undefined) || '未知行业'
   }
 }
 
 async function loadQuotePack(symbol: string) {
   const db = await getDb()
-  const names = ['stock_quotes', 'stock_daily_quotes', 'quotes', 'quotes_realtime']
+  const rows = await db
+    .collection('stock_quotes')
+    .find({ symbol })
+    .sort({ trade_date: -1 })
+    .limit(30)
+    .toArray()
 
-  for (const name of names) {
-    const coll = db.collection(name)
-    const rows = await coll
-      .find({
-        $or: [{ symbol }, { stock_code: symbol }, { code: symbol }, { ts_code: { $regex: `^${symbol}` } }]
-      })
-      .sort({ trade_date: -1, date: -1, timestamp: -1, updated_at: -1, created_at: -1 })
-      .limit(30)
-      .toArray()
+  if (rows.length > 0) {
+    const latestClose = Number(rows[0].close ?? 0)
+    const prevClose = Number(rows[rows.length - 1].close ?? latestClose)
+    const changePct = prevClose > 0 ? ((latestClose - prevClose) / prevClose) * 100 : 0
 
-    if (rows.length > 0) {
-      const latest = rows[0]
-      const latestClose = Number(latest.close ?? latest.price ?? latest.last ?? 0)
-      const prevClose = Number(rows[rows.length - 1].close ?? rows[rows.length - 1].price ?? latestClose)
-      const changePct = prevClose > 0 ? ((latestClose - prevClose) / prevClose) * 100 : 0
-
-      return {
-        source: name,
-        latestClose,
-        prevClose,
-        changePct,
-        samples: rows.length
-      }
+    return {
+      latestClose,
+      prevClose,
+      changePct,
+      samples: rows.length
     }
   }
 
   return {
-    source: 'none',
     latestClose: 0,
     prevClose: 0,
     changePct: 0,
@@ -251,70 +200,32 @@ async function loadQuotePack(symbol: string) {
 async function loadFundamentals(symbol: string) {
   const db = await getDb()
 
-  // 1) 优先从专用财务集合读取（如果将来有数据写入）
-  const financialNames = ['financial_data', 'stock_financial_data', 'financial_reports']
-  for (const name of financialNames) {
-    const coll = db.collection(name)
-    const doc = await coll.findOne(
-      {
-        $or: [{ symbol }, { stock_code: symbol }, { code: symbol }, { ts_code: { $regex: `^${symbol}` } }]
-      },
-      {
-        sort: { report_date: -1, updated_at: -1, created_at: -1 }
-      }
-    )
+  const doc = await db.collection('financial_data').findOne(
+    { symbol },
+    { sort: { report_date: -1, updated_at: -1 } }
+  )
 
-    if (doc) {
-      return {
-        source: name,
-        roe: Number(doc.roe ?? doc.roe_avg ?? 0),
-        pe: Number(doc.pe ?? doc.pe_ttm ?? 0),
-        pb: Number(doc.pb ?? 0),
-        revenueGrowth: Number(doc.revenue_yoy ?? doc.revenue_growth ?? 0)
-      }
+  if (doc) {
+    return {
+      roe: Number(doc.roe ?? 0),
+      pe: Number(doc.pe ?? 0),
+      pb: Number(doc.pb ?? 0),
+      revenueGrowth: Number(doc.revenue_yoy ?? 0)
     }
   }
 
-  // 2) 从 stock_basic_info 读取 PE/PB（东方财富实时行情写入的）
-  const basicDoc = await db.collection('stock_basic_info').findOne(
-    { $or: [{ symbol }, { code: symbol }] },
-    { sort: { updated_at: -1 } }
-  )
+  // financial_data 没有时从 stock_basic_info 读取（东方财富实时行情写入的 PE/PB）
+  const basicDoc = await db.collection('stock_basic_info').findOne({ symbol })
   if (basicDoc && (basicDoc.pe || basicDoc.pb)) {
     return {
-      source: 'stock_basic_info',
       roe: Number(basicDoc.roe ?? 0),
       pe: Number(basicDoc.pe ?? 0),
       pb: Number(basicDoc.pb ?? 0),
-      revenueGrowth: Number(basicDoc.revenue_yoy ?? basicDoc.revenue_growth ?? 0)
+      revenueGrowth: Number(basicDoc.revenue_yoy ?? 0)
     }
   }
 
-  // 3) 从 stock_quotes 实时行情记录读取 PE/PB
-  const quoteDoc = await db.collection('stock_quotes').findOne(
-    {
-      $or: [{ symbol }, { stock_code: symbol }, { code: symbol }],
-      data_source: 'eastmoney_realtime'
-    },
-    { sort: { trade_date: -1, updated_at: -1 } }
-  )
-  if (quoteDoc && (quoteDoc.pe || quoteDoc.pb)) {
-    return {
-      source: 'stock_quotes',
-      roe: 0,
-      pe: Number(quoteDoc.pe ?? 0),
-      pb: Number(quoteDoc.pb ?? 0),
-      revenueGrowth: 0
-    }
-  }
-
-  return {
-    source: 'none',
-    roe: 0,
-    pe: 0,
-    pb: 0,
-    revenueGrowth: 0
-  }
+  return { roe: 0, pe: 0, pb: 0, revenueGrowth: 0 }
 }
 
 function makeDecision(changePct: number, roe: number, pe: number, pb: number) {
@@ -860,7 +771,7 @@ export async function tickExecution(id: string, userId: string) {
 
     const basic = await loadStockBasic(execution.symbol)
     context.basic = basic
-    logs.push({ at: now, text: `已加载基础信息：${basic.name}（${basic.source}）` })
+    logs.push({ at: now, text: `已加载基础信息：${basic.name}` })
     nextStep += 1
   } else if (execution.step === 2) {
     const quote = await loadQuotePack(execution.symbol)

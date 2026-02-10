@@ -31,23 +31,16 @@ export async function GET(request: NextRequest) {
   for (const code of codes) {
     const row = await db
       .collection('stock_quotes')
-      .find({
-        $or: [
-          { symbol: code },
-          { stock_code: code },
-          { code: code },
-          { ts_code: { $regex: `^${code}` } }
-        ]
-      })
-      .sort({ trade_date: -1, date: -1, updated_at: -1, created_at: -1 })
+      .find({ symbol: code })
+      .sort({ trade_date: -1 })
       .limit(1)
       .next()
 
     if (row) {
       quotes[code] = {
-        price: Number(row.close ?? row.price ?? row.last ?? 0),
-        pct_chg: Number(row.pct_chg ?? row.change_percent ?? 0),
-        trade_date: String(row.trade_date || row.date || '')
+        price: Number(row.close ?? 0),
+        pct_chg: Number(row.pct_chg ?? 0),
+        trade_date: String(row.trade_date || '')
       }
     }
   }

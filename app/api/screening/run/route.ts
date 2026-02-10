@@ -52,28 +52,28 @@ export async function POST(request: NextRequest) {
   }>
 
   for (const basic of basicRows) {
-    const code = String(basic.symbol || basic.code || '').slice(0, 6)
+    const code = String(basic.symbol || '').slice(0, 6)
     if (!code) continue
 
     const [quote, financial] = await Promise.all([
       db
         .collection('stock_quotes')
-        .find({ $or: [{ symbol: code }, { stock_code: code }, { code }] })
-        .sort({ trade_date: -1, date: -1, updated_at: -1 })
+        .find({ symbol: code })
+        .sort({ trade_date: -1 })
         .limit(1)
         .next(),
       db
         .collection('financial_data')
-        .find({ $or: [{ symbol: code }, { stock_code: code }, { code }] })
+        .find({ symbol: code })
         .sort({ report_date: -1, updated_at: -1 })
         .limit(1)
         .next()
     ])
 
-    const close = Number(quote?.close ?? quote?.price ?? quote?.last ?? 0)
-    const pctChg = Number(quote?.pct_chg ?? quote?.change_percent ?? 0)
-    const amount = Number(quote?.amount ?? quote?.turnover ?? 0)
-    const pe = Number(financial?.pe ?? financial?.pe_ttm ?? 0)
+    const close = Number(quote?.close ?? 0)
+    const pctChg = Number(quote?.pct_chg ?? 0)
+    const amount = Number(quote?.amount ?? 0)
+    const pe = Number(financial?.pe ?? 0)
     const pb = Number(financial?.pb ?? 0)
 
     if (conditions.close && !inRange(close, conditions.close.min, conditions.close.max)) continue
