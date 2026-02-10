@@ -160,6 +160,10 @@ async function loadStockBasic(symbol: string) {
   const db = await getDb()
   const names = ['stock_basic_info', 'stock_basics', 'stocks']
 
+  let foundName = symbol
+  let foundIndustry = ''
+  let foundSource = 'none'
+
   for (const name of names) {
     const coll = db.collection(name)
     const doc = await coll.findOne({
@@ -171,20 +175,37 @@ async function loadStockBasic(symbol: string) {
     })
 
     if (doc) {
-      return {
-        source: name,
-        symbol,
-        name: (doc.name as string | undefined) || symbol,
-        industry: (doc.industry as string | undefined) || '未知行业'
+      foundSource = name
+      foundName = (doc.name as string | undefined) || symbol
+      foundIndustry = (doc.industry as string | undefined) || ''
+      break
+    }
+  }
+
+  // 如果行业信息为空，尝试从 stock_quotes 的实时行情记录中补充
+  if (!foundIndustry) {
+    const quoteDoc = await db.collection('stock_quotes').findOne(
+      {
+        $or: [{ symbol }, { stock_code: symbol }, { code: symbol }],
+        data_source: 'eastmoney_realtime',
+        industry: { $exists: true, $ne: '' }
+      },
+      { sort: { trade_date: -1, updated_at: -1 } }
+    )
+    if (quoteDoc?.industry) {
+      foundIndustry = quoteDoc.industry as string
+      // 如果名称还是默认值，也从这里补充
+      if (foundName === symbol && quoteDoc.name) {
+        foundName = quoteDoc.name as string
       }
     }
   }
 
   return {
-    source: 'none',
+    source: foundSource,
     symbol,
-    name: symbol,
-    industry: '未知行业'
+    name: foundName,
+    industry: foundIndustry || '未知行业'
   }
 }
 
@@ -229,9 +250,10 @@ async function loadQuotePack(symbol: string) {
 
 async function loadFundamentals(symbol: string) {
   const db = await getDb()
-  const names = ['financial_data', 'stock_financial_data', 'financial_reports']
 
-  for (const name of names) {
+  // 1) 优先从专用财务集合读取（如果将来有数据写入）
+  const financialNames = ['financial_data', 'stock_financial_data', 'financial_reports']
+  for (const name of financialNames) {
     const coll = db.collection(name)
     const doc = await coll.findOne(
       {
@@ -253,6 +275,39 @@ async function loadFundamentals(symbol: string) {
     }
   }
 
+  // 2) 从 stock_basic_info 读取 PE/PB（东方财富实时行情写入的）
+  const basicDoc = await db.collection('stock_basic_info').findOne(
+    { $or: [{ symbol }, { code: symbol }] },
+    { sort: { updated_at: -1 } }
+  )
+  if (basicDoc && (basicDoc.pe || basicDoc.pb)) {
+    return {
+      source: 'stock_basic_info',
+      roe: Number(basicDoc.roe ?? 0),
+      pe: Number(basicDoc.pe ?? 0),
+      pb: Number(basicDoc.pb ?? 0),
+      revenueGrowth: Number(basicDoc.revenue_yoy ?? basicDoc.revenue_growth ?? 0)
+    }
+  }
+
+  // 3) 从 stock_quotes 实时行情记录读取 PE/PB
+  const quoteDoc = await db.collection('stock_quotes').findOne(
+    {
+      $or: [{ symbol }, { stock_code: symbol }, { code: symbol }],
+      data_source: 'eastmoney_realtime'
+    },
+    { sort: { trade_date: -1, updated_at: -1 } }
+  )
+  if (quoteDoc && (quoteDoc.pe || quoteDoc.pb)) {
+    return {
+      source: 'stock_quotes',
+      roe: 0,
+      pe: Number(quoteDoc.pe ?? 0),
+      pb: Number(quoteDoc.pb ?? 0),
+      revenueGrowth: 0
+    }
+  }
+
   return {
     source: 'none',
     roe: 0,
@@ -262,14 +317,24 @@ async function loadFundamentals(symbol: string) {
   }
 }
 
-function makeDecision(changePct: number, roe: number, pe: number) {
+function makeDecision(changePct: number, roe: number, pe: number, pb: number) {
   let score = 0
 
+  // 涨跌幅
   if (changePct > 2) score += 1
   if (changePct < -2) score -= 1
+
+  // ROE（如果有数据）
   if (roe > 10) score += 1
+  if (roe > 0 && roe < 5) score -= 1
+
+  // PE 市盈率
   if (pe > 0 && pe < 25) score += 1
   if (pe >= 40) score -= 1
+
+  // PB 市净率
+  if (pb > 0 && pb < 3) score += 1
+  if (pb >= 8) score -= 1
 
   if (score >= 2) {
     return {
@@ -809,8 +874,8 @@ export async function tickExecution(id: string, userId: string) {
     nextStep += 1
   } else if (execution.step === 4) {
     const quote = context.quote as { changePct: number }
-    const financial = context.financial as { roe: number; pe: number }
-    const decision = makeDecision(quote.changePct, financial.roe, financial.pe)
+    const financial = context.financial as { roe: number; pe: number; pb: number }
+    const decision = makeDecision(quote.changePct, financial.roe, financial.pe, financial.pb)
     context.decision = decision
     logs.push({ at: now, text: `生成投资观点：${decision.action}（置信度 ${decision.confidence}%）` })
 

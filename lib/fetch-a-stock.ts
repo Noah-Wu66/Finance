@@ -37,13 +37,21 @@ interface EastMoneyQuoteRaw {
 
 // ---------- 工具函数 ----------
 
-/** 根据 6 位代码判断沪/深市场前缀 */
+/** 根据 6 位代码判断沪/深市场前缀（行情接口用） */
 function getSecId(code: string): string {
   // 6/9 开头 → 上海(1.)，其余 → 深圳(0.)
   if (code.startsWith('6') || code.startsWith('9')) {
     return `1.${code}`
   }
   return `0.${code}`
+}
+
+/** 根据 6 位代码判断 SH/SZ 前缀（个股资料接口用） */
+function getMarketPrefix(code: string): string {
+  if (code.startsWith('6') || code.startsWith('9')) {
+    return `SH${code}`
+  }
+  return `SZ${code}`
 }
 
 /** 计算 N 天前的日期字符串 YYYYMMDD */
@@ -143,7 +151,7 @@ export async function fetchRealtimeQuote(code: string): Promise<{
             symbol: code,
             code: code,
             name: d.f14,
-            industry: d.f100 || undefined,
+            industry: d.f100 || '',
             market: 'A股',
             total_mv: d.f20,
             pe: d.f9,
@@ -272,13 +280,152 @@ export async function fetchDailyKline(code: string, days = 60): Promise<{
   }
 }
 
-// ---------- 一键拉取（实时 + K线） ----------
+// ---------- 拉取财务数据（ROE + 营收增长率） ----------
+
+export async function fetchFinancialData(code: string): Promise<{
+  success: boolean
+  message: string
+  data?: { roe: number; revenueGrowth: number; reportDate: string }
+}> {
+  const columns = 'SECURITY_CODE,SECURITY_NAME_ABBR,REPORTDATE,WEIGHTAVG_ROE,YSTZ'
+  const filter = `(SECURITY_CODE="${code}")`
+  const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?sortColumns=NOTICE_DATE,SECURITY_CODE&sortTypes=-1,1&pageSize=1&pageNumber=1&reportName=RPT_LICO_FN_CPD&columns=${columns}&filter=${encodeURIComponent(filter)}`
+
+  try {
+    const res = await safeFetch(url)
+    if (!res.ok) {
+      return { success: false, message: `财务数据接口返回 HTTP ${res.status}` }
+    }
+
+    const json = await res.json()
+    const row = json?.result?.data?.[0]
+    if (!row) {
+      return { success: false, message: '未获取到财务数据' }
+    }
+
+    const roe = Number(row.WEIGHTAVG_ROE ?? 0)
+    const revenueGrowth = Number(row.YSTZ ?? 0)
+    const reportDate = (row.REPORTDATE as string || '').slice(0, 10)
+
+    const now = new Date()
+    const db = await getDb()
+
+    // 写入 financial_data 集合
+    await db.collection('financial_data').updateOne(
+      { symbol: code, report_date: reportDate },
+      {
+        $set: {
+          symbol: code,
+          code: code,
+          name: row.SECURITY_NAME_ABBR || code,
+          roe,
+          revenue_yoy: revenueGrowth,
+          report_date: reportDate,
+          data_source: 'eastmoney_yjbb',
+          updated_at: now
+        },
+        $setOnInsert: { created_at: now }
+      },
+      { upsert: true }
+    )
+
+    // 同时更新 stock_basic_info 中的 ROE
+    await db.collection('stock_basic_info').updateOne(
+      { $or: [{ symbol: code }, { code }] },
+      {
+        $set: {
+          roe,
+          revenue_yoy: revenueGrowth,
+          updated_at: now
+        }
+      }
+    )
+
+    return {
+      success: true,
+      message: `已拉取 ${row.SECURITY_NAME_ABBR}(${code}) 财务数据：ROE ${roe.toFixed(2)}%，营收增长 ${revenueGrowth.toFixed(2)}%`,
+      data: { roe, revenueGrowth, reportDate }
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : '未知错误'
+    if (msg.includes('abort')) {
+      return { success: false, message: '财务数据接口请求超时' }
+    }
+    return { success: false, message: `拉取财务数据失败: ${msg}` }
+  }
+}
+
+// ---------- 拉取个股资料（行业分类，不受交易时段限制） ----------
+
+export async function fetchStockProfile(code: string): Promise<{
+  success: boolean
+  message: string
+  data?: { industry: string; industryDetail: string }
+}> {
+  const marketCode = getMarketPrefix(code)
+  const url = `https://emweb.securities.eastmoney.com/PC_HSF10/CompanySurvey/PageAjax?code=${marketCode}`
+
+  try {
+    const res = await safeFetch(url)
+    if (!res.ok) {
+      return { success: false, message: `个股资料接口返回 HTTP ${res.status}` }
+    }
+
+    const json = await res.json()
+    const info = json?.jbzl?.[0]
+    if (!info) {
+      return { success: false, message: '未获取到个股资料' }
+    }
+
+    // EM2016 是东方财富的详细行业分类，如 "信息技术-计算机软件-行业应用软件"
+    // INDUSTRYCSRC1 是证监会行业分类
+    const industryDetail = (info.EM2016 as string) || ''
+    // 取最后一级作为简短行业名
+    const parts = industryDetail.split('-')
+    const industry = parts[parts.length - 1] || (info.INDUSTRYCSRC1 as string || '').split('-').pop() || ''
+
+    if (!industry) {
+      return { success: false, message: '个股资料中无行业信息' }
+    }
+
+    const now = new Date()
+    const db = await getDb()
+
+    // 更新 stock_basic_info 中的行业信息
+    await db.collection('stock_basic_info').updateOne(
+      { $or: [{ symbol: code }, { code }] },
+      {
+        $set: {
+          industry,
+          industry_detail: industryDetail,
+          updated_at: now
+        }
+      }
+    )
+
+    return {
+      success: true,
+      message: `已拉取 ${code} 行业信息：${industry}`,
+      data: { industry, industryDetail }
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : '未知错误'
+    if (msg.includes('abort')) {
+      return { success: false, message: '个股资料接口请求超时' }
+    }
+    return { success: false, message: `拉取个股资料失败: ${msg}` }
+  }
+}
+
+// ---------- 一键拉取（实时 + K线 + 财务 + 行业） ----------
 
 export async function fetchAStockData(code: string): Promise<{
   success: boolean
   message: string
   realtime: { success: boolean; message: string }
   kline: { success: boolean; message: string; count: number }
+  financial: { success: boolean; message: string }
+  profile: { success: boolean; message: string }
 }> {
   const normalized = code.trim().replace(/\.(SH|SZ|BJ)$/i, '')
 
@@ -288,33 +435,39 @@ export async function fetchAStockData(code: string): Promise<{
       success: false,
       message: `${code} 不是有效的 A 股代码（需要 6 位数字）`,
       realtime: { success: false, message: '跳过' },
-      kline: { success: false, message: '跳过', count: 0 }
+      kline: { success: false, message: '跳过', count: 0 },
+      financial: { success: false, message: '跳过' },
+      profile: { success: false, message: '跳过' }
     }
   }
 
-  // 并行拉取实时行情和 K 线
-  const [realtime, kline] = await Promise.all([
+  // 并行拉取所有数据
+  const [realtime, kline, financial, profile] = await Promise.all([
     fetchRealtimeQuote(normalized),
-    fetchDailyKline(normalized, 60)
+    fetchDailyKline(normalized, 60),
+    fetchFinancialData(normalized),
+    fetchStockProfile(normalized)
   ])
 
   // K 线是核心数据，只要 K 线成功就算成功
-  // 实时行情在非交易时段拿不到是正常的
   const success = kline.success
-  let msg: string
+  const parts: string[] = []
 
-  if (realtime.success && kline.success) {
-    msg = `${normalized} 数据拉取完成：${realtime.message}，${kline.message}`
-  } else if (kline.success && !realtime.success) {
-    msg = `${normalized} K线数据拉取成功（${kline.message}），实时行情：${realtime.message}`
-  } else {
-    msg = `${normalized} 数据拉取失败：实时=${realtime.message}，K线=${kline.message}`
-  }
+  if (kline.success) parts.push(kline.message)
+  if (realtime.success) parts.push(realtime.message)
+  if (financial.success) parts.push(financial.message)
+  if (profile.success) parts.push(profile.message)
+
+  const msg = success
+    ? `${normalized} 数据拉取完成：${parts.join('；')}`
+    : `${normalized} 数据拉取失败：K线=${kline.message}`
 
   return {
     success,
     message: msg,
     realtime,
-    kline
+    kline,
+    financial,
+    profile
   }
 }
