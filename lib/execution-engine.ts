@@ -380,29 +380,36 @@ interface SearchRoundLog {
   resultCount: number
 }
 
+interface PendingReadItem {
+  url: string
+  reason: string
+}
+
 interface SearchState {
-  phase: 'search' | 'read' | 'done'
+  phase: 'search' | 'decide' | 'read' | 'done'
   searchRound: number
-  readRound: number
+  totalReads: number
   news: NewsItem[]
   readPages: ReadPageItem[]
   searchLogs: SearchRoundLog[]
   seenLinks: string[]
   readUrls: string[]
-  consecutiveSkips: number
+  pendingReads: PendingReadItem[]
+  nextQuery: string
 }
 
 function initSearchState(): SearchState {
   return {
     phase: 'search',
     searchRound: 0,
-    readRound: 0,
+    totalReads: 0,
     news: [],
     readPages: [],
     searchLogs: [],
     seenLinks: [],
     readUrls: [],
-    consecutiveSkips: 0
+    pendingReads: [],
+    nextQuery: ''
   }
 }
 
@@ -415,60 +422,93 @@ async function executeOneSearchRound(
   const aiEnabled = await isAIEnabled()
   const seenLinks = new Set(state.seenLinks)
 
-  if (state.searchRound === 0) {
-    const firstQuery = `${stockName} ${symbol} 最新消息 股票`
-    const firstResult = await metasoSearch(firstQuery)
-    
-    for (const w of firstResult.webpages) {
-      if (!seenLinks.has(w.link)) {
-        seenLinks.add(w.link)
-        state.news.push({
-          title: w.title,
-          snippet: w.snippet,
-          date: w.date || '',
-          source: w.link,
-          link: w.link,
-          score: w.score
-        })
-      }
-    }
-    
-    state.seenLinks = Array.from(seenLinks)
-    state.searchLogs.push({ round: 1, query: firstQuery, resultCount: firstResult.webpages.length })
-    state.searchRound = 1
-    
-    if (!aiEnabled) {
-      state.phase = 'done'
-      return { state, log: `第 1 轮搜索获取 ${firstResult.webpages.length} 条结果（AI 未启用，跳过后续搜索）`, done: true }
-    }
-    return { state, log: `搜索第 1 轮：${firstQuery}，获取 ${firstResult.webpages.length} 条结果`, done: false }
-  }
-
   if (state.searchRound >= 10) {
-    state.phase = 'read'
-    return { state, log: '搜索已达 10 轮上限，进入网页深度阅读阶段', done: false }
+    state.phase = 'decide'
+    return { state, log: '搜索已达 10 轮上限，进入阅读决策阶段', done: false }
   }
 
-  const currentNewsSummary = state.news.map((n, i) =>
-    `${i + 1}. [${n.date}] ${n.title}\n   ${n.snippet}`
+  const query = state.searchRound === 0
+    ? `${stockName} ${symbol} 最新消息 股票`
+    : (state.nextQuery || `${stockName} ${symbol} ${industry} 最新动态 行业影响 财报`)
+
+  const result = await metasoSearch(query)
+  let newCount = 0
+
+  for (const w of result.webpages) {
+    if (!seenLinks.has(w.link)) {
+      seenLinks.add(w.link)
+      state.news.push({
+        title: w.title,
+        snippet: w.snippet,
+        date: w.date || '',
+        source: w.link,
+        link: w.link,
+        score: w.score
+      })
+      newCount++
+    }
+  }
+
+  state.seenLinks = Array.from(seenLinks)
+  state.searchRound += 1
+  state.searchLogs.push({ round: state.searchRound, query, resultCount: result.webpages.length })
+  state.phase = 'decide'
+
+  if (!aiEnabled) {
+    state.phase = 'done'
+    return { state, log: `第 ${state.searchRound} 轮搜索获取 ${result.webpages.length} 条结果（AI 未启用，跳过后续决策）`, done: true }
+  }
+
+  return { state, log: `搜索第 ${state.searchRound} 轮：${query}，获取 ${result.webpages.length} 条结果，新增 ${newCount} 条`, done: false }
+}
+
+async function executeDecideRound(
+  state: SearchState,
+  stockName: string,
+  symbol: string,
+  industry: string
+): Promise<{ state: SearchState; log: string; done: boolean }> {
+  const readUrls = new Set(state.readUrls)
+  const remainingSlots = Math.max(0, 10 - state.totalReads)
+
+  if (state.news.length === 0) {
+    if (state.searchRound >= 10) {
+      state.phase = 'done'
+      return { state, log: '无可用新闻且搜索已达上限，结束联网阶段', done: true }
+    }
+    state.phase = 'search'
+    state.nextQuery = `${stockName} ${symbol} 最新消息 股票`
+    return { state, log: '暂无可用新闻，继续下一轮搜索', done: false }
+  }
+
+  const newsList = state.news.map((n, i) =>
+    `${i + 1}. [${n.date}] [相关度:${n.score}] ${n.title}\n   链接: ${n.link}\n   摘要: ${n.snippet}`
   ).join('\n')
 
-  const decisionPrompt = `你是一位股票研究员，正在为 ${stockName}（${symbol}，${industry}行业）收集新闻资讯。
+  const readSummary = state.readPages.length > 0
+    ? '\n\n已深度阅读网页：\n' + state.readPages.map((p, i) => `${i + 1}. ${p.title} (${p.url})`).join('\n')
+    : ''
 
-当前已收集到 ${state.news.length} 条新闻：
-${currentNewsSummary}
+  const decidePrompt = `你是一位股票研究员，正在研究 ${stockName}（${symbol}，${industry}行业）。
 
-请判断：
-1. 当前新闻是否已经足够全面地覆盖了该股票的最新动态、行业趋势、政策影响、财报信息等？
-2. 如果不够，还需要搜索什么关键词来补充？
+以下是目前收集到的新闻（共 ${state.news.length} 条）：
+${newsList}
+${readSummary}
+
+当前还可阅读网页数量上限：${remainingSlots}（总上限10）。
+
+请你一次性判断：
+1) 本轮建议深入阅读哪些网页（可返回多个URL，按优先级排序）
+2) 当前信息是否已经足够用于后续分析
+3) 如果信息不够，下一轮应该搜索什么关键词
 
 请严格按以下JSON格式回复（不要包含其他文字）：
-{"enough": true或false, "next_query": "如果不够，填写下一次搜索的关键词，要具体精准"}`
+{"read_urls": ["url1", "url2"], "read_reasons": ["原因1", "原因2"], "enough": true或false, "next_query": "如果不够，填写下一轮搜索关键词"}`
 
   try {
     const decision = await analyzeWithAI({
-      systemPrompt: '你是一位专业的股票研究助手，帮助判断新闻收集是否充分。只输出JSON，不要输出其他内容。',
-      messages: [{ role: 'user', content: decisionPrompt }],
+      systemPrompt: '你是一位专业的股票研究助手。只输出JSON，不要输出其他内容。',
+      messages: [{ role: 'user', content: decidePrompt }],
       depth: 'deep'
     })
 
@@ -481,48 +521,159 @@ ${currentNewsSummary}
       if (start !== -1 && end !== -1) {
         parsed = JSON.parse(decision.content.slice(start, end + 1))
       } else {
-        state.phase = 'read'
-        return { state, log: 'AI 响应解析失败，进入网页深度阅读阶段', done: false }
+        if (state.searchRound >= 10) {
+          state.phase = 'done'
+          return { state, log: 'AI 决策解析失败且搜索达上限，结束联网阶段', done: true }
+        }
+        state.phase = 'search'
+        state.nextQuery = `${stockName} ${symbol} 最新动态 股票`
+        return { state, log: 'AI 决策解析失败，继续下一轮搜索', done: false }
       }
     }
 
-    if (parsed.enough === true || !parsed.next_query) {
-      state.phase = 'read'
-      return { state, log: `AI 判断新闻已充分，共 ${state.searchRound} 轮搜索，进入网页深度阅读阶段`, done: false }
+    const enough = parsed.enough === true
+    const nextQueryRaw = typeof parsed.next_query === 'string' ? parsed.next_query.trim() : ''
+    const nextQuery = nextQueryRaw || `${stockName} ${symbol} 最新动态 行业 财报`
+
+    const rawUrls = Array.isArray(parsed.read_urls)
+      ? parsed.read_urls.map(u => String(u || '').trim()).filter(Boolean)
+      : []
+    const rawReasons = Array.isArray(parsed.read_reasons)
+      ? parsed.read_reasons.map(r => String(r || '').trim())
+      : []
+
+    const dedup = new Set<string>()
+    const candidates: PendingReadItem[] = []
+    for (let i = 0; i < rawUrls.length; i++) {
+      const url = rawUrls[i]
+      if (!url || dedup.has(url) || readUrls.has(url)) continue
+      const existsInNews = state.news.some(n => n.link === url)
+      if (!existsInNews) continue
+      dedup.add(url)
+      candidates.push({
+        url,
+        reason: rawReasons[i] || 'AI 认为该网页需要优先阅读'
+      })
     }
 
-    const nextQuery = String(parsed.next_query)
-    const result = await metasoSearch(nextQuery)
-    
-    let newCount = 0
-    for (const w of result.webpages) {
-      if (!seenLinks.has(w.link)) {
-        seenLinks.add(w.link)
-        state.news.push({
-          title: w.title,
-          snippet: w.snippet,
-          date: w.date || '',
-          source: w.link,
-          link: w.link,
-          score: w.score
-        })
-        newCount++
+    const selected = candidates.slice(0, remainingSlots)
+    state.pendingReads = selected
+    state.nextQuery = nextQuery
+
+    if (selected.length > 0) {
+      state.phase = 'read'
+      return { state, log: `阅读决策完成：本轮选出 ${selected.length} 个网页待阅读` + (enough ? '（信息已较充分）' : '（信息仍需补充）'), done: false }
+    }
+
+    if (enough) {
+      state.phase = 'done'
+      return { state, log: `AI 判断信息已充分，无需新增网页阅读，共阅读 ${state.readPages.length} 个网页`, done: true }
+    }
+
+    if (state.searchRound >= 10) {
+      state.phase = 'done'
+      return { state, log: `AI 判断信息仍不足，但搜索已达 10 轮上限，结束联网阶段`, done: true }
+    }
+
+    state.phase = 'search'
+    return { state, log: `AI 判断信息仍不足且本轮无新增网页阅读，继续搜索：${state.nextQuery}`, done: false }
+  } catch {
+    if (state.searchRound >= 10) {
+      state.phase = 'done'
+      return { state, log: 'AI 决策失败且搜索达上限，结束联网阶段', done: true }
+    }
+    state.phase = 'search'
+    state.nextQuery = state.nextQuery || `${stockName} ${symbol} 最新动态 股票`
+    return { state, log: 'AI 决策失败，继续下一轮搜索', done: false }
+  }
+}
+
+async function executeContinueReadDecision(
+  state: SearchState,
+  stockName: string,
+  symbol: string,
+  industry: string
+): Promise<{ state: SearchState; log: string; done: boolean }> {
+  const remainingList = state.pendingReads.map((item, i) =>
+    `${i + 1}. ${item.url}\n   原因: ${item.reason}`
+  ).join('\n') || '无'
+
+  const readSummary = state.readPages.length > 0
+    ? state.readPages.map((p, i) => `${i + 1}. ${p.title} (${p.url})`).join('\n')
+    : '无'
+
+  const prompt = `你是一位股票研究员，正在研究 ${stockName}（${symbol}，${industry}行业）。
+
+已阅读网页（共 ${state.readPages.length} 个）：
+${readSummary}
+
+当前待阅读网页（共 ${state.pendingReads.length} 个）：
+${remainingList}
+
+请你判断三件事：
+1) 是否继续阅读剩余网页（continue_reading）
+2) 当前信息是否已经足够（enough）
+3) 如果信息不够，下一轮搜索关键词是什么（next_query）
+
+请严格按以下JSON格式回复（不要包含其他文字）：
+{"continue_reading": true或false, "enough": true或false, "next_query": "如果不够，填写下一轮搜索关键词"}`
+
+  try {
+    const decision = await analyzeWithAI({
+      systemPrompt: '你是一位专业的股票研究助手。只输出JSON，不要输出其他内容。',
+      messages: [{ role: 'user', content: prompt }],
+      depth: 'deep'
+    })
+
+    let parsed: Record<string, unknown>
+    try {
+      parsed = JSON.parse(decision.content.trim())
+    } catch {
+      const start = decision.content.indexOf('{')
+      const end = decision.content.lastIndexOf('}')
+      if (start !== -1 && end !== -1) {
+        parsed = JSON.parse(decision.content.slice(start, end + 1))
+      } else {
+        parsed = {}
       }
     }
-    
-    state.seenLinks = Array.from(seenLinks)
-    state.searchLogs.push({ round: state.searchRound + 1, query: nextQuery, resultCount: result.webpages.length })
-    state.searchRound += 1
 
-    if (newCount === 0) {
+    const continueReading = parsed.continue_reading === true
+    const enough = parsed.enough === true
+    const nextQueryRaw = typeof parsed.next_query === 'string' ? parsed.next_query.trim() : ''
+    state.nextQuery = nextQueryRaw || state.nextQuery || `${stockName} ${symbol} 最新动态 行业 财报`
+
+    if (continueReading && state.pendingReads.length > 0 && state.totalReads < 10) {
       state.phase = 'read'
-      return { state, log: `第 ${state.searchRound} 轮无新增结果，进入网页深度阅读阶段`, done: false }
+      return { state, log: `阅读后复核：继续阅读剩余网页（剩余 ${state.pendingReads.length} 个）`, done: false }
     }
-    
-    return { state, log: `搜索第 ${state.searchRound} 轮：${nextQuery}，获取 ${result.webpages.length} 条结果，新增 ${newCount} 条`, done: false }
-  } catch (e) {
-    state.phase = 'read'
-    return { state, log: `第 ${state.searchRound + 1} 轮 AI 判断失败，进入网页深度阅读阶段`, done: false }
+
+    state.pendingReads = []
+
+    if (enough) {
+      state.phase = 'done'
+      return { state, log: `阅读后复核：信息已充分，结束联网阶段（共阅读 ${state.readPages.length} 个网页）`, done: true }
+    }
+
+    if (state.searchRound >= 10) {
+      state.phase = 'done'
+      return { state, log: '阅读后复核：信息仍不足，但搜索已达 10 轮上限，结束联网阶段', done: true }
+    }
+
+    state.phase = 'search'
+    return { state, log: `阅读后复核：停止继续阅读，转入下一轮搜索（关键词：${state.nextQuery}）`, done: false }
+  } catch {
+    if (state.pendingReads.length > 0 && state.totalReads < 10) {
+      state.phase = 'read'
+      return { state, log: '阅读后复核失败，默认继续阅读剩余网页', done: false }
+    }
+    if (state.searchRound >= 10) {
+      state.phase = 'done'
+      return { state, log: '阅读后复核失败且搜索达上限，结束联网阶段', done: true }
+    }
+    state.phase = 'search'
+    state.nextQuery = state.nextQuery || `${stockName} ${symbol} 最新动态 股票`
+    return { state, log: '阅读后复核失败，继续下一轮搜索', done: false }
   }
 }
 
@@ -533,93 +684,48 @@ async function executeOneReadRound(
   industry: string
 ): Promise<{ state: SearchState; log: string; done: boolean }> {
   const readUrls = new Set(state.readUrls)
-  
-  if (state.readRound >= 10) {
+
+  if (state.totalReads >= 10) {
     state.phase = 'done'
     return { state, log: `网页深度阅读已达 10 次上限，共阅读 ${state.readPages.length} 个网页`, done: true }
   }
 
-  const newsList = state.news.map((n, i) =>
-    `${i + 1}. [${n.date}] [相关度:${n.score}] ${n.title}\n   链接: ${n.link}\n   摘要: ${n.snippet}`
-  ).join('\n')
-
-  const alreadyRead = state.readPages.length > 0
-    ? '\n\n已深度阅读的网页：\n' + state.readPages.map((p, i) => `${i + 1}. ${p.title} (${p.url})`).join('\n')
-    : ''
-
-  const readPrompt = `你是一位股票研究员，正在为 ${stockName}（${symbol}，${industry}行业）做深度研究。
-
-以下是搜索到的所有新闻（共 ${state.news.length} 条）：
-${newsList}
-${alreadyRead}
-
-请判断：是否有某个网页的内容特别重要，需要打开查看完整内容来获取更详细的信息？
-比如：重要的财报分析、深度研报、重大政策解读、关键的公司公告等。
-
-请严格按以下JSON格式回复（不要包含其他文字）：
-{"need_read": true或false, "url": "如果需要阅读，填写要打开的网页链接", "reason": "为什么要阅读这个网页"}`
-
-  try {
-    const decision = await analyzeWithAI({
-      systemPrompt: '你是一位专业的股票研究助手，帮助判断是否需要深入阅读某个网页。只输出JSON，不要输出其他内容。',
-      messages: [{ role: 'user', content: readPrompt }],
-      depth: 'deep'
-    })
-
-    let parsed: Record<string, unknown>
-    try {
-      parsed = JSON.parse(decision.content.trim())
-    } catch {
-      const start = decision.content.indexOf('{')
-      const end = decision.content.lastIndexOf('}')
-      if (start !== -1 && end !== -1) {
-        parsed = JSON.parse(decision.content.slice(start, end + 1))
-      } else {
-        state.phase = 'done'
-        return { state, log: 'AI 响应解析失败，结束深度阅读', done: true }
-      }
-    }
-
-    if (parsed.need_read !== true || !parsed.url) {
-      state.phase = 'done'
-      return { state, log: `AI 判断无需继续阅读网页，共深度阅读 ${state.readPages.length} 个网页`, done: true }
-    }
-
-    const targetUrl = String(parsed.url)
-    const reason = String(parsed.reason || '')
-
-    if (readUrls.has(targetUrl)) {
-      state.consecutiveSkips++
-      if (state.consecutiveSkips >= 3) {
-        state.phase = 'done'
-        return { state, log: 'AI 连续建议已读过的网页，结束深度阅读', done: true }
-      }
-      state.readRound++
-      return { state, log: `网页已阅读过，跳过：${targetUrl}`, done: false }
-    }
-    
-    state.consecutiveSkips = 0
-    readUrls.add(targetUrl)
-    state.readUrls = Array.from(readUrls)
-    state.readRound++
-
-    const pageContent = await metasoReadPage(targetUrl)
-
-    if (pageContent) {
-      const matchingNews = state.news.find(n => n.link === targetUrl)
-      state.readPages.push({
-        url: targetUrl,
-        title: matchingNews?.title || targetUrl,
-        content: pageContent
-      })
-      return { state, log: `深度阅读第 ${state.readRound} 个网页：${reason}（${pageContent.length} 字符）`, done: false }
-    } else {
-      return { state, log: `网页读取失败：${targetUrl}`, done: false }
-    }
-  } catch {
-    state.phase = 'done'
-    return { state, log: `第 ${state.readRound + 1} 次网页阅读判断失败，结束深度阅读`, done: true }
+  if (state.pendingReads.length === 0) {
+    state.phase = 'decide'
+    return { state, log: '当前没有待阅读网页，返回阅读决策阶段', done: false }
   }
+
+  const current = state.pendingReads.shift() as PendingReadItem
+  const targetUrl = current.url
+  const reason = current.reason
+
+  if (readUrls.has(targetUrl)) {
+    const next = await executeContinueReadDecision(state, stockName, symbol, industry)
+    return { state: next.state, log: `网页已阅读过，跳过：${targetUrl}；${next.log}`, done: next.done }
+  }
+
+  readUrls.add(targetUrl)
+  state.readUrls = Array.from(readUrls)
+
+  const pageContent = await metasoReadPage(targetUrl)
+  if (pageContent) {
+    const matchingNews = state.news.find(n => n.link === targetUrl)
+    state.totalReads += 1
+    state.readPages.push({
+      url: targetUrl,
+      title: matchingNews?.title || targetUrl,
+      content: pageContent
+    })
+    const next = await executeContinueReadDecision(state, stockName, symbol, industry)
+    return {
+      state: next.state,
+      log: `深度阅读第 ${state.totalReads} 个网页：${reason}（${pageContent.length} 字符）；${next.log}`,
+      done: next.done
+    }
+  }
+
+  const next = await executeContinueReadDecision(state, stockName, symbol, industry)
+  return { state: next.state, log: `网页读取失败：${targetUrl}；${next.log}`, done: next.done }
 }
 
 interface AIAnalysisResult {
@@ -1346,6 +1452,21 @@ export async function tickExecution(id: string, userId: string) {
         context.search_logs = searchState.searchLogs
         context.search_state = undefined
         logs.push({ at: now, text: `新闻搜索完成：共收集 ${searchState.news.length} 条资讯` })
+        nextStep += 1
+      } else {
+        context.search_state = searchState
+      }
+    } else if (searchState.phase === 'decide') {
+      const result = await executeDecideRound(searchState, basic.name, execution.symbol, basic.industry)
+      searchState = result.state
+      logs.push({ at: now, text: result.log })
+
+      if (result.done) {
+        context.news = searchState.news
+        context.read_pages = searchState.readPages
+        context.search_logs = searchState.searchLogs
+        context.search_state = undefined
+        logs.push({ at: now, text: `新闻搜索完成：共收集 ${searchState.news.length} 条资讯，深度阅读 ${searchState.readPages.length} 个网页` })
         nextStep += 1
       } else {
         context.search_state = searchState
