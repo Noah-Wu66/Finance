@@ -203,18 +203,25 @@ function AnalysisPageContent() {
   useEffect(() => {
     if (!executionId) return
 
-    const timer = window.setInterval(async () => {
+    let stopped = false
+    
+    const poll = async () => {
+      if (stopped) return
       try {
         const data = await runTick(executionId)
-        if (data.status !== 'running') {
-          window.clearInterval(timer)
+        if (data.status !== 'running' || stopped) {
+          return
         }
+        setTimeout(poll, 2000)
       } catch {
-        window.clearInterval(timer)
       }
-    }, 2200)
+    }
 
-    return () => window.clearInterval(timer)
+    poll()
+
+    return () => {
+      stopped = true
+    }
   }, [executionId])
 
   useEffect(() => {

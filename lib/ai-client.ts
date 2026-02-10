@@ -17,11 +17,10 @@ interface AnalyzeResult {
 const AI_CONFIG = {
   provider: 'anthropic' as const,
   model: 'claude-opus-4-6',
-  max_tokens: 64000,        // 统一使用64000
-  temperature: 0.7,
+  max_tokens: 64000,
+  temperature: 1,           // thinking 模式下必须为 1
   timeout: 120,
-  thinking_enabled: true,   // 开启自适应思考
-  effort: 'max' as const,   // 最高质量
+  thinking_budget: 16000,   // 思考预算 token 数
   enable_tools: false,
   // 定价：美元/百万token
   pricing: {
@@ -61,8 +60,7 @@ export async function analyzeWithAI(params: AnalyzeParams): Promise<AnalyzeResul
     temperature: AI_CONFIG.temperature,
     system: params.systemPrompt,
     messages: params.messages,
-    effort: AI_CONFIG.effort,
-    thinking: { type: 'adaptive' }  // 开启自适应思考
+    thinking: { type: 'enabled', budget_tokens: AI_CONFIG.thinking_budget }
   }
 
   const controller = new AbortController()
@@ -74,7 +72,7 @@ export async function analyzeWithAI(params: AnalyzeParams): Promise<AnalyzeResul
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
+        'anthropic-version': '2025-05-22'
       },
       body: JSON.stringify(requestBody),
       signal: controller.signal
@@ -132,8 +130,7 @@ export async function streamAnalyzeWithAI(
     temperature: AI_CONFIG.temperature,
     system: params.systemPrompt,
     messages: params.messages,
-    effort: AI_CONFIG.effort,
-    thinking: { type: 'adaptive' },
+    thinking: { type: 'enabled', budget_tokens: AI_CONFIG.thinking_budget },
     stream: true
   }
 
@@ -146,7 +143,7 @@ export async function streamAnalyzeWithAI(
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
+        'anthropic-version': '2025-05-22'
       },
       body: JSON.stringify(requestBody),
       signal: controller.signal
@@ -224,7 +221,7 @@ export async function streamAnalyzeWithAI(
 export async function isAIEnabled(): Promise<boolean> {
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY
-    return !!apiKey && apiKey.startsWith('sk-ant-')
+    return !!apiKey && apiKey.length > 10
   } catch {
     return false
   }

@@ -4,7 +4,7 @@ import { getDb } from '@/lib/db'
 import { fetchAStockData } from '@/lib/fetch-a-stock'
 import { inferMarketFromCode } from '@/lib/market'
 import { createOperationLog } from '@/lib/operation-logs'
-import { analyzeWithAI, isAIEnabled, AI_MODEL_INFO } from '@/lib/ai-client'
+import { analyzeWithAI, isAIEnabled } from '@/lib/ai-client'
 
 const EXEC_COLLECTION = 'web_executions'
 const REPORT_COLLECTION = 'analysis_reports'
@@ -60,34 +60,6 @@ interface NotificationDoc {
   source?: string
   status: 'unread' | 'read'
   created_at: Date
-}
-
-async function createUsageRecord(input: {
-  userId: string
-  provider: string
-  modelName: string
-  inputTokens: number
-  outputTokens: number
-  cost: number
-  analysisId: string
-}) {
-  try {
-    const db = await getDb()
-    await db.collection('usage_records').insertOne({
-      user_id: input.userId,
-      timestamp: new Date().toISOString(),
-      provider: input.provider,
-      model_name: input.modelName,
-      input_tokens: input.inputTokens,
-      output_tokens: input.outputTokens,
-      cost: input.cost,
-      currency: 'CNY',
-      session_id: input.analysisId,
-      analysis_type: 'single_analysis',
-      created_at: new Date()
-    })
-  } catch {
-  }
 }
 
 async function createNotification(input: {
@@ -172,7 +144,7 @@ async function loadQuotePack(symbol: string) {
   const db = await getDb()
   const rows = await db
     .collection('stock_quotes')
-    .find({ symbol })
+    .find({ symbol, data_source: 'eastmoney_kline' })
     .sort({ trade_date: -1 })
     .limit(30)
     .toArray()
@@ -275,7 +247,7 @@ async function loadKlineHistory(symbol: string, limit = 60) {
   const db = await getDb()
   const rows = await db
     .collection('stock_quotes')
-    .find({ symbol })
+    .find({ symbol, data_source: 'eastmoney_kline' })
     .sort({ trade_date: -1 })
     .limit(limit)
     .toArray()
@@ -408,55 +380,82 @@ interface SearchRoundLog {
   resultCount: number
 }
 
-/**
- * AI 驱动的智能搜索 + 网页深度阅读
- */
-async function searchNewsWithAI(
+interface SearchState {
+  phase: 'search' | 'read' | 'done'
+  searchRound: number
+  readRound: number
+  news: NewsItem[]
+  readPages: ReadPageItem[]
+  searchLogs: SearchRoundLog[]
+  seenLinks: string[]
+  readUrls: string[]
+  consecutiveSkips: number
+}
+
+function initSearchState(): SearchState {
+  return {
+    phase: 'search',
+    searchRound: 0,
+    readRound: 0,
+    news: [],
+    readPages: [],
+    searchLogs: [],
+    seenLinks: [],
+    readUrls: [],
+    consecutiveSkips: 0
+  }
+}
+
+async function executeOneSearchRound(
+  state: SearchState,
   stockName: string,
   symbol: string,
-  industry: string,
-  onLog: (text: string) => void
-): Promise<{ news: NewsItem[]; readPages: ReadPageItem[]; searchLogs: SearchRoundLog[] }> {
+  industry: string
+): Promise<{ state: SearchState; log: string; done: boolean }> {
   const aiEnabled = await isAIEnabled()
-  const allNews: NewsItem[] = []
-  const readPages: ReadPageItem[] = []
-  const searchLogs: SearchRoundLog[] = []
-  const seenLinks = new Set<string>()
+  const seenLinks = new Set(state.seenLinks)
 
-  // 第一轮：固定搜索股票名称+最新消息
-  const firstQuery = `${stockName} ${symbol} 最新消息 股票`
-  onLog(`搜索第 1 轮：${firstQuery}`)
-  const firstResult = await metasoSearch(firstQuery)
-  searchLogs.push({ round: 1, query: firstQuery, resultCount: firstResult.webpages.length })
-
-  for (const w of firstResult.webpages) {
-    if (!seenLinks.has(w.link)) {
-      seenLinks.add(w.link)
-      allNews.push({
-        title: w.title,
-        snippet: w.snippet,
-        date: w.date || '',
-        source: w.link,
-        link: w.link,
-        score: w.score
-      })
+  if (state.searchRound === 0) {
+    const firstQuery = `${stockName} ${symbol} 最新消息 股票`
+    const firstResult = await metasoSearch(firstQuery)
+    
+    for (const w of firstResult.webpages) {
+      if (!seenLinks.has(w.link)) {
+        seenLinks.add(w.link)
+        state.news.push({
+          title: w.title,
+          snippet: w.snippet,
+          date: w.date || '',
+          source: w.link,
+          link: w.link,
+          score: w.score
+        })
+      }
     }
+    
+    state.seenLinks = Array.from(seenLinks)
+    state.searchLogs.push({ round: 1, query: firstQuery, resultCount: firstResult.webpages.length })
+    state.searchRound = 1
+    
+    if (!aiEnabled) {
+      state.phase = 'done'
+      return { state, log: `第 1 轮搜索获取 ${firstResult.webpages.length} 条结果（AI 未启用，跳过后续搜索）`, done: true }
+    }
+    return { state, log: `搜索第 1 轮：${firstQuery}，获取 ${firstResult.webpages.length} 条结果`, done: false }
   }
-  onLog(`第 1 轮获取 ${firstResult.webpages.length} 条结果`)
 
-  if (!aiEnabled) {
-    return { news: allNews, readPages, searchLogs }
+  if (state.searchRound >= 10) {
+    state.phase = 'read'
+    return { state, log: '搜索已达 10 轮上限，进入网页深度阅读阶段', done: false }
   }
 
-  // 后续轮次：AI 决定是否继续搜索、搜什么，最多10轮
-  for (let round = 2; round <= 10; round++) {
-    const currentNewsSummary = allNews.map((n, i) =>
-      `${i + 1}. [${n.date}] ${n.title}\n   ${n.snippet}`
-    ).join('\n')
+  const currentNewsSummary = state.news.map((n, i) =>
+    `${i + 1}. [${n.date}] ${n.title}\n   ${n.snippet}`
+  ).join('\n')
 
-    const decisionPrompt = `你是一位股票研究员，正在为 ${stockName}（${symbol}，${industry}行业）收集新闻资讯。
+  const decisionPrompt = `你是一位股票研究员，正在为 ${stockName}（${symbol}，${industry}行业）收集新闻资讯。
 
-当前已收集到 ${allNews.length} 条新闻：
+当前已收集到 ${state.news.length} 条新闻：
 ${currentNewsSummary}
 
 请判断：
@@ -466,80 +465,91 @@ ${currentNewsSummary}
 请严格按以下JSON格式回复（不要包含其他文字）：
 {"enough": true或false, "next_query": "如果不够，填写下一次搜索的关键词，要具体精准"}`
 
+  try {
+    const decision = await analyzeWithAI({
+      systemPrompt: '你是一位专业的股票研究助手，帮助判断新闻收集是否充分。只输出JSON，不要输出其他内容。',
+      messages: [{ role: 'user', content: decisionPrompt }],
+      depth: 'deep'
+    })
+
+    let parsed: Record<string, unknown>
     try {
-      const decision = await analyzeWithAI({
-        systemPrompt: '你是一位专业的股票研究助手，帮助判断新闻收集是否充分。只输出JSON，不要输出其他内容。',
-        messages: [{ role: 'user', content: decisionPrompt }],
-        depth: 'deep'
-      })
-
-      let parsed: Record<string, unknown>
-      try {
-        parsed = JSON.parse(decision.content.trim())
-      } catch {
-        const start = decision.content.indexOf('{')
-        const end = decision.content.lastIndexOf('}')
-        if (start !== -1 && end !== -1) {
-          parsed = JSON.parse(decision.content.slice(start, end + 1))
-        } else {
-          break
-        }
-      }
-
-      if (parsed.enough === true || !parsed.next_query) {
-        onLog(`AI 判断新闻已充分，共 ${round - 1} 轮搜索`)
-        break
-      }
-
-      const nextQuery = String(parsed.next_query)
-      onLog(`搜索第 ${round} 轮：${nextQuery}`)
-      const result = await metasoSearch(nextQuery)
-      searchLogs.push({ round, query: nextQuery, resultCount: result.webpages.length })
-
-      let newCount = 0
-      for (const w of result.webpages) {
-        if (!seenLinks.has(w.link)) {
-          seenLinks.add(w.link)
-          allNews.push({
-            title: w.title,
-            snippet: w.snippet,
-            date: w.date || '',
-            source: w.link,
-            link: w.link,
-            score: w.score
-          })
-          newCount++
-        }
-      }
-      onLog(`第 ${round} 轮获取 ${result.webpages.length} 条结果，新增 ${newCount} 条`)
-
-      if (newCount === 0) {
-        onLog(`第 ${round} 轮无新增结果，停止搜索`)
-        break
-      }
+      parsed = JSON.parse(decision.content.trim())
     } catch {
-      onLog(`第 ${round} 轮 AI 判断失败，停止搜索`)
-      break
+      const start = decision.content.indexOf('{')
+      const end = decision.content.lastIndexOf('}')
+      if (start !== -1 && end !== -1) {
+        parsed = JSON.parse(decision.content.slice(start, end + 1))
+      } else {
+        state.phase = 'read'
+        return { state, log: 'AI 响应解析失败，进入网页深度阅读阶段', done: false }
+      }
     }
+
+    if (parsed.enough === true || !parsed.next_query) {
+      state.phase = 'read'
+      return { state, log: `AI 判断新闻已充分，共 ${state.searchRound} 轮搜索，进入网页深度阅读阶段`, done: false }
+    }
+
+    const nextQuery = String(parsed.next_query)
+    const result = await metasoSearch(nextQuery)
+    
+    let newCount = 0
+    for (const w of result.webpages) {
+      if (!seenLinks.has(w.link)) {
+        seenLinks.add(w.link)
+        state.news.push({
+          title: w.title,
+          snippet: w.snippet,
+          date: w.date || '',
+          source: w.link,
+          link: w.link,
+          score: w.score
+        })
+        newCount++
+      }
+    }
+    
+    state.seenLinks = Array.from(seenLinks)
+    state.searchLogs.push({ round: state.searchRound + 1, query: nextQuery, resultCount: result.webpages.length })
+    state.searchRound += 1
+
+    if (newCount === 0) {
+      state.phase = 'read'
+      return { state, log: `第 ${state.searchRound} 轮无新增结果，进入网页深度阅读阶段`, done: false }
+    }
+    
+    return { state, log: `搜索第 ${state.searchRound} 轮：${nextQuery}，获取 ${result.webpages.length} 条结果，新增 ${newCount} 条`, done: false }
+  } catch (e) {
+    state.phase = 'read'
+    return { state, log: `第 ${state.searchRound + 1} 轮 AI 判断失败，进入网页深度阅读阶段`, done: false }
+  }
+}
+
+async function executeOneReadRound(
+  state: SearchState,
+  stockName: string,
+  symbol: string,
+  industry: string
+): Promise<{ state: SearchState; log: string; done: boolean }> {
+  const readUrls = new Set(state.readUrls)
+  
+  if (state.readRound >= 10) {
+    state.phase = 'done'
+    return { state, log: `网页深度阅读已达 10 次上限，共阅读 ${state.readPages.length} 个网页`, done: true }
   }
 
-  // ===== 网页深度阅读阶段：AI 挑选需要深入阅读的网页，最多10次 =====
-  onLog('进入网页深度阅读阶段...')
-  const readUrls = new Set<string>()
-  let consecutiveSkips = 0
+  const newsList = state.news.map((n, i) =>
+    `${i + 1}. [${n.date}] [相关度:${n.score}] ${n.title}\n   链接: ${n.link}\n   摘要: ${n.snippet}`
+  ).join('\n')
 
-  for (let readRound = 1; readRound <= 10; readRound++) {
-    const newsList = allNews.map((n, i) =>
-      `${i + 1}. [${n.date}] [相关度:${n.score}] ${n.title}\n   链接: ${n.link}\n   摘要: ${n.snippet}`
-    ).join('\n')
+  const alreadyRead = state.readPages.length > 0
+    ? '\n\n已深度阅读的网页：\n' + state.readPages.map((p, i) => `${i + 1}. ${p.title} (${p.url})`).join('\n')
+    : ''
 
-    const alreadyRead = readPages.length > 0
-      ? '\n\n已深度阅读的网页：\n' + readPages.map((p, i) => `${i + 1}. ${p.title} (${p.url})`).join('\n')
-      : ''
+  const readPrompt = `你是一位股票研究员，正在为 ${stockName}（${symbol}，${industry}行业）做深度研究。
 
-    const readPrompt = `你是一位股票研究员，正在为 ${stockName}（${symbol}，${industry}行业）做深度研究。
-
-以下是搜索到的所有新闻（共 ${allNews.length} 条）：
+以下是搜索到的所有新闻（共 ${state.news.length} 条）：
 ${newsList}
 ${alreadyRead}
 
@@ -549,69 +559,67 @@ ${alreadyRead}
 请严格按以下JSON格式回复（不要包含其他文字）：
 {"need_read": true或false, "url": "如果需要阅读，填写要打开的网页链接", "reason": "为什么要阅读这个网页"}`
 
+  try {
+    const decision = await analyzeWithAI({
+      systemPrompt: '你是一位专业的股票研究助手，帮助判断是否需要深入阅读某个网页。只输出JSON，不要输出其他内容。',
+      messages: [{ role: 'user', content: readPrompt }],
+      depth: 'deep'
+    })
+
+    let parsed: Record<string, unknown>
     try {
-      const decision = await analyzeWithAI({
-        systemPrompt: '你是一位专业的股票研究助手，帮助判断是否需要深入阅读某个网页。只输出JSON，不要输出其他内容。',
-        messages: [{ role: 'user', content: readPrompt }],
-        depth: 'deep'
-      })
-
-      let parsed: Record<string, unknown>
-      try {
-        parsed = JSON.parse(decision.content.trim())
-      } catch {
-        const start = decision.content.indexOf('{')
-        const end = decision.content.lastIndexOf('}')
-        if (start !== -1 && end !== -1) {
-          parsed = JSON.parse(decision.content.slice(start, end + 1))
-        } else {
-          break
-        }
-      }
-
-      if (parsed.need_read !== true || !parsed.url) {
-        onLog(`AI 判断无需继续阅读网页，共深度阅读 ${readPages.length} 个网页`)
-        break
-      }
-
-      const targetUrl = String(parsed.url)
-      const reason = String(parsed.reason || '')
-
-      if (readUrls.has(targetUrl)) {
-        onLog(`网页已阅读过，跳过：${targetUrl}`)
-        consecutiveSkips++
-        if (consecutiveSkips >= 3) {
-          onLog('AI 连续建议已读过的网页，停止深度阅读')
-          break
-        }
-        continue
-      }
-      consecutiveSkips = 0
-
-      readUrls.add(targetUrl)
-      onLog(`深度阅读第 ${readRound} 个网页：${reason}`)
-      onLog(`正在读取：${targetUrl}`)
-
-      const pageContent = await metasoReadPage(targetUrl)
-
-      if (pageContent) {
-        const matchingNews = allNews.find(n => n.link === targetUrl)
-        readPages.push({
-          url: targetUrl,
-          title: matchingNews?.title || targetUrl,
-          content: pageContent
-        })
-        onLog(`已读取网页内容（${pageContent.length} 字符）`)
-      } else {
-        onLog(`网页读取失败：${targetUrl}`)
-      }
+      parsed = JSON.parse(decision.content.trim())
     } catch {
-      onLog(`第 ${readRound} 次网页阅读判断失败，停止`)
-      break
+      const start = decision.content.indexOf('{')
+      const end = decision.content.lastIndexOf('}')
+      if (start !== -1 && end !== -1) {
+        parsed = JSON.parse(decision.content.slice(start, end + 1))
+      } else {
+        state.phase = 'done'
+        return { state, log: 'AI 响应解析失败，结束深度阅读', done: true }
+      }
     }
-  }
 
-  return { news: allNews, readPages, searchLogs }
+    if (parsed.need_read !== true || !parsed.url) {
+      state.phase = 'done'
+      return { state, log: `AI 判断无需继续阅读网页，共深度阅读 ${state.readPages.length} 个网页`, done: true }
+    }
+
+    const targetUrl = String(parsed.url)
+    const reason = String(parsed.reason || '')
+
+    if (readUrls.has(targetUrl)) {
+      state.consecutiveSkips++
+      if (state.consecutiveSkips >= 3) {
+        state.phase = 'done'
+        return { state, log: 'AI 连续建议已读过的网页，结束深度阅读', done: true }
+      }
+      state.readRound++
+      return { state, log: `网页已阅读过，跳过：${targetUrl}`, done: false }
+    }
+    
+    state.consecutiveSkips = 0
+    readUrls.add(targetUrl)
+    state.readUrls = Array.from(readUrls)
+    state.readRound++
+
+    const pageContent = await metasoReadPage(targetUrl)
+
+    if (pageContent) {
+      const matchingNews = state.news.find(n => n.link === targetUrl)
+      state.readPages.push({
+        url: targetUrl,
+        title: matchingNews?.title || targetUrl,
+        content: pageContent
+      })
+      return { state, log: `深度阅读第 ${state.readRound} 个网页：${reason}（${pageContent.length} 字符）`, done: false }
+    } else {
+      return { state, log: `网页读取失败：${targetUrl}`, done: false }
+    }
+  } catch {
+    state.phase = 'done'
+    return { state, log: `第 ${state.readRound + 1} 次网页阅读判断失败，结束深度阅读`, done: true }
+  }
 }
 
 interface AIAnalysisResult {
@@ -763,17 +771,6 @@ ${readPagesSummary ? `\n【深度阅读的网页内容（共${readPagesData.leng
           volume: Number(k.volume ?? 0)
         }))
       : []
-
-    // 记录用量
-    await createUsageRecord({
-      userId: execution.user_id,
-      provider: AI_MODEL_INFO.provider,
-      modelName: AI_MODEL_INFO.model,
-      inputTokens: result.usage.input_tokens,
-      outputTokens: result.usage.output_tokens,
-      cost: (result.usage.input_tokens * AI_MODEL_INFO.pricing.input + result.usage.output_tokens * AI_MODEL_INFO.pricing.output) / 1e6,
-      analysisId: `ai_${Date.now()}_${execution.symbol}`
-    })
 
     return {
       ai_summary: String(parsed.summary || ''),
@@ -1334,28 +1331,47 @@ export async function tickExecution(id: string, userId: string) {
     logs.push({ at: now, text: `已加载财务数据：ROE ${financial.roe.toFixed(2)}%，PE ${financial.pe.toFixed(2)}` })
     nextStep += 1
   } else if (execution.step === 4) {
-    // 联网搜索新闻资讯
     const basic = context.basic as { name: string; industry: string }
-    logs.push({ at: now, text: '正在联网搜索相关新闻资讯...' })
-
-    const logMessages: string[] = []
-    const { news, readPages, searchLogs: sLogs } = await searchNewsWithAI(
-      basic.name,
-      execution.symbol,
-      basic.industry,
-      (text) => { logMessages.push(text) }
-    )
-
-    // 把搜索过程的日志追加进来
-    for (const msg of logMessages) {
-      logs.push({ at: now, text: msg })
+    
+    let searchState = (context.search_state as SearchState | undefined) || initSearchState()
+    
+    if (searchState.phase === 'search') {
+      const result = await executeOneSearchRound(searchState, basic.name, execution.symbol, basic.industry)
+      searchState = result.state
+      logs.push({ at: now, text: result.log })
+      
+      if (result.done) {
+        context.news = searchState.news
+        context.read_pages = searchState.readPages
+        context.search_logs = searchState.searchLogs
+        context.search_state = undefined
+        logs.push({ at: now, text: `新闻搜索完成：共收集 ${searchState.news.length} 条资讯` })
+        nextStep += 1
+      } else {
+        context.search_state = searchState
+      }
+    } else if (searchState.phase === 'read') {
+      const result = await executeOneReadRound(searchState, basic.name, execution.symbol, basic.industry)
+      searchState = result.state
+      logs.push({ at: now, text: result.log })
+      
+      if (result.done) {
+        context.news = searchState.news
+        context.read_pages = searchState.readPages
+        context.search_logs = searchState.searchLogs
+        context.search_state = undefined
+        logs.push({ at: now, text: `新闻搜索完成：共收集 ${searchState.news.length} 条资讯，深度阅读 ${searchState.readPages.length} 个网页` })
+        nextStep += 1
+      } else {
+        context.search_state = searchState
+      }
+    } else {
+      context.news = searchState.news
+      context.read_pages = searchState.readPages
+      context.search_logs = searchState.searchLogs
+      context.search_state = undefined
+      nextStep += 1
     }
-
-    context.news = news
-    context.read_pages = readPages
-    context.search_logs = sLogs
-    logs.push({ at: now, text: `新闻搜索完成：共收集 ${news.length} 条资讯，深度阅读 ${readPages.length} 个网页，${sLogs.length} 轮搜索` })
-    nextStep += 1
   } else if (execution.step === 5) {
     const quote = context.quote as { changePct: number }
     const financial = context.financial as { roe: number; pe: number; pb: number }
@@ -1411,16 +1427,6 @@ export async function tickExecution(id: string, userId: string) {
       content: report.ai_powered ? 'AI深度分析报告已生成，含K线预测。' : '报告已生成，可直接打开查看。',
       link: `/reports/${report.report_id}`,
       source: 'analysis'
-    })
-
-    await createUsageRecord({
-      userId,
-      provider: 'live-engine',
-      modelName: 'local-evaluator',
-      inputTokens: 3200,
-      outputTokens: 1600,
-      cost: 0,
-      analysisId: report.analysis_id
     })
 
     await createOperationLogSafe({
