@@ -17,10 +17,8 @@ interface AnalyzeResult {
 const AI_CONFIG = {
   provider: 'anthropic' as const,
   model: 'claude-opus-4-6',
-  max_tokens: 64000,
-  temperature: 1,           // thinking 模式下必须为 1
+  max_tokens: 128000,
   timeout: 120,
-  thinking_budget: 16000,   // 思考预算 token 数
   enable_tools: false,
   // 定价：美元/百万token
   pricing: {
@@ -57,10 +55,10 @@ export async function analyzeWithAI(params: AnalyzeParams): Promise<AnalyzeResul
   const requestBody: Record<string, unknown> = {
     model: AI_CONFIG.model,
     max_tokens: AI_CONFIG.max_tokens,
-    temperature: AI_CONFIG.temperature,
     system: params.systemPrompt,
     messages: params.messages,
-    thinking: { type: 'enabled', budget_tokens: AI_CONFIG.thinking_budget }
+    thinking: { type: 'adaptive' },
+    output_config: { effort: 'max' }
   }
 
   const controller = new AbortController()
@@ -127,10 +125,10 @@ export async function streamAnalyzeWithAI(
   const requestBody: Record<string, unknown> = {
     model: AI_CONFIG.model,
     max_tokens: AI_CONFIG.max_tokens,
-    temperature: AI_CONFIG.temperature,
     system: params.systemPrompt,
     messages: params.messages,
-    thinking: { type: 'enabled', budget_tokens: AI_CONFIG.thinking_budget },
+    thinking: { type: 'adaptive' },
+    output_config: { effort: 'max' },
     stream: true
   }
 
