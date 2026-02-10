@@ -9,6 +9,8 @@ import { KlineChart } from '@/components/ui/kline-chart'
 interface StockDataPanelProps {
   symbol: string
   className?: string
+  klineLimit?: number
+  predictedKline?: KlineBar[]
 }
 
 interface QuoteData {
@@ -43,7 +45,12 @@ interface KlineBar {
   volume: number
 }
 
-export function StockDataPanel({ symbol, className = '' }: StockDataPanelProps) {
+export function StockDataPanel({
+  symbol,
+  className = '',
+  klineLimit = 60,
+  predictedKline = []
+}: StockDataPanelProps) {
   const [quote, setQuote] = useState<QuoteData | null>(null)
   const [funda, setFunda] = useState<FundaData | null>(null)
   const [kline, setKline] = useState<KlineBar[]>([])
@@ -66,7 +73,7 @@ export function StockDataPanel({ symbol, className = '' }: StockDataPanelProps) 
           pe: number; pb: number; ps: number; roe: number
           total_mv: number; circ_mv: number; industry: string; debt_ratio: number
         }>(`/api/stocks/${symbol}/fundamentals`).catch(() => null),
-        apiFetch<{ items: KlineBar[] }>(`/api/stocks/${symbol}/kline?limit=60`).catch(() => null)
+        apiFetch<{ items: KlineBar[] }>(`/api/stocks/${symbol}/kline?limit=${klineLimit}`).catch(() => null)
       ])
 
       if (qRes?.data) {
@@ -100,7 +107,7 @@ export function StockDataPanel({ symbol, className = '' }: StockDataPanelProps) 
       }
     } catch {}
     setLoading(false)
-  }, [symbol])
+  }, [symbol, klineLimit])
 
   useEffect(() => {
     if (symbol) {
@@ -133,6 +140,10 @@ export function StockDataPanel({ symbol, className = '' }: StockDataPanelProps) 
 
   const fmtPct = (v: number | undefined) =>
     v !== undefined && v !== 0 ? `${v.toFixed(2)}%` : '-'
+
+  const sortedPredicted = [...predictedKline].sort((a, b) => (a.time > b.time ? 1 : -1))
+  const mergedKline = [...kline, ...sortedPredicted]
+  const predictStartIndex = sortedPredicted.length > 0 ? kline.length : undefined
 
   if (loading) {
     return (
@@ -187,8 +198,18 @@ export function StockDataPanel({ symbol, className = '' }: StockDataPanelProps) 
           bg-[var(--bg-secondary)] p-3
           overflow-x-auto
         ">
-          <KlineChart data={kline} width={660} height={320} />
+          <KlineChart
+            data={mergedKline}
+            width={660}
+            height={320}
+            predictStartIndex={predictStartIndex}
+          />
         </div>
+        {sortedPredicted.length > 0 && (
+          <p className="text-[11px] text-[var(--fg-muted)] m-0 mt-2">
+            已合并量化分析预测：未来 {sortedPredicted.length} 个交易日为虚线部分，仅供参考。
+          </p>
+        )}
       </div>
 
       {/* 基本面 */}

@@ -14,31 +14,12 @@ import { Spinner } from '@/components/ui/spinner'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { ProgressBar } from '@/components/ui/progress-bar'
 import { StockDataPanel } from '@/components/stock-data-panel'
-import { KlineChart } from '@/components/ui/kline-chart'
 
 type Status = 'running' | 'completed' | 'failed' | 'canceled' | 'stopped'
 
 interface ExecutionLog {
   at: string
   text: string
-}
-
-interface KlineBar {
-  time: string
-  open: number
-  high: number
-  low: number
-  close: number
-  volume: number
-}
-
-interface NewsItem {
-  title: string
-  snippet: string
-  date: string
-  source: string
-  link: string
-  score: string
 }
 
 interface Execution {
@@ -52,16 +33,6 @@ interface Execution {
   logs: ExecutionLog[]
   result?: {
     report_id?: string
-    summary?: string
-    recommendation?: string
-    confidence_score?: number
-    risk_level?: string
-    key_points?: string[]
-    predicted_kline?: KlineBar[]
-    kline_history?: KlineBar[]
-    news?: NewsItem[]
-    search_rounds?: number
-    ai_powered?: boolean
   }
 }
 
@@ -454,7 +425,7 @@ function AnalysisPageContent() {
         </Card>
       </div>
 
-      {/* 分析报告 */}
+      {/* 分析结果 */}
       <Card className="p-5">
         <h3 className="text-sm font-semibold text-[var(--fg)] m-0 mb-4 flex items-center gap-2">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--fg-muted)]">
@@ -464,108 +435,26 @@ function AnalysisPageContent() {
             <line x1="16" y1="17" x2="8" y2="17" />
             <polyline points="10 9 9 9 8 9" />
           </svg>
-          分析报告
-          {execution?.result?.ai_powered && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary-100 dark:bg-primary-700/20 text-primary-600 dark:text-primary-400 font-medium">
-              AI 深度分析
-            </span>
-          )}
+          分析结果
         </h3>
-        {execution?.status === 'completed' && execution.result ? (
-          <div className="space-y-5">
-            {/* 核心结论 */}
-            <div className="rounded-lg border border-success-200 dark:border-success-700/30 bg-success-50 dark:bg-success-700/10 p-4 space-y-2">
-              <h4 className="text-sm font-semibold text-success-700 dark:text-success-400 m-0">核心结论</h4>
-              <p className="text-sm text-success-700 dark:text-success-300 m-0 leading-relaxed">{execution.result.summary}</p>
-            </div>
-
-            {/* 操作建议 */}
-            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] p-4 space-y-2">
-              <h4 className="text-sm font-semibold text-[var(--fg)] m-0">操作建议</h4>
-              <p className="text-sm text-[var(--fg-secondary)] m-0 leading-relaxed">{execution.result.recommendation}</p>
-              <div className="flex flex-wrap gap-4 mt-3 pt-3 border-t border-[var(--border)]">
-                <span className="text-xs text-[var(--fg-muted)]">
-                  置信度：<span className="font-mono text-[var(--fg)] font-semibold">{execution.result.confidence_score ?? '-'}%</span>
-                </span>
-                <span className="text-xs text-[var(--fg-muted)]">
-                  风险等级：<span className="font-mono text-[var(--fg)] font-semibold">{execution.result.risk_level ?? '-'}</span>
-                </span>
+        {execution?.status === 'completed' && execution?.result?.report_id ? (
+          <div className="rounded-lg border border-success-200 dark:border-success-700/30 bg-success-50 dark:bg-success-700/10 p-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-success-700 dark:text-success-400 m-0">分析已完成，报告已生成</p>
+                <p className="text-xs text-success-700 dark:text-success-300 m-0 mt-1">请点击按钮进入报告页查看完整内容。</p>
               </div>
-            </div>
-
-            {/* 关键要点 */}
-            {execution.result.key_points && execution.result.key_points.length > 0 && (
-              <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] p-4 space-y-2">
-                <h4 className="text-sm font-semibold text-[var(--fg)] m-0">关键要点</h4>
-                <ul className="space-y-1.5 pl-4 list-disc m-0">
-                  {execution.result.key_points.map((point, idx) => (
-                    <li key={idx} className="text-sm text-[var(--fg-secondary)] leading-relaxed">{point}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {/* 相关新闻资讯 */}
-            {execution.result.news && execution.result.news.length > 0 && (
-              <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-semibold text-[var(--fg)] m-0">相关新闻资讯</h4>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--bg)] text-[var(--fg-muted)]">
-                    {execution.result.news.length} 条 · {execution.result.search_rounds || 1} 轮搜索
-                  </span>
-                </div>
-                <div className="space-y-2 max-h-80 overflow-y-auto">
-                  {execution.result.news.map((item, idx) => (
-                    <a
-                      key={idx}
-                      href={item.link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block rounded-lg px-3 py-2 hover:bg-[var(--bg-hover)] transition-colors no-underline"
-                    >
-                      <div className="flex items-start gap-2">
-                        <span className="text-[10px] text-[var(--fg-muted)] shrink-0 mt-0.5 font-mono">{item.date || '-'}</span>
-                        <div className="min-w-0">
-                          <p className="text-sm text-[var(--fg)] m-0 font-medium truncate">{item.title}</p>
-                          <p className="text-xs text-[var(--fg-muted)] m-0 mt-0.5 line-clamp-2">{item.snippet}</p>
-                        </div>
-                      </div>
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* K线预测图 */}
-            {execution.result.predicted_kline && execution.result.predicted_kline.length > 0 && (
-              <div className="space-y-2">
-                <h4 className="text-xs font-semibold text-[var(--fg-muted)] uppercase tracking-wider m-0">
-                  K线走势预测（未来 {execution.result.predicted_kline.length} 个交易日）
-                </h4>
-                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-3 overflow-x-auto">
-                  <KlineChart
-                    data={[
-                      ...(execution.result.kline_history || []).slice(-20),
-                      ...execution.result.predicted_kline
-                    ]}
-                    width={720}
-                    height={340}
-                    predictStartIndex={(execution.result.kline_history || []).slice(-20).length}
-                  />
-                </div>
-                <p className="text-[11px] text-[var(--fg-muted)] m-0">
-                  虚线部分为 AI 预测走势，仅供参考，不构成投资建议。历史数据显示最近 20 个交易日。
-                </p>
-              </div>
-            )}
-
-            {execution.result.report_id && (
               <Link href={`/reports/${execution.result.report_id}`}>
-                <Button variant="soft" size="sm">
-                  查看完整报告
+                <Button variant="primary" size="sm">
+                  进入报告页
                 </Button>
               </Link>
-            )}
+            </div>
+          </div>
+        ) : execution?.status === 'failed' ? (
+          <div className="rounded-lg border border-danger-200 dark:border-danger-700/30 bg-danger-50 dark:bg-danger-700/10 p-4">
+            <p className="text-sm font-semibold text-danger-700 dark:text-danger-400 m-0">分析失败</p>
+            <p className="text-xs text-danger-700 dark:text-danger-300 m-0 mt-1">请重新发起分析任务。</p>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-8 text-center">
@@ -576,7 +465,7 @@ function AnalysisPageContent() {
               <line x1="16" y1="17" x2="8" y2="17" />
             </svg>
             <p className="text-sm text-[var(--fg-muted)] m-0">
-              {isRunning ? '分析进行中，请等待...' : '分析完成后，报告将显示在这里'}
+              {isRunning ? '分析进行中，请等待完成...' : '分析完成后，这里会显示“进入报告页”按钮'}
             </p>
           </div>
         )}
@@ -593,7 +482,10 @@ function AnalysisPageContent() {
             </svg>
             股票详情
           </h3>
-          <StockDataPanel symbol={symbol} />
+          <StockDataPanel
+            symbol={symbol}
+            klineLimit={41}
+          />
         </Card>
       )}
     </div>

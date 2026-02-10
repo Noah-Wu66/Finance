@@ -51,11 +51,37 @@ interface ReportDetail {
   created_at: string
 }
 
+function getT1Prediction(predicted: KlineBar[] | undefined) {
+  if (!predicted || predicted.length === 0) return null
+  const sorted = [...predicted].sort((a, b) => (a.time > b.time ? 1 : -1))
+  const t1 = sorted[0]
+  const open = Number(t1.open || 0)
+  const close = Number(t1.close || 0)
+  const deltaPct = open > 0 ? ((close - open) / open) * 100 : 0
+  const isFlat = Math.abs(deltaPct) <= 0.15
+  const trend = isFlat ? '浮动' : close > open ? '看涨' : '看跌'
+  const colorClass = isFlat
+    ? 'text-amber-600 dark:text-amber-400'
+    : close > open
+      ? 'text-danger-600 dark:text-danger-400'
+      : 'text-success-600 dark:text-success-400'
+
+  return {
+    time: t1.time,
+    open,
+    close,
+    deltaPct,
+    trend,
+    colorClass
+  }
+}
+
 export default function ReportDetailPage() {
   const params = useParams<{ id: string }>()
   const [detail, setDetail] = useState<ReportDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [newsExpanded, setNewsExpanded] = useState(false)
 
   useEffect(() => {
     const run = async () => {
@@ -64,6 +90,7 @@ export default function ReportDetailPage() {
       try {
         const res = await apiFetch<ReportDetail>(`/api/reports/${params.id}`)
         setDetail(res.data)
+        setNewsExpanded(false)
       } catch (err) {
         setError(err instanceof Error ? err.message : '加载失败')
       } finally {
@@ -103,6 +130,23 @@ export default function ReportDetailPage() {
       {detail ? (
         <>
           <Card>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="px-3 py-2 rounded-lg bg-primary-100 dark:bg-primary-700/20 border border-primary-200 dark:border-primary-700/40">
+                <p className="text-[11px] text-primary-700 dark:text-primary-300 m-0">置信度</p>
+                <p className="text-xl font-bold text-primary-700 dark:text-primary-300 m-0 mt-0.5">
+                  {detail.confidence_score ?? '-'}%
+                </p>
+              </div>
+              <div className="px-3 py-2 rounded-lg bg-orange-100 dark:bg-orange-700/20 border border-orange-200 dark:border-orange-700/40">
+                <p className="text-[11px] text-orange-700 dark:text-orange-300 m-0">风险等级</p>
+                <p className="text-xl font-bold text-orange-700 dark:text-orange-300 m-0 mt-0.5">
+                  {detail.risk_level || '-'}
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          <Card>
             <div className="flex items-center gap-2 mb-3">
               <h4 className="text-sm font-semibold text-[var(--fg)] m-0">
                 核心结论
@@ -120,18 +164,6 @@ export default function ReportDetailPage() {
               {detail.recommendation || '-'}
             </p>
             <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t border-[var(--border)]">
-              <span className="text-xs text-[var(--fg-muted)]">
-                置信度：
-                <span className="font-mono text-[var(--fg-secondary)] font-medium">
-                  {detail.confidence_score ?? '-'}%
-                </span>
-              </span>
-              <span className="text-xs text-[var(--fg-muted)]">
-                风险等级：
-                <span className="font-mono text-[var(--fg-secondary)] font-medium">
-                  {detail.risk_level ?? '-'}
-                </span>
-              </span>
               <span className="text-xs text-[var(--fg-muted)]">
                 生成时间：
                 <span className="text-[var(--fg-secondary)]">
@@ -161,28 +193,74 @@ export default function ReportDetailPage() {
             )}
           </Card>
 
-          {/* K线预测图 */}
-          {detail.predicted_kline && detail.predicted_kline.length > 0 && (
-            <Card>
-              <h4 className="text-sm font-semibold text-[var(--fg)] mb-3">
-                K线走势预测（未来 {detail.predicted_kline.length} 个交易日）
-              </h4>
-              <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-3 overflow-x-auto">
-                <KlineChart
-                  data={[
-                    ...(detail.kline_history || []).slice(-20),
-                    ...detail.predicted_kline
-                  ]}
-                  width={720}
-                  height={340}
-                  predictStartIndex={(detail.kline_history || []).slice(-20).length}
-                />
-              </div>
-              <p className="text-[11px] text-[var(--fg-muted)] mt-2 m-0">
-                虚线部分为 AI 预测走势，仅供参考，不构成投资建议。
-              </p>
-            </Card>
-          )}
+          {/* T+1 交易日预测 */}
+          {(() => {
+            const t1 = getT1Prediction(detail.predicted_kline)
+            if (!t1) return null
+            return (
+              <Card>
+                <h4 className="text-sm font-semibold text-[var(--fg)] mb-2">
+                  T+1 交易日预测
+                </h4>
+                <div className="flex flex-wrap items-center gap-4">
+                  <span className="text-xs text-[var(--fg-muted)]">
+                    预测日期：
+                    <span className="font-mono text-[var(--fg-secondary)]">{t1.time}</span>
+                  </span>
+                  <span className={`text-base font-semibold ${t1.colorClass}`}>{t1.trend}</span>
+                  <span className="text-xs text-[var(--fg-muted)]">
+                    开盘：<span className="font-mono text-[var(--fg-secondary)]">{t1.open.toFixed(2)}</span>
+                  </span>
+                  <span className="text-xs text-[var(--fg-muted)]">
+                    收盘：<span className="font-mono text-[var(--fg-secondary)]">{t1.close.toFixed(2)}</span>
+                  </span>
+                  <span className="text-xs text-[var(--fg-muted)]">
+                    变化：
+                    <span className={`font-mono ${t1.colorClass}`}>
+                      {t1.deltaPct > 0 ? '+' : ''}
+                      {t1.deltaPct.toFixed(2)}%
+                    </span>
+                  </span>
+                </div>
+                <p className="text-[11px] text-[var(--fg-muted)] m-0 mt-2">
+                  浮动 = 开盘与收盘几乎一致（绝对涨跌幅不超过 0.15%）。
+                </p>
+              </Card>
+            )
+          })()}
+
+          {/* 日K线（历史 + 预测合并） */}
+          <Card>
+            <h4 className="text-sm font-semibold text-[var(--fg)] mb-3">
+              日K线（近 41 日）
+            </h4>
+            {(() => {
+              const history = [...(detail.kline_history || [])]
+                .sort((a, b) => (a.time > b.time ? 1 : -1))
+                .slice(-41)
+              const predicted = [...(detail.predicted_kline || [])].sort((a, b) => (a.time > b.time ? 1 : -1))
+              const merged = [...history, ...predicted]
+              const predictStartIndex = predicted.length > 0 ? history.length : undefined
+
+              return (
+                <>
+                  <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-3 overflow-x-auto">
+                    <KlineChart
+                      data={merged}
+                      width={720}
+                      height={340}
+                      predictStartIndex={predictStartIndex}
+                    />
+                  </div>
+                  {predicted.length > 0 && (
+                    <p className="text-[11px] text-[var(--fg-muted)] mt-2 m-0">
+                      已合并量化分析预测：未来 {predicted.length} 个交易日为虚线部分，仅供参考。
+                    </p>
+                  )}
+                </>
+              )
+            })()}
+          </Card>
 
           {/* 相关新闻资讯 */}
           {detail.news && detail.news.length > 0 && (
@@ -194,9 +272,9 @@ export default function ReportDetailPage() {
                 </span>
               </div>
               <div className="space-y-2">
-                {detail.news.map((item, idx) => (
+                {(newsExpanded ? detail.news : detail.news.slice(0, 5)).map((item, idx) => (
                   <a
-                    key={idx}
+                    key={`${item.link}-${idx}`}
                     href={item.link}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -212,6 +290,13 @@ export default function ReportDetailPage() {
                   </a>
                 ))}
               </div>
+              {detail.news.length > 5 && (
+                <div className="mt-3 pt-3 border-t border-[var(--border)]">
+                  <Button variant="soft" size="sm" onClick={() => setNewsExpanded((v) => !v)}>
+                    {newsExpanded ? '收起新闻' : `展开全部新闻（${detail.news.length} 条）`}
+                  </Button>
+                </div>
+              )}
             </Card>
           )}
 
