@@ -30,8 +30,7 @@ const statItems = [
 
 const quickLinks = [
   { href: '/analysis', label: '开始分析', desc: '发起 AI 股票分析任务', icon: '→' },
-  { href: '/executions', label: '执行中心', desc: '查看所有任务状态', icon: '→' },
-  { href: '/reports', label: '报告中心', desc: '浏览分析报告', icon: '→' },
+  { href: '/executions', label: '执行中心', desc: '查看任务状态与分析报告', icon: '→' },
   { href: '/favorites', label: '自选股', desc: '管理关注的股票', icon: '→' }
 ]
 

@@ -61,8 +61,8 @@ export default function ReportDetailPage() {
             : '正在加载...'
         }
         actions={
-          <Link href="/reports">
-            <Button variant="soft">返回列表</Button>
+          <Link href="/executions">
+            <Button variant="soft">返回执行中心</Button>
           </Link>
         }
       />

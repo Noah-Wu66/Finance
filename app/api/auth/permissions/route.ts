@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
 
   const permissions = user.isAdmin
     ? ['*']
-    : ['analysis:run', 'analysis:view', 'report:view', 'favorites:manage', 'paper:trade']
+    : ['analysis:run', 'analysis:view', 'report:view', 'favorites:manage']
   const roles = user.isAdmin ? ['admin'] : ['user']
 
   return ok({ permissions, roles }, '获取权限成功')
