@@ -22,8 +22,20 @@ const AI_CONFIG = {
   timeout: 120,
   thinking_enabled: true,   // 开启自适应思考
   effort: 'max' as const,   // 最高质量
-  enable_tools: false
+  enable_tools: false,
+  // 定价：美元/百万token
+  pricing: {
+    input: 15,   // $15 / M input tokens
+    output: 75,  // $75 / M output tokens
+  }
 }
+
+// 导出模型信息供外部使用（如费用计算）
+export const AI_MODEL_INFO = {
+  provider: AI_CONFIG.provider,
+  model: AI_CONFIG.model,
+  pricing: AI_CONFIG.pricing,
+} as const
 
 // 从环境变量获取API Key
 function getApiKey(): string {
