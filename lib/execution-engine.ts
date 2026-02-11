@@ -2,6 +2,7 @@ import { ObjectId } from 'mongodb'
 
 import { getDb } from '@/lib/db'
 import { fetchAStockData } from '@/lib/fetch-a-stock'
+import { fetchAllQuantData } from '@/lib/fetch-quant-data'
 import { inferMarketFromCode } from '@/lib/market'
 import { createOperationLog } from '@/lib/operation-logs'
 import { analyzeWithAI, isAIEnabled } from '@/lib/ai-client'
@@ -9,6 +10,20 @@ import { analyzeWithAI, isAIEnabled } from '@/lib/ai-client'
 const EXEC_COLLECTION = 'web_executions'
 const REPORT_COLLECTION = 'analysis_reports'
 const BATCH_COLLECTION = 'web_batches'
+const CALENDAR_COLLECTION = 'trading_calendar'
+const INDEX_COLLECTION = 'index_daily'
+const FUND_FLOW_COLLECTION = 'stock_fund_flow'
+const EVENT_COLLECTION = 'stock_events'
+const FINANCIAL_ENHANCED_COLLECTION = 'financial_enhanced'
+const NEWS_SENTIMENT_COLLECTION = 'news_sentiment'
+const ADJUST_FACTOR_COLLECTION = 'stock_adjust_factors'
+const CORPORATE_ACTION_COLLECTION = 'stock_corporate_actions'
+const INDUSTRY_AGG_COLLECTION = 'industry_aggregation'
+const EARNINGS_EXPECT_COLLECTION = 'earnings_expectation'
+const MACRO_CALENDAR_COLLECTION = 'macro_calendar'
+const DATA_QUALITY_COLLECTION = 'data_quality'
+const INTRADAY_COLLECTION = 'stock_intraday'
+const QUANT_AUTO_FETCH_LOG_COLLECTION = 'quant_auto_fetch_logs'
 
 const STALE_TIMEOUT_MS = 150 * 1000
 
@@ -262,6 +277,707 @@ async function loadKlineHistory(symbol: string, limit = 60) {
       volume: Number(r.volume ?? 0)
     }))
     .reverse()
+}
+
+interface IndexDailyItem {
+  index_code: string
+  trade_date: string
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+  pct_chg: number
+}
+
+interface FundFlowItem {
+  symbol: string
+  trade_date: string
+  main_inflow: number
+  northbound_net?: number
+  margin_balance?: number
+  short_balance?: number
+}
+
+interface StockEventItem {
+  symbol: string
+  event_type: string
+  event_date: string
+  title: string
+  impact: string
+  url?: string
+}
+
+interface FinancialEnhancedItem {
+  symbol: string
+  report_period: string
+  profit_yoy?: number
+  gross_margin?: number
+  debt_to_asset?: number
+  operating_cashflow?: number
+  ocf_to_profit?: number
+}
+
+interface NewsSentimentItem {
+  symbol: string
+  publish_time: string
+  sentiment_score: number
+  relevance_score: number
+  dedup_id: string
+}
+
+interface AdjustFactorItem {
+  symbol: string
+  ex_dividend_date: string
+  adj_factor?: number
+  fore_adj_factor?: number
+  back_adj_factor?: number
+}
+
+interface CorporateActionItem {
+  symbol: string
+  action_type: string
+  ex_dividend_date: string
+  cash_dividend_ps?: number
+  bonus_share_ps?: number
+  reserve_to_stock_ps?: number
+  rights_issue_price?: number
+}
+
+interface IndustryAggregationItem {
+  industry_name: string
+  trade_date: string
+  industry_main_inflow?: number
+  industry_sentiment?: number
+  industry_heat?: number
+}
+
+interface EarningsExpectationItem {
+  symbol: string
+  announce_date: string
+  source_type: string
+  forecast_type?: string
+  profit_change_pct?: number
+  eps?: number
+  revenue?: number
+  net_profit?: number
+}
+
+interface MacroCalendarItem {
+  date: string
+  indicator: string
+  value?: number
+  previous?: number
+}
+
+interface DataQualityItem {
+  dataset: string
+  symbol?: string
+  as_of: string
+  latency_sec?: number
+  source?: string
+  quality_flag?: string
+}
+
+interface IntradayItem {
+  symbol: string
+  datetime: string
+  period: string
+  open?: number
+  high?: number
+  low?: number
+  close?: number
+  volume?: number
+  amount?: number
+}
+
+function toNumber(value: unknown): number {
+  const num = Number(value)
+  return Number.isFinite(num) ? num : 0
+}
+
+function normalizeYmd(raw: unknown): string {
+  if (typeof raw !== 'string' && typeof raw !== 'number') return ''
+  const source = String(raw).trim()
+  if (!source) return ''
+
+  const compact = source.replace(/[^0-9]/g, '')
+  if (compact.length >= 8) {
+    return compact.slice(0, 8)
+  }
+
+  const parsed = new Date(source)
+  if (Number.isNaN(parsed.getTime())) return ''
+  const y = parsed.getFullYear().toString()
+  const m = String(parsed.getMonth() + 1).padStart(2, '0')
+  const d = String(parsed.getDate()).padStart(2, '0')
+  return `${y}${m}${d}`
+}
+
+function formatYmd(ymd: string): string {
+  if (!/^\d{8}$/.test(ymd)) return ymd
+  return `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`
+}
+
+function getCalendarMarketCandidates(market: string): string[] {
+  if (market.includes('A')) {
+    return ['SSE', 'SZSE', 'CN', 'A股']
+  }
+  if (market.includes('港')) {
+    return ['HKEX', 'HK', '港股']
+  }
+  if (market.includes('美')) {
+    return ['NASDAQ', 'NYSE', 'US', '美股']
+  }
+  return [market]
+}
+
+function getIndexCandidatesByMarket(market: string): string[] {
+  if (market.includes('A')) {
+    return ['000300', '000001', '399001', '399006']
+  }
+  if (market.includes('港')) {
+    return ['HSI', 'HSCEI']
+  }
+  if (market.includes('美')) {
+    return ['SPX', 'NDX', 'DJI']
+  }
+  return ['000300']
+}
+
+function ymdDaysAgo(days: number): string {
+  const now = new Date()
+  now.setDate(now.getDate() - days)
+  const y = now.getFullYear().toString()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}${m}${d}`
+}
+
+function sleepMs(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function detectMissingEnhancedDatasets(params: {
+  symbol: string
+  market: string
+  industry: string
+  lastKlineDate: string
+}): Promise<string[]> {
+  const { symbol, market, industry, lastKlineDate } = params
+  const db = await getDb()
+  const missing: string[] = []
+  const lastDate = normalizeYmd(lastKlineDate)
+
+  const [
+    tradingDaysCount,
+    indexCount,
+    fundFlowCount,
+    eventCount,
+    financialCount,
+    sentimentCount,
+    adjustFactorCount,
+    corporateActionCount,
+    industryAggCount,
+    earningsCount,
+    macroCount,
+    intradayCount
+  ] = await Promise.all([
+    db.collection(CALENDAR_COLLECTION).countDocuments({
+      market: { $in: getCalendarMarketCandidates(market) },
+      date: { $gt: lastDate || ymdDaysAgo(1) },
+      is_trading_day: { $in: [1, '1', true] }
+    }, { limit: 10 }),
+    db.collection(INDEX_COLLECTION).countDocuments({
+      index_code: { $in: getIndexCandidatesByMarket(market) },
+      trade_date: { $gte: ymdDaysAgo(120), $lte: lastDate || ymdDaysAgo(0) }
+    }, { limit: 50 }),
+    db.collection(FUND_FLOW_COLLECTION).countDocuments({
+      symbol,
+      trade_date: { $gte: ymdDaysAgo(45) }
+    }, { limit: 20 }),
+    db.collection(EVENT_COLLECTION).countDocuments({
+      symbol,
+      event_date: { $gte: ymdDaysAgo(180) }
+    }, { limit: 20 }),
+    db.collection(FINANCIAL_ENHANCED_COLLECTION).countDocuments({ symbol }, { limit: 1 }),
+    db.collection(NEWS_SENTIMENT_COLLECTION).countDocuments({ symbol }, { limit: 20 }),
+    db.collection(ADJUST_FACTOR_COLLECTION).countDocuments({ symbol }, { limit: 10 }),
+    db.collection(CORPORATE_ACTION_COLLECTION).countDocuments({ symbol }, { limit: 10 }),
+    industry
+      ? db.collection(INDUSTRY_AGG_COLLECTION).countDocuments({ industry_name: industry }, { limit: 10 })
+      : Promise.resolve(0),
+    db.collection(EARNINGS_EXPECT_COLLECTION).countDocuments({ symbol }, { limit: 10 }),
+    db.collection(MACRO_CALENDAR_COLLECTION).countDocuments({}, { limit: 5 }),
+    db.collection(INTRADAY_COLLECTION).countDocuments({ symbol, period: '1' }, { limit: 60 })
+  ])
+
+  if (tradingDaysCount < 10) missing.push('trading_calendar')
+  if (indexCount < 20) missing.push('index_daily')
+  if (fundFlowCount < 8) missing.push('stock_fund_flow')
+  if (eventCount < 3) missing.push('stock_events')
+  if (financialCount < 1) missing.push('financial_enhanced')
+  if (sentimentCount < 5) missing.push('news_sentiment')
+  if (adjustFactorCount < 3) missing.push('stock_adjust_factors')
+  if (corporateActionCount < 2) missing.push('stock_corporate_actions')
+  if (industry && industryAggCount < 1) missing.push('industry_aggregation')
+  if (earningsCount < 1) missing.push('earnings_expectation')
+  if (macroCount < 1) missing.push('macro_calendar')
+  if (intradayCount < 20) missing.push('stock_intraday')
+
+  return missing
+}
+
+async function triggerQuantAutoFetchIfNeeded(params: {
+  symbol: string
+  market: string
+  industry: string
+  missingDatasets: string[]
+  userId: string
+}): Promise<{ triggered: boolean; reason: string; missing: string[] }> {
+  const { symbol, market, industry, missingDatasets, userId } = params
+  if (missingDatasets.length === 0) {
+    return { triggered: false, reason: 'all-ready', missing: [] }
+  }
+
+  const webhook = process.env.QUANT_AUTO_FETCH_URL
+  if (!webhook) {
+    return { triggered: false, reason: 'no-webhook', missing: missingDatasets }
+  }
+
+  const db = await getDb()
+  const now = new Date()
+  const cooldownMs = 15 * 60 * 1000
+  const key = `${userId}:${symbol}`
+  const lock = await db.collection(QUANT_AUTO_FETCH_LOG_COLLECTION).findOne({ key })
+  const lastTriggerAt = lock?.last_trigger_at instanceof Date ? lock.last_trigger_at : null
+  if (lastTriggerAt && now.getTime() - lastTriggerAt.getTime() < cooldownMs) {
+    return { triggered: false, reason: 'cooldown', missing: missingDatasets }
+  }
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 30000)
+
+  try {
+    const response = await fetch(webhook, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        symbol,
+        market,
+        industry,
+        datasets: missingDatasets,
+        trigger: 'analysis_step_5',
+        triggered_at: now.toISOString()
+      }),
+      signal: controller.signal
+    })
+
+    const ok = response.ok
+    await db.collection(QUANT_AUTO_FETCH_LOG_COLLECTION).updateOne(
+      { key },
+      {
+        $set: {
+          key,
+          user_id: userId,
+          symbol,
+          market,
+          industry,
+          last_trigger_at: now,
+          last_missing: missingDatasets,
+          last_status: ok ? 'ok' : `http_${response.status}`,
+          updated_at: now
+        },
+        $setOnInsert: { created_at: now }
+      },
+      { upsert: true }
+    )
+
+    return {
+      triggered: ok,
+      reason: ok ? 'triggered' : `http_${response.status}`,
+      missing: missingDatasets
+    }
+  } catch {
+    await db.collection(QUANT_AUTO_FETCH_LOG_COLLECTION).updateOne(
+      { key },
+      {
+        $set: {
+          key,
+          user_id: userId,
+          symbol,
+          market,
+          industry,
+          last_trigger_at: now,
+          last_missing: missingDatasets,
+          last_status: 'error',
+          updated_at: now
+        },
+        $setOnInsert: { created_at: now }
+      },
+      { upsert: true }
+    )
+    return { triggered: false, reason: 'error', missing: missingDatasets }
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
+function fallbackTradingDays(lastDate: string, count: number): string[] {
+  const normalized = normalizeYmd(lastDate)
+  const base = normalized ? new Date(`${normalized.slice(0, 4)}-${normalized.slice(4, 6)}-${normalized.slice(6, 8)}T00:00:00+08:00`) : new Date()
+  const days: string[] = []
+  const cursor = new Date(base)
+  while (days.length < count) {
+    cursor.setDate(cursor.getDate() + 1)
+    const day = cursor.getDay()
+    if (day === 0 || day === 6) continue
+    const y = cursor.getFullYear().toString()
+    const m = String(cursor.getMonth() + 1).padStart(2, '0')
+    const d = String(cursor.getDate()).padStart(2, '0')
+    days.push(`${y}${m}${d}`)
+  }
+  return days
+}
+
+async function loadNextTradingDays(lastDate: string, market: string, count = 10): Promise<string[]> {
+  const db = await getDb()
+  const startDate = normalizeYmd(lastDate)
+  if (!startDate) {
+    return fallbackTradingDays(lastDate, count)
+  }
+  const formattedStart = formatYmd(startDate)
+
+  const rows = await db
+    .collection(CALENDAR_COLLECTION)
+    .find({
+      market: { $in: getCalendarMarketCandidates(market) },
+      $or: [
+        { date: { $gt: startDate } },
+        { date: { $gt: formattedStart } }
+      ],
+      is_trading_day: { $in: [1, '1', true] }
+    })
+    .sort({ date: 1 })
+    .limit(count)
+    .toArray()
+
+  const days = rows
+    .map((row) => normalizeYmd(row.date))
+    .filter((value) => value.length === 8)
+
+  if (days.length >= count) return days
+  const fallback = fallbackTradingDays(lastDate, count)
+  const merged = [...days]
+  for (const item of fallback) {
+    if (!merged.includes(item)) merged.push(item)
+    if (merged.length >= count) break
+  }
+  return merged.slice(0, count)
+}
+
+async function loadIndexBenchmarks(lastDate: string, market: string, limit = 60): Promise<IndexDailyItem[]> {
+  const db = await getDb()
+  const startDate = normalizeYmd(lastDate)
+  const formattedStart = formatYmd(startDate)
+  const rows = await db
+    .collection(INDEX_COLLECTION)
+    .find({
+      index_code: { $in: getIndexCandidatesByMarket(market) },
+      ...(startDate
+        ? {
+            $or: [
+              { trade_date: { $lte: startDate } },
+              { trade_date: { $lte: formattedStart } }
+            ]
+          }
+        : {})
+    })
+    .sort({ trade_date: -1 })
+    .limit(limit * 4)
+    .toArray()
+
+  const mapped = rows.map((row) => ({
+    index_code: String(row.index_code || ''),
+    trade_date: normalizeYmd(row.trade_date),
+    open: toNumber(row.open),
+    high: toNumber(row.high),
+    low: toNumber(row.low),
+    close: toNumber(row.close),
+    volume: toNumber(row.volume),
+    pct_chg: toNumber(row.pct_chg)
+  }))
+
+  return mapped
+    .filter((row) => row.index_code && row.trade_date)
+    .sort((a, b) => a.trade_date.localeCompare(b.trade_date))
+}
+
+async function loadFundFlow(symbol: string, limit = 30): Promise<FundFlowItem[]> {
+  const db = await getDb()
+  const rows = await db
+    .collection(FUND_FLOW_COLLECTION)
+    .find({ symbol })
+    .sort({ trade_date: -1 })
+    .limit(limit)
+    .toArray()
+
+  return rows.map((row) => ({
+    symbol,
+    trade_date: normalizeYmd(row.trade_date),
+    main_inflow: toNumber(row.main_inflow),
+    northbound_net: row.northbound_net == null ? undefined : toNumber(row.northbound_net),
+    margin_balance: row.margin_balance == null ? undefined : toNumber(row.margin_balance),
+    short_balance: row.short_balance == null ? undefined : toNumber(row.short_balance)
+  }))
+}
+
+async function loadStockEvents(symbol: string, limit = 50): Promise<StockEventItem[]> {
+  const db = await getDb()
+  const rows = await db
+    .collection(EVENT_COLLECTION)
+    .find({ symbol })
+    .sort({ event_date: -1, updated_at: -1, created_at: -1 })
+    .limit(limit)
+    .toArray()
+
+  return rows.map((row) => ({
+    symbol,
+    event_type: String(row.event_type || 'announcement'),
+    event_date: normalizeYmd(row.event_date),
+    title: String(row.title || ''),
+    impact: String(row.impact || 'unknown'),
+    url: row.url ? String(row.url) : undefined
+  }))
+}
+
+async function loadEnhancedFinancial(symbol: string): Promise<FinancialEnhancedItem | null> {
+  const db = await getDb()
+  const row = await db
+    .collection(FINANCIAL_ENHANCED_COLLECTION)
+    .find({ symbol })
+    .sort({ report_period: -1, updated_at: -1, created_at: -1 })
+    .limit(1)
+    .next()
+
+  if (!row) return null
+
+  return {
+    symbol,
+    report_period: String(row.report_period || row.report_date || ''),
+    profit_yoy: row.profit_yoy == null ? undefined : toNumber(row.profit_yoy),
+    gross_margin: row.gross_margin == null ? undefined : toNumber(row.gross_margin),
+    debt_to_asset: row.debt_to_asset == null ? undefined : toNumber(row.debt_to_asset),
+    operating_cashflow: row.operating_cashflow == null ? undefined : toNumber(row.operating_cashflow),
+    ocf_to_profit: row.ocf_to_profit == null ? undefined : toNumber(row.ocf_to_profit)
+  }
+}
+
+async function loadNewsSentiment(symbol: string, limit = 50): Promise<NewsSentimentItem[]> {
+  const db = await getDb()
+  const rows = await db
+    .collection(NEWS_SENTIMENT_COLLECTION)
+    .find({ symbol })
+    .sort({ publish_time: -1, updated_at: -1, created_at: -1 })
+    .limit(limit)
+    .toArray()
+
+  return rows.map((row) => ({
+    symbol,
+    publish_time: String(row.publish_time || row.created_at || ''),
+    sentiment_score: toNumber(row.sentiment_score),
+    relevance_score: toNumber(row.relevance_score),
+    dedup_id: String(row.dedup_id || '')
+  }))
+}
+
+async function loadAdjustFactors(symbol: string, limit = 30): Promise<AdjustFactorItem[]> {
+  const db = await getDb()
+  const rows = await db
+    .collection(ADJUST_FACTOR_COLLECTION)
+    .find({ symbol })
+    .sort({ ex_dividend_date: -1, updated_at: -1, created_at: -1 })
+    .limit(limit)
+    .toArray()
+
+  return rows.map((row) => ({
+    symbol,
+    ex_dividend_date: normalizeYmd(row.ex_dividend_date),
+    adj_factor: row.adj_factor == null ? undefined : toNumber(row.adj_factor),
+    fore_adj_factor: row.fore_adj_factor == null ? undefined : toNumber(row.fore_adj_factor),
+    back_adj_factor: row.back_adj_factor == null ? undefined : toNumber(row.back_adj_factor)
+  }))
+}
+
+async function loadCorporateActions(symbol: string, limit = 30): Promise<CorporateActionItem[]> {
+  const db = await getDb()
+  const rows = await db
+    .collection(CORPORATE_ACTION_COLLECTION)
+    .find({ symbol })
+    .sort({ ex_dividend_date: -1, updated_at: -1, created_at: -1 })
+    .limit(limit)
+    .toArray()
+
+  return rows.map((row) => ({
+    symbol,
+    action_type: String(row.action_type || 'dividend'),
+    ex_dividend_date: normalizeYmd(row.ex_dividend_date),
+    cash_dividend_ps: row.cash_dividend_ps == null ? undefined : toNumber(row.cash_dividend_ps),
+    bonus_share_ps: row.bonus_share_ps == null ? undefined : toNumber(row.bonus_share_ps),
+    reserve_to_stock_ps: row.reserve_to_stock_ps == null ? undefined : toNumber(row.reserve_to_stock_ps),
+    rights_issue_price: row.rights_issue_price == null ? undefined : toNumber(row.rights_issue_price)
+  }))
+}
+
+async function loadIndustryAggregation(industry: string, limit = 20): Promise<IndustryAggregationItem[]> {
+  const db = await getDb()
+  const rows = await db
+    .collection(INDUSTRY_AGG_COLLECTION)
+    .find({ industry_name: industry })
+    .sort({ trade_date: -1, updated_at: -1, created_at: -1 })
+    .limit(limit)
+    .toArray()
+
+  return rows.map((row) => ({
+    industry_name: String(row.industry_name || industry),
+    trade_date: normalizeYmd(row.trade_date) || String(row.trade_date || 'latest'),
+    industry_main_inflow: row.industry_main_inflow == null ? undefined : toNumber(row.industry_main_inflow),
+    industry_sentiment: row.industry_sentiment == null ? undefined : toNumber(row.industry_sentiment),
+    industry_heat: row.industry_heat == null ? undefined : toNumber(row.industry_heat)
+  }))
+}
+
+async function loadEarningsExpectation(symbol: string, limit = 20): Promise<EarningsExpectationItem[]> {
+  const db = await getDb()
+  const rows = await db
+    .collection(EARNINGS_EXPECT_COLLECTION)
+    .find({ symbol })
+    .sort({ announce_date: -1, updated_at: -1, created_at: -1 })
+    .limit(limit)
+    .toArray()
+
+  return rows.map((row) => ({
+    symbol,
+    announce_date: normalizeYmd(row.announce_date) || String(row.announce_date || 'latest'),
+    source_type: String(row.source_type || 'forecast'),
+    forecast_type: row.forecast_type ? String(row.forecast_type) : undefined,
+    profit_change_pct: row.profit_change_pct == null ? undefined : toNumber(row.profit_change_pct),
+    eps: row.eps == null ? undefined : toNumber(row.eps),
+    revenue: row.revenue == null ? undefined : toNumber(row.revenue),
+    net_profit: row.net_profit == null ? undefined : toNumber(row.net_profit)
+  }))
+}
+
+async function loadMacroCalendar(limit = 40): Promise<MacroCalendarItem[]> {
+  const db = await getDb()
+  const rows = await db
+    .collection(MACRO_CALENDAR_COLLECTION)
+    .find({})
+    .sort({ date: -1, updated_at: -1, created_at: -1 })
+    .limit(limit)
+    .toArray()
+
+  return rows.map((row) => ({
+    date: String(row.date || ''),
+    indicator: String(row.indicator || ''),
+    value: row.value == null ? undefined : toNumber(row.value),
+    previous: row.previous == null ? undefined : toNumber(row.previous)
+  })).filter((row) => row.indicator)
+}
+
+async function loadDataQualitySnapshot(symbol: string, limit = 30): Promise<DataQualityItem[]> {
+  const db = await getDb()
+  const rows = await db
+    .collection(DATA_QUALITY_COLLECTION)
+    .find({ $or: [{ symbol }, { symbol: '' }, { symbol: { $exists: false } }] })
+    .sort({ as_of: -1, updated_at: -1, created_at: -1 })
+    .limit(limit)
+    .toArray()
+
+  return rows.map((row) => ({
+    dataset: String(row.dataset || ''),
+    symbol: row.symbol ? String(row.symbol) : undefined,
+    as_of: String(row.as_of || ''),
+    latency_sec: row.latency_sec == null ? undefined : toNumber(row.latency_sec),
+    source: row.source ? String(row.source) : undefined,
+    quality_flag: row.quality_flag ? String(row.quality_flag) : undefined
+  })).filter((row) => row.dataset)
+}
+
+async function loadIntraday(symbol: string, period = '1', limit = 180): Promise<IntradayItem[]> {
+  const db = await getDb()
+  const rows = await db
+    .collection(INTRADAY_COLLECTION)
+    .find({ symbol, period })
+    .sort({ datetime: -1, updated_at: -1, created_at: -1 })
+    .limit(limit)
+    .toArray()
+
+  return rows.map((row) => ({
+    symbol,
+    datetime: String(row.datetime || ''),
+    period,
+    open: row.open == null ? undefined : toNumber(row.open),
+    high: row.high == null ? undefined : toNumber(row.high),
+    low: row.low == null ? undefined : toNumber(row.low),
+    close: row.close == null ? undefined : toNumber(row.close),
+    volume: row.volume == null ? undefined : toNumber(row.volume),
+    amount: row.amount == null ? undefined : toNumber(row.amount)
+  })).filter((row) => row.datetime)
+}
+
+function summarizeNewsSentiment(items: NewsSentimentItem[]) {
+  if (items.length === 0) return null
+  const scored = items.filter((item) => Number.isFinite(item.sentiment_score))
+  if (scored.length === 0) return null
+  const avgSentiment = scored.reduce((sum, item) => sum + item.sentiment_score, 0) / scored.length
+  const highRelevance = scored.filter((item) => item.relevance_score >= 0.8).length
+  return {
+    count: scored.length,
+    avg_sentiment: Number(avgSentiment.toFixed(4)),
+    high_relevance_count: highRelevance
+  }
+}
+
+function summarizeBenchmarks(items: IndexDailyItem[]) {
+  if (items.length === 0) return [] as Array<{ index_code: string; latest_close: number; day_change: number; trend_20d: number }>
+  const grouped = new Map<string, IndexDailyItem[]>()
+  for (const item of items) {
+    const list = grouped.get(item.index_code) || []
+    list.push(item)
+    grouped.set(item.index_code, list)
+  }
+
+  const summary: Array<{ index_code: string; latest_close: number; day_change: number; trend_20d: number }> = []
+  for (const [indexCode, series] of grouped.entries()) {
+    const sorted = [...series].sort((a, b) => a.trade_date.localeCompare(b.trade_date))
+    const last = sorted[sorted.length - 1]
+    if (!last) continue
+    const base20 = sorted[Math.max(0, sorted.length - 20)]
+    const trend20 = base20 && base20.close > 0
+      ? ((last.close - base20.close) / base20.close) * 100
+      : 0
+    summary.push({
+      index_code: indexCode,
+      latest_close: Number(last.close.toFixed(4)),
+      day_change: Number(last.pct_chg.toFixed(4)),
+      trend_20d: Number(trend20.toFixed(4))
+    })
+  }
+  return summary
+}
+
+function summarizeDataQuality(items: DataQualityItem[]) {
+  if (items.length === 0) return null
+  const bad = items.filter((item) => {
+    const flag = (item.quality_flag || '').toUpperCase()
+    return flag.includes('ERROR') || flag === 'EMPTY' || flag === 'PARTIAL' || flag === 'STALE'
+  })
+  return {
+    total: items.length,
+    bad_count: bad.length,
+    top_issues: bad.slice(0, 5).map((item) => `${item.dataset}:${item.quality_flag || 'UNKNOWN'}`)
+  }
 }
 
 // ========== Metaso 联网搜索 + 网页阅读 ==========
@@ -756,6 +1472,27 @@ async function runAIAnalysis(
   const financial = execution.context.financial as { roe: number; pe: number; pb: number; revenueGrowth: number }
   const news = (execution.context.news as NewsItem[] | undefined) || []
   const readPagesData = (execution.context.read_pages as ReadPageItem[] | undefined) || []
+  const nextTradingDays = (execution.context.next_trading_days as string[] | undefined) || []
+  const indexBenchmarks = (execution.context.index_benchmarks as IndexDailyItem[] | undefined) || []
+  const fundFlow = (execution.context.fund_flow as FundFlowItem[] | undefined) || []
+  const stockEvents = (execution.context.stock_events as StockEventItem[] | undefined) || []
+  const enhancedFinancial = (execution.context.financial_enhanced as FinancialEnhancedItem | null | undefined) || null
+  const adjustFactors = (execution.context.adjust_factors as AdjustFactorItem[] | undefined) || []
+  const corporateActions = (execution.context.corporate_actions as CorporateActionItem[] | undefined) || []
+  const industryAggregation = (execution.context.industry_aggregation as IndustryAggregationItem[] | undefined) || []
+  const earningsExpectation = (execution.context.earnings_expectation as EarningsExpectationItem[] | undefined) || []
+  const macroCalendar = (execution.context.macro_calendar as MacroCalendarItem[] | undefined) || []
+  const intradayData = (execution.context.intraday_data as IntradayItem[] | undefined) || []
+  const dataQualitySummary = (execution.context.data_quality_summary as {
+    total: number
+    bad_count: number
+    top_issues: string[]
+  } | null | undefined) || null
+  const newsSentimentSummary = (execution.context.news_sentiment_summary as {
+    count: number
+    avg_sentiment: number
+    high_relevance_count: number
+  } | null | undefined) || null
 
   // 构建K线数据 - 全量传给AI
   const klineSummary = klineData.map((k) =>
@@ -784,19 +1521,85 @@ async function runAIAnalysis(
       }).join('\n\n')
     : ''
 
+  const benchmarkSummary = summarizeBenchmarks(indexBenchmarks)
+  const benchmarkText = benchmarkSummary.length > 0
+    ? benchmarkSummary
+      .map((item) => `${item.index_code}: 最新${item.latest_close}，当日${item.day_change.toFixed(2)}%，20日${item.trend_20d.toFixed(2)}%`)
+      .join('\n')
+    : '暂无基准指数数据'
+
+  const fundFlowText = fundFlow.length > 0
+    ? fundFlow.slice(0, 20).map((item, i) => {
+      const details = [
+        `主力净流入:${item.main_inflow}`,
+        item.northbound_net == null ? '' : `北向净流入:${item.northbound_net}`,
+        item.margin_balance == null ? '' : `融资余额:${item.margin_balance}`,
+        item.short_balance == null ? '' : `融券余额:${item.short_balance}`
+      ].filter(Boolean).join(' | ')
+      return `${i + 1}. ${item.trade_date} ${details}`
+    }).join('\n')
+    : '暂无资金流数据'
+
+  const stockEventText = stockEvents.length > 0
+    ? stockEvents.slice(0, 30).map((item, i) => `${i + 1}. [${item.event_date}] [${item.event_type}] [影响:${item.impact}] ${item.title}`).join('\n')
+    : '暂无公告事件数据'
+
+  const enhancedFinancialText = enhancedFinancial
+    ? `报告期:${enhancedFinancial.report_period || '未知'}；净利润同比:${enhancedFinancial.profit_yoy ?? 'N/A'}；毛利率:${enhancedFinancial.gross_margin ?? 'N/A'}；资产负债率:${enhancedFinancial.debt_to_asset ?? 'N/A'}；经营现金流:${enhancedFinancial.operating_cashflow ?? 'N/A'}；经营现金流/净利润:${enhancedFinancial.ocf_to_profit ?? 'N/A'}`
+    : '暂无增强财务数据'
+
+  const sentimentText = newsSentimentSummary
+    ? `样本数:${newsSentimentSummary.count}；平均情绪分:${newsSentimentSummary.avg_sentiment}；高相关新闻数:${newsSentimentSummary.high_relevance_count}`
+    : '暂无新闻情绪分数据'
+
+  const adjustFactorText = adjustFactors.length > 0
+    ? adjustFactors.slice(0, 20).map((item, i) => `${i + 1}. ${item.ex_dividend_date} adj:${item.adj_factor ?? 'N/A'} fore:${item.fore_adj_factor ?? 'N/A'} back:${item.back_adj_factor ?? 'N/A'}`).join('\n')
+    : '暂无复权因子数据'
+
+  const corporateActionText = corporateActions.length > 0
+    ? corporateActions.slice(0, 20).map((item, i) => `${i + 1}. ${item.ex_dividend_date} [${item.action_type}] 现金分红:${item.cash_dividend_ps ?? 'N/A'} 送转:${item.bonus_share_ps ?? 'N/A'} 配股价:${item.rights_issue_price ?? 'N/A'}`).join('\n')
+    : '暂无公司行为数据'
+
+  const industryAggText = industryAggregation.length > 0
+    ? industryAggregation.slice(0, 10).map((item, i) => `${i + 1}. ${item.trade_date} 行业:${item.industry_name} 主力净流入:${item.industry_main_inflow ?? 'N/A'} 情绪:${item.industry_sentiment ?? 'N/A'} 热度:${item.industry_heat ?? 'N/A'}`).join('\n')
+    : '暂无行业聚合数据'
+
+  const earningsText = earningsExpectation.length > 0
+    ? earningsExpectation.slice(0, 20).map((item, i) => `${i + 1}. ${item.announce_date} [${item.source_type}] 类型:${item.forecast_type ?? 'N/A'} 净利变动:${item.profit_change_pct ?? 'N/A'} EPS:${item.eps ?? 'N/A'}`).join('\n')
+    : '暂无业绩预期数据'
+
+  const macroText = macroCalendar.length > 0
+    ? macroCalendar.slice(0, 20).map((item, i) => `${i + 1}. ${item.date} ${item.indicator}: 当前${item.value ?? 'N/A'} 前值${item.previous ?? 'N/A'}`).join('\n')
+    : '暂无宏观日历数据'
+
+  const dataQualityText = dataQualitySummary
+    ? `共${dataQualitySummary.total}条质量记录，异常${dataQualitySummary.bad_count}条；问题：${dataQualitySummary.top_issues.join('、') || '无'}`
+    : '暂无数据质量快照'
+
+  const intradayText = intradayData.length > 0
+    ? intradayData.slice(0, 60).reverse().map((item, i) => `${i + 1}. ${item.datetime} O:${item.open ?? 'N/A'} H:${item.high ?? 'N/A'} L:${item.low ?? 'N/A'} C:${item.close ?? 'N/A'} V:${item.volume ?? 'N/A'}`).join('\n')
+    : '暂无分时盘口数据'
+
+  const tradingDayText = nextTradingDays.length > 0
+    ? nextTradingDays.map((d) => formatYmd(d)).join('、')
+    : '暂无交易日历数据（请按真实交易日推算）'
+
   const systemPrompt = `你是一位顶级量化分析师和技术分析专家。你需要基于提供的股票数据、最新新闻资讯和深度阅读的网页内容进行深度分析，并预测未来10个交易日的K线走势。
 
 你的分析必须严格基于数据，包括：
 1. 技术面分析：K线形态、趋势、支撑位/压力位、成交量变化
 2. 基本面分析：估值水平、盈利能力、行业地位
 3. 消息面分析：结合最新新闻资讯和深度阅读的网页内容，分析利好利空因素、政策影响、行业动态
-4. 综合研判：多空力量对比、风险评估
-5. K线预测：基于当前趋势、技术形态和消息面，预测未来10个交易日的OHLCV数据
+4. 资金面与事件面分析：结合资金流、公告事件、新闻情绪评估短中期动量
+5. 公司行为与数据可信度分析：识别复权、分红送转、异常或过期数据的影响
+6. 行业与宏观共振分析：判断行业资金/情绪和宏观环境是否支撑个股走势
+7. 综合研判：多空力量对比、风险评估
+8. K线预测：基于当前趋势、技术形态和消息面，预测未来10个交易日的OHLCV数据
 
 重要要求：
 - 预测K线必须合理，价格变动幅度要符合该股票的历史波动率
 - 新闻和深度阅读内容中的重大利好/利空要体现在预测走势中
-- 日期从最后一个交易日之后开始，跳过周末（周六周日）
+- 日期优先使用给定的交易日历日期，不要自行编造不存在的交易日
 - 成交量预测要参考近期平均水平
 - 必须严格按照指定JSON格式输出，不要输出任何其他内容`
 
@@ -820,9 +1623,48 @@ PB：${financial.pb.toFixed(2)}
 【近期K线数据（日期|开盘|最高|最低|收盘|成交量）】
 ${klineSummary}
 
+【基准指数（用于相对强弱判断）】
+${benchmarkText}
+
+【资金流（近期）】
+${fundFlowText}
+
 【最新新闻资讯（共${news.length}条）】
 ${newsSummary}
 ${readPagesSummary ? `\n【深度阅读的网页内容（共${readPagesData.length}篇）】\n${readPagesSummary}` : ''}
+
+【公告与事件（近期）】
+${stockEventText}
+
+【财务增强指标】
+${enhancedFinancialText}
+
+【复权因子（近期）】
+${adjustFactorText}
+
+【公司行为（分红送转配股）】
+${corporateActionText}
+
+【行业聚合（资金与情绪）】
+${industryAggText}
+
+【业绩预期/预告】
+${earningsText}
+
+【宏观日历】
+${macroText}
+
+【分时盘口（最近）】
+${intradayText}
+
+【新闻情绪摘要】
+${sentimentText}
+
+【数据质量快照】
+${dataQualityText}
+
+【未来10个交易日（优先使用以下日期）】
+${tradingDayText}
 
 请严格按以下JSON格式输出（不要包含任何其他文字、不要用markdown代码块包裹）：
 {
@@ -832,7 +1674,7 @@ ${readPagesSummary ? `\n【深度阅读的网页内容（共${readPagesData.leng
   "confidence": 0到100的整数,
   "key_points": ["要点1", "要点2", "要点3", "要点4", "要点5"],
   "predicted_kline": [
-    {"time": "从${lastDate}之后的下一个交易日开始，格式YYYYMMDD", "open": 数字, "high": 数字, "low": 数字, "close": 数字, "volume": 数字},
+    {"time": "优先使用给定交易日历中的日期，格式YYYYMMDD", "open": 数字, "high": 数字, "low": 数字, "close": 数字, "volume": 数字},
     ... 共10条
   ]
 }`
@@ -869,7 +1711,7 @@ ${readPagesSummary ? `\n【深度阅读的网页内容（共${readPagesData.leng
     // 验证和提取预测K线
     const predictedKline = Array.isArray(parsed.predicted_kline)
       ? (parsed.predicted_kline as Array<Record<string, unknown>>).map((k) => ({
-          time: String(k.time || ''),
+          time: normalizeYmd(k.time),
           open: Number(k.open ?? 0),
           high: Number(k.high ?? 0),
           low: Number(k.low ?? 0),
@@ -877,6 +1719,11 @@ ${readPagesSummary ? `\n【深度阅读的网页内容（共${readPagesData.leng
           volume: Number(k.volume ?? 0)
         }))
       : []
+
+    const alignedPredictedKline = predictedKline.map((bar, idx) => ({
+      ...bar,
+      time: nextTradingDays[idx] || bar.time || normalizeYmd(lastDate)
+    }))
 
     return {
       ai_summary: String(parsed.summary || ''),
@@ -886,7 +1733,7 @@ ${readPagesSummary ? `\n【深度阅读的网页内容（共${readPagesData.leng
       ai_key_points: Array.isArray(parsed.key_points)
         ? (parsed.key_points as string[]).map(String)
         : [],
-      predicted_kline: predictedKline
+      predicted_kline: alignedPredictedKline
     }
   } catch {
     return null
@@ -906,6 +1753,33 @@ async function buildReport(execution: ExecutionDoc) {
   const newsData = (execution.context.news as NewsItem[] | undefined) || []
   const readPagesReport = (execution.context.read_pages as ReadPageItem[] | undefined) || []
   const searchLogsData = (execution.context.search_logs as SearchRoundLog[] | undefined) || []
+  const nextTradingDays = (execution.context.next_trading_days as string[] | undefined) || []
+  const indexBenchmarks = (execution.context.index_benchmarks as IndexDailyItem[] | undefined) || []
+  const fundFlow = (execution.context.fund_flow as FundFlowItem[] | undefined) || []
+  const stockEvents = (execution.context.stock_events as StockEventItem[] | undefined) || []
+  const enhancedFinancial = (execution.context.financial_enhanced as FinancialEnhancedItem | null | undefined) || null
+  const adjustFactors = (execution.context.adjust_factors as AdjustFactorItem[] | undefined) || []
+  const corporateActions = (execution.context.corporate_actions as CorporateActionItem[] | undefined) || []
+  const industryAggregation = (execution.context.industry_aggregation as IndustryAggregationItem[] | undefined) || []
+  const earningsExpectation = (execution.context.earnings_expectation as EarningsExpectationItem[] | undefined) || []
+  const macroCalendar = (execution.context.macro_calendar as MacroCalendarItem[] | undefined) || []
+  const intradayData = (execution.context.intraday_data as IntradayItem[] | undefined) || []
+  const dataQualitySummary = (execution.context.data_quality_summary as {
+    total: number
+    bad_count: number
+    top_issues: string[]
+  } | null | undefined) || null
+  const quantAutoFetch = (execution.context.quant_auto_fetch as {
+    triggered: boolean
+    reason: string
+    missing: string[]
+  } | null | undefined) || null
+  const newsSentimentSummary = (execution.context.news_sentiment_summary as {
+    count: number
+    avg_sentiment: number
+    high_relevance_count: number
+  } | null | undefined) || null
+  const benchmarkSummary = summarizeBenchmarks(indexBenchmarks)
 
   // 如果有AI分析结果，优先使用AI的内容
   const summary = aiAnalysis?.ai_summary
@@ -939,6 +1813,20 @@ async function buildReport(execution: ExecutionDoc) {
     key_points: keyPoints,
     predicted_kline: aiAnalysis?.predicted_kline || [],
     kline_history: klineHistory || [],
+    next_trading_days: nextTradingDays,
+    benchmark_summary: benchmarkSummary,
+    fund_flow: fundFlow,
+    stock_events: stockEvents,
+    financial_enhanced: enhancedFinancial,
+    adjust_factors: adjustFactors,
+    corporate_actions: corporateActions,
+    industry_aggregation: industryAggregation,
+    earnings_expectation: earningsExpectation,
+    macro_calendar: macroCalendar,
+    intraday_data: intradayData,
+    data_quality_summary: dataQualitySummary,
+    quant_auto_fetch: quantAutoFetch,
+    news_sentiment_summary: newsSentimentSummary,
     news: newsData,
     read_pages: readPagesReport.map(p => ({ url: p.url, title: p.title })),
     search_rounds: searchLogsData.length,
@@ -951,6 +1839,20 @@ async function buildReport(execution: ExecutionDoc) {
         financial,
         decision,
         ai_analysis: aiAnalysis || null,
+        next_trading_days: nextTradingDays,
+        benchmark_summary: benchmarkSummary,
+        fund_flow_count: fundFlow.length,
+        stock_event_count: stockEvents.length,
+        financial_enhanced: enhancedFinancial,
+        adjust_factor_count: adjustFactors.length,
+        corporate_action_count: corporateActions.length,
+        industry_aggregation_count: industryAggregation.length,
+        earnings_expectation_count: earningsExpectation.length,
+        macro_calendar_count: macroCalendar.length,
+        intraday_count: intradayData.length,
+        data_quality_summary: dataQualitySummary,
+        quant_auto_fetch: quantAutoFetch,
+        news_sentiment_summary: newsSentimentSummary,
         news_count: newsData.length,
         search_rounds: searchLogsData.length
       }
@@ -975,6 +1877,20 @@ async function buildReport(execution: ExecutionDoc) {
     key_points: keyPoints,
     predicted_kline: aiAnalysis?.predicted_kline || [],
     kline_history: klineHistory || [],
+    next_trading_days: nextTradingDays,
+    benchmark_summary: benchmarkSummary,
+    fund_flow: fundFlow,
+    stock_events: stockEvents,
+    financial_enhanced: enhancedFinancial,
+    adjust_factors: adjustFactors,
+    corporate_actions: corporateActions,
+    industry_aggregation: industryAggregation,
+    earnings_expectation: earningsExpectation,
+    macro_calendar: macroCalendar,
+    intraday_data: intradayData,
+    data_quality_summary: dataQualitySummary,
+    quant_auto_fetch: quantAutoFetch,
+    news_sentiment_summary: newsSentimentSummary,
     news: newsData,
     read_pages: readPagesReport.map(p => ({ url: p.url, title: p.title })),
     search_rounds: searchLogsData.length,
@@ -1496,6 +2412,7 @@ export async function tickExecution(id: string, userId: string) {
   } else if (execution.step === 5) {
     const quote = context.quote as { changePct: number }
     const financial = context.financial as { roe: number; pe: number; pb: number }
+    const basic = context.basic as { industry: string }
     const decision = makeDecision(quote.changePct, financial.roe, financial.pe, financial.pb)
     context.decision = decision
     logs.push({ at: now, text: `基础研判：${decision.action}（置信度 ${decision.confidence}%）` })
@@ -1504,6 +2421,66 @@ export async function tickExecution(id: string, userId: string) {
     const klineData = await loadKlineHistory(execution.symbol, 60)
     context.kline_history = klineData
     logs.push({ at: now, text: `已加载 ${klineData.length} 条K线历史数据` })
+
+    const lastKlineDate = klineData[klineData.length - 1]?.time || ''
+
+    // 自动拉取增强数据（缓存优先，缺失才调外部接口）
+    logs.push({ at: now, text: '正在检查并拉取增强数据...' })
+    const quantFetchResult = await fetchAllQuantData({
+      symbol: execution.symbol,
+      market: execution.market,
+      industry: basic.industry || ''
+    }).catch(() => ({ success: false, message: '增强数据拉取异常', results: {} }))
+    logs.push({ at: now, text: quantFetchResult.message })
+
+    const [
+      nextTradingDays,
+      indexBenchmarks,
+      fundFlow,
+      stockEvents,
+      enhancedFinancial,
+      newsSentiment,
+      adjustFactors,
+      corporateActions,
+      industryAggregation,
+      earningsExpectation,
+      macroCalendar,
+      dataQuality,
+      intradayData
+    ] = await Promise.all([
+      loadNextTradingDays(lastKlineDate, execution.market, 10).catch(() => []),
+      loadIndexBenchmarks(lastKlineDate, execution.market, 60).catch(() => []),
+      loadFundFlow(execution.symbol, 30).catch(() => []),
+      loadStockEvents(execution.symbol, 50).catch(() => []),
+      loadEnhancedFinancial(execution.symbol).catch(() => null),
+      loadNewsSentiment(execution.symbol, 50).catch(() => []),
+      loadAdjustFactors(execution.symbol, 30).catch(() => []),
+      loadCorporateActions(execution.symbol, 30).catch(() => []),
+      loadIndustryAggregation(basic.industry || '', 20).catch(() => []),
+      loadEarningsExpectation(execution.symbol, 20).catch(() => []),
+      loadMacroCalendar(40).catch(() => []),
+      loadDataQualitySnapshot(execution.symbol, 30).catch(() => []),
+      loadIntraday(execution.symbol, '1', 180).catch(() => [])
+    ])
+
+    context.next_trading_days = nextTradingDays
+    context.index_benchmarks = indexBenchmarks
+    context.fund_flow = fundFlow
+    context.stock_events = stockEvents
+    context.financial_enhanced = enhancedFinancial
+    context.news_sentiment_summary = summarizeNewsSentiment(newsSentiment)
+    context.adjust_factors = adjustFactors
+    context.corporate_actions = corporateActions
+    context.industry_aggregation = industryAggregation
+    context.earnings_expectation = earningsExpectation
+    context.macro_calendar = macroCalendar
+    context.data_quality_summary = summarizeDataQuality(dataQuality)
+    context.intraday_data = intradayData
+
+    logs.push({
+      at: now,
+      text: `增强数据加载完成：交易日历 ${nextTradingDays.length} 天，指数 ${summarizeBenchmarks(indexBenchmarks).length} 组，资金流 ${fundFlow.length} 条，事件 ${stockEvents.length} 条，复权 ${adjustFactors.length} 条，行业 ${industryAggregation.length} 条，业绩预期 ${earningsExpectation.length} 条，分时 ${intradayData.length} 条`
+    })
 
     // 调用AI深度分析（耗时较长，先刷新updated_at防止被标记为过期）
     await executions.updateOne(
