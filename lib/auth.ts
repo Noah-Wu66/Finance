@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 
 const AUTH_COOKIE = 'ta_token'
-const MAX_AGE_SECONDS = 60 * 60 * 12
+const MAX_AGE_SECONDS = 60 * 60 * 24 * 7
 
 export interface SessionUser {
   userId: string

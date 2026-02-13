@@ -201,7 +201,7 @@ export function KlineChart({ data, width = 720, height = 340, predictStartIndex 
       {hoverBar ? (
         <g>
           {hoverIsPredicted && (
-            <text x={paddingLeft} y={12} fontSize="10" fill="#f59e0b" fontWeight="bold">
+            <text x={paddingLeft} y={12} fontSize="10" fill="var(--ma5, #f59e0b)" fontWeight="bold">
               [预测]
             </text>
           )}

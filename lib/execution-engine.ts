@@ -424,29 +424,11 @@ function formatYmd(ymd: string): string {
 }
 
 function getCalendarMarketCandidates(market: string): string[] {
-  if (market.includes('A')) {
-    return ['SSE', 'SZSE', 'CN', 'A股']
-  }
-  if (market.includes('港')) {
-    return ['HKEX', 'HK', '港股']
-  }
-  if (market.includes('美')) {
-    return ['NASDAQ', 'NYSE', 'US', '美股']
-  }
-  return [market]
+  return ['SSE', 'SZSE', 'CN', 'A股']
 }
 
 function getIndexCandidatesByMarket(market: string): string[] {
-  if (market.includes('A')) {
-    return ['000300', '000001', '399001', '399006']
-  }
-  if (market.includes('港')) {
-    return ['HSI', 'HSCEI']
-  }
-  if (market.includes('美')) {
-    return ['SPX', 'NDX', 'DJI']
-  }
-  return ['000300']
+  return ['000300', '000001', '399001', '399006']
 }
 
 function ymdDaysAgo(days: number): string {

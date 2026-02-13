@@ -79,7 +79,80 @@ async function safeFetch(url: string, timeoutMs = 10000): Promise<Response> {
   }
 }
 
-// ---------- 拉取实时行情 ----------
+// ---------- 从 K 线接口获取最近交易日行情（停盘时的回退方案） ----------
+
+async function fetchQuoteFromKline(code: string): Promise<{
+  success: boolean
+  message: string
+  data?: Record<string, unknown>
+}> {
+  const secId = getSecId(code)
+  const endDate = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  const begDate = daysAgo(10)
+  const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secId}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=0&beg=${begDate}&end=${endDate}&ut=7eea3edcaed734bea9cbfc24409ed989`
+
+  try {
+    const res = await safeFetch(url)
+    if (!res.ok) {
+      return { success: false, message: `K线回退接口返回 HTTP ${res.status}` }
+    }
+
+    const json = await res.json()
+    const klines = json?.data?.klines as string[] | undefined
+    const stockName = json?.data?.name as string | undefined
+
+    if (!klines || klines.length === 0) {
+      return { success: false, message: 'K线回退接口无数据' }
+    }
+
+    // 格式: 日期,开,收,高,低,成交量,成交额,振幅,涨跌幅,涨跌额,换手率
+    const last = klines[klines.length - 1]
+    const p = last.split(',')
+    if (p.length < 11) {
+      return { success: false, message: 'K线数据格式异常' }
+    }
+
+    const now = new Date()
+    const tradeDate = p[0].replace(/-/g, '')
+
+    const doc = {
+      symbol: code,
+      name: stockName || code,
+      close: Number(p[2]),
+      pct_chg: Number(p[8]),
+      change: Number(p[9]),
+      volume: Number(p[5]),
+      amount: Number(p[6]),
+      amplitude: Number(p[7]),
+      turnover_rate: Number(p[10]),
+      high: Number(p[3]),
+      low: Number(p[4]),
+      open: Number(p[1]),
+      trade_date: tradeDate,
+      data_source: 'eastmoney_kline_fallback',
+      updated_at: now,
+      created_at: now
+    }
+
+    const db = await getDb()
+    await db.collection('stock_quotes').updateOne(
+      { symbol: code, trade_date: tradeDate, data_source: 'eastmoney_kline_fallback' },
+      { $set: doc, $setOnInsert: { created_at: now } },
+      { upsert: true }
+    )
+
+    return {
+      success: true,
+      message: `已从K线获取 ${stockName || code}(${code}) 最近行情：${doc.close}（${tradeDate}）`,
+      data: doc
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : '未知错误'
+    return { success: false, message: `K线回退获取失败: ${msg}` }
+  }
+}
+
+// ---------- 拉取实时行情（停盘时自动回退到K线） ----------
 
 export async function fetchRealtimeQuote(code: string): Promise<{
   success: boolean
@@ -93,14 +166,14 @@ export async function fetchRealtimeQuote(code: string): Promise<{
   try {
     const res = await safeFetch(url)
     if (!res.ok) {
-      return { success: false, message: `东方财富接口返回 HTTP ${res.status}` }
+      return await fetchQuoteFromKline(code)
     }
 
     const json = await res.json()
     const d = json?.data as EastMoneyQuoteRaw | undefined
     if (!d || !d.f12) {
-      // 非交易时段接口返回空数据是正常的，不算错误
-      return { success: false, message: '非交易时段，实时行情不可用' }
+      // 非交易时段接口返回空数据，回退到K线接口获取最近交易日数据
+      return await fetchQuoteFromKline(code)
     }
 
     const now = new Date()
@@ -148,9 +221,9 @@ export async function fetchRealtimeQuote(code: string): Promise<{
   } catch (err) {
     const msg = err instanceof Error ? err.message : '未知错误'
     if (msg.includes('abort')) {
-      return { success: false, message: '东方财富接口请求超时' }
+      return await fetchQuoteFromKline(code)
     }
-    return { success: false, message: `拉取实时行情失败: ${msg}` }
+    return await fetchQuoteFromKline(code)
   }
 }
 

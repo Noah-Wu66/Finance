@@ -17,22 +17,6 @@ export async function GET(request: NextRequest) {
           currency: 'CNY',
           timezone: 'Asia/Shanghai',
           trading_hours: '09:30-11:30, 13:00-15:00'
-        },
-        {
-          code: 'HK',
-          name: '港股',
-          name_en: 'Hong Kong',
-          currency: 'HKD',
-          timezone: 'Asia/Hong_Kong',
-          trading_hours: '09:30-12:00, 13:00-16:00'
-        },
-        {
-          code: 'US',
-          name: '美股',
-          name_en: 'United States',
-          currency: 'USD',
-          timezone: 'America/New_York',
-          trading_hours: '09:30-16:00'
         }
       ]
     },

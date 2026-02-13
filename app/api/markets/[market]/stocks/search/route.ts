@@ -18,16 +18,6 @@ export async function GET(request: NextRequest, { params }: Params) {
     return ok({ stocks: [], total: 0 }, '请输入关键词')
   }
 
-  const { market } = await params
-  const marketCode = market.toUpperCase()
-  const marketMap: Record<string, string> = {
-    CN: 'A股',
-    HK: '港股',
-    US: '美股'
-  }
-  const marketName = marketMap[marketCode] || marketCode
-
-  const all = await searchStockBasics(q, limit * 2)
-  const stocks = all.filter((item) => item.market === marketName).slice(0, limit)
-  return ok({ stocks, total: stocks.length }, '搜索成功')
+  const all = await searchStockBasics(q, limit)
+  return ok({ stocks: all, total: all.length }, '搜索成功')
 }

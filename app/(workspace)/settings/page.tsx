@@ -99,8 +99,6 @@ export default function SettingsPage() {
                 onChange={(e) => setForm((prev) => ({ ...prev, default_market: e.target.value }))}
               >
                 <option value="A股">A股</option>
-                <option value="港股">港股</option>
-                <option value="美股">美股</option>
               </Select>
 
               <Input
