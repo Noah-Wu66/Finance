@@ -20,18 +20,12 @@ const AI_CONFIG = {
   max_tokens: 128000,
   timeout: 120,
   enable_tools: false,
-  // 定价：美元/百万token
-  pricing: {
-    input: 15,   // $15 / M input tokens
-    output: 75,  // $75 / M output tokens
-  }
 }
 
-// 导出模型信息供外部使用（如费用计算）
+// 导出模型信息供外部使用
 export const AI_MODEL_INFO = {
   provider: AI_CONFIG.provider,
   model: AI_CONFIG.model,
-  pricing: AI_CONFIG.pricing,
 } as const
 
 // 从环境变量获取API Key

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'TradingAgents',
+  title: 'Finance Agents',
   description: 'AI 驱动的智能股票分析平台'
 }
 

@@ -43,7 +43,6 @@ export async function GET(request: NextRequest) {
       running_analyses: running,
       avg_duration: 0,
       total_tokens: 0,
-      total_cost: 0,
       popular_stocks: popularStocks,
       analysis_by_date: [],
       analysis_by_market: []

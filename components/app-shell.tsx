@@ -102,7 +102,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const title = useMemo(() => {
     const hit = navItems.find((item) => pathname.startsWith(item.href))
-    return hit?.label || 'TradingAgents'
+    return hit?.label || 'Finance Agents'
   }, [pathname])
 
   // 页面关闭时停止运行中的任务
@@ -232,7 +232,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
         {!collapsed && (
           <div className="min-w-0">
-            <h1 className="text-sm font-semibold text-[var(--fg)] m-0 truncate">TradingAgents</h1>
+            <h1 className="text-sm font-semibold text-[var(--fg)] m-0 truncate">Finance Agents</h1>
             <p className="text-[11px] text-[var(--fg-muted)] m-0">AI 股票分析平台</p>
           </div>
         )}

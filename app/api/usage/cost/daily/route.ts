@@ -12,12 +12,11 @@ export async function GET(request: NextRequest) {
 
   const stats = await computeUsageStatistics(user.userId)
   const items = Object.entries(stats.by_date)
-    .map(([date, value]) => ({
+    .map(([date, count]) => ({
       date,
-      count: value.count,
-      cost: value.cost
+      count
     }))
     .sort((a, b) => a.date.localeCompare(b.date))
 
-  return ok({ items }, '获取每日成本成功')
+  return ok({ items }, '获取每日统计成功')
 }

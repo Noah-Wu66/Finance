@@ -24,6 +24,10 @@ const MACRO_CALENDAR_COLLECTION = 'macro_calendar'
 const DATA_QUALITY_COLLECTION = 'data_quality'
 const INTRADAY_COLLECTION = 'stock_intraday'
 const QUANT_AUTO_FETCH_LOG_COLLECTION = 'quant_auto_fetch_logs'
+const NORTHBOUND_FLOW_COLLECTION = 'northbound_flow'
+const MARGIN_TRADING_COLLECTION = 'margin_trading'
+const DRAGON_TIGER_COLLECTION = 'dragon_tiger'
+const INSTITUTION_HOLDING_COLLECTION = 'institution_holding'
 
 const STALE_TIMEOUT_MS = 150 * 1000
 
@@ -926,6 +930,112 @@ async function loadIntraday(symbol: string, period = '1', limit = 180): Promise<
   })).filter((row) => row.datetime)
 }
 
+interface NorthboundFlowItem {
+  trade_date: string
+  net_buy: number
+  sh_net_buy: number
+  sz_net_buy: number
+}
+
+async function loadNorthboundFlow(limit = 30): Promise<NorthboundFlowItem[]> {
+  const db = await getDb()
+  const rows = await db
+    .collection(NORTHBOUND_FLOW_COLLECTION)
+    .find({})
+    .sort({ trade_date: -1, updated_at: -1, created_at: -1 })
+    .limit(limit)
+    .toArray()
+
+  return rows.map((row) => ({
+    trade_date: normalizeYmd(row.trade_date),
+    net_buy: toNumber(row.net_buy),
+    sh_net_buy: toNumber(row.sh_net_buy),
+    sz_net_buy: toNumber(row.sz_net_buy)
+  })).filter((row) => row.trade_date)
+}
+
+interface MarginTradingItem {
+  symbol: string
+  trade_date: string
+  margin_balance: number
+  short_balance: number
+  margin_buy: number
+  short_sell: number
+}
+
+async function loadMarginTrading(symbol: string, limit = 30): Promise<MarginTradingItem[]> {
+  const db = await getDb()
+  const rows = await db
+    .collection(MARGIN_TRADING_COLLECTION)
+    .find({ symbol })
+    .sort({ trade_date: -1, updated_at: -1, created_at: -1 })
+    .limit(limit)
+    .toArray()
+
+  return rows.map((row) => ({
+    symbol,
+    trade_date: normalizeYmd(row.trade_date),
+    margin_balance: toNumber(row.margin_balance),
+    short_balance: toNumber(row.short_balance),
+    margin_buy: toNumber(row.margin_buy),
+    short_sell: toNumber(row.short_sell)
+  })).filter((row) => row.trade_date)
+}
+
+interface DragonTigerItem {
+  symbol: string
+  trade_date: string
+  reason: string
+  total_amount: number
+  buy_amount: number
+  sell_amount: number
+  net_amount: number
+}
+
+async function loadDragonTiger(symbol: string, limit = 20): Promise<DragonTigerItem[]> {
+  const db = await getDb()
+  const rows = await db
+    .collection(DRAGON_TIGER_COLLECTION)
+    .find({ symbol })
+    .sort({ trade_date: -1, updated_at: -1, created_at: -1 })
+    .limit(limit)
+    .toArray()
+
+  return rows.map((row) => ({
+    symbol,
+    trade_date: normalizeYmd(row.trade_date),
+    reason: String(row.reason || ''),
+    total_amount: toNumber(row.total_amount),
+    buy_amount: toNumber(row.buy_amount),
+    sell_amount: toNumber(row.sell_amount),
+    net_amount: toNumber(row.net_amount)
+  })).filter((row) => row.trade_date)
+}
+
+interface InstitutionHoldingItem {
+  symbol: string
+  report_date: string
+  holder_num: number
+  holder_change: number
+}
+
+async function loadInstitutionHolding(symbol: string, limit = 10): Promise<InstitutionHoldingItem[]> {
+  const db = await getDb()
+  const rows = await db
+    .collection(INSTITUTION_HOLDING_COLLECTION)
+    .find({ symbol })
+    .sort({ report_date: -1, updated_at: -1, created_at: -1 })
+    .limit(limit)
+    .toArray()
+
+  return rows.map((row) => ({
+    symbol,
+    report_date: normalizeYmd(row.report_date),
+    holder_num: toNumber(row.holder_num),
+    holder_change: toNumber(row.holder_change)
+  })).filter((row) => row.report_date)
+}
+
 function summarizeNewsSentiment(items: NewsSentimentItem[]) {
   if (items.length === 0) return null
   const scored = items.filter((item) => Number.isFinite(item.sentiment_score))
@@ -1493,6 +1603,10 @@ async function runAIAnalysis(
     avg_sentiment: number
     high_relevance_count: number
   } | null | undefined) || null
+  const northboundFlow = (execution.context.northbound_flow as NorthboundFlowItem[] | undefined) || []
+  const marginTrading = (execution.context.margin_trading as MarginTradingItem[] | undefined) || []
+  const dragonTiger = (execution.context.dragon_tiger as DragonTigerItem[] | undefined) || []
+  const institutionHolding = (execution.context.institution_holding as InstitutionHoldingItem[] | undefined) || []
 
   // 构建K线数据 - 全量传给AI
   const klineSummary = klineData.map((k) =>
@@ -1584,6 +1698,22 @@ async function runAIAnalysis(
     ? nextTradingDays.map((d) => formatYmd(d)).join('、')
     : '暂无交易日历数据（请按真实交易日推算）'
 
+  const northboundText = northboundFlow.length > 0
+    ? northboundFlow.slice(0, 15).map((item, i) => `${i + 1}. ${item.trade_date} 净买入:${item.net_buy}亿 沪股通:${item.sh_net_buy}亿 深股通:${item.sz_net_buy}亿`).join('\n')
+    : '暂无北向资金数据'
+
+  const marginText = marginTrading.length > 0
+    ? marginTrading.slice(0, 15).map((item, i) => `${i + 1}. ${item.trade_date} 融资余额:${item.margin_balance}亿 融券余额:${item.short_balance}亿 融资买入:${item.margin_buy}亿`).join('\n')
+    : '暂无融资融券数据'
+
+  const dragonTigerText = dragonTiger.length > 0
+    ? dragonTiger.slice(0, 10).map((item, i) => `${i + 1}. ${item.trade_date} [${item.reason}] 总额:${item.total_amount}万 净买:${item.net_amount}万`).join('\n')
+    : '暂无龙虎榜数据'
+
+  const institutionText = institutionHolding.length > 0
+    ? institutionHolding.slice(0, 6).map((item, i) => `${i + 1}. ${item.report_date} 持仓户数:${item.holder_num} 变动:${item.holder_change}`).join('\n')
+    : '暂无机构持仓数据'
+
   const systemPrompt = `你是一位顶级量化分析师和技术分析专家。你需要基于提供的股票数据、最新新闻资讯和深度阅读的网页内容进行深度分析，并预测未来10个交易日的K线走势。
 
 你的分析必须严格基于数据，包括：
@@ -1662,6 +1792,18 @@ ${sentimentText}
 
 【数据质量快照】
 ${dataQualityText}
+
+【北向资金（近期）】
+${northboundText}
+
+【融资融券（近期）】
+${marginText}
+
+【龙虎榜（近期）】
+${dragonTigerText}
+
+【机构持仓（股东户数）】
+${institutionText}
 
 【未来10个交易日（优先使用以下日期）】
 ${tradingDayText}
@@ -1779,6 +1921,10 @@ async function buildReport(execution: ExecutionDoc) {
     avg_sentiment: number
     high_relevance_count: number
   } | null | undefined) || null
+  const northboundFlowReport = (execution.context.northbound_flow as NorthboundFlowItem[] | undefined) || []
+  const marginTradingReport = (execution.context.margin_trading as MarginTradingItem[] | undefined) || []
+  const dragonTigerReport = (execution.context.dragon_tiger as DragonTigerItem[] | undefined) || []
+  const institutionHoldingReport = (execution.context.institution_holding as InstitutionHoldingItem[] | undefined) || []
   const benchmarkSummary = summarizeBenchmarks(indexBenchmarks)
 
   // 如果有AI分析结果，优先使用AI的内容
@@ -1827,6 +1973,10 @@ async function buildReport(execution: ExecutionDoc) {
     data_quality_summary: dataQualitySummary,
     quant_auto_fetch: quantAutoFetch,
     news_sentiment_summary: newsSentimentSummary,
+    northbound_flow: northboundFlowReport,
+    margin_trading: marginTradingReport,
+    dragon_tiger: dragonTigerReport,
+    institution_holding: institutionHoldingReport,
     news: newsData,
     read_pages: readPagesReport.map(p => ({ url: p.url, title: p.title })),
     search_rounds: searchLogsData.length,
@@ -1853,6 +2003,10 @@ async function buildReport(execution: ExecutionDoc) {
         data_quality_summary: dataQualitySummary,
         quant_auto_fetch: quantAutoFetch,
         news_sentiment_summary: newsSentimentSummary,
+        northbound_flow_count: northboundFlowReport.length,
+        margin_trading_count: marginTradingReport.length,
+        dragon_tiger_count: dragonTigerReport.length,
+        institution_holding_count: institutionHoldingReport.length,
         news_count: newsData.length,
         search_rounds: searchLogsData.length
       }
@@ -2446,7 +2600,11 @@ export async function tickExecution(id: string, userId: string) {
       earningsExpectation,
       macroCalendar,
       dataQuality,
-      intradayData
+      intradayData,
+      northboundFlowData,
+      marginTradingData,
+      dragonTigerData,
+      institutionHoldingData
     ] = await Promise.all([
       loadNextTradingDays(lastKlineDate, execution.market, 10).catch(() => []),
       loadIndexBenchmarks(lastKlineDate, execution.market, 60).catch(() => []),
@@ -2460,7 +2618,11 @@ export async function tickExecution(id: string, userId: string) {
       loadEarningsExpectation(execution.symbol, 20).catch(() => []),
       loadMacroCalendar(40).catch(() => []),
       loadDataQualitySnapshot(execution.symbol, 30).catch(() => []),
-      loadIntraday(execution.symbol, '1', 180).catch(() => [])
+      loadIntraday(execution.symbol, '1', 180).catch(() => []),
+      loadNorthboundFlow(30).catch(() => []),
+      loadMarginTrading(execution.symbol, 30).catch(() => []),
+      loadDragonTiger(execution.symbol, 20).catch(() => []),
+      loadInstitutionHolding(execution.symbol, 10).catch(() => [])
     ])
 
     context.next_trading_days = nextTradingDays
@@ -2476,10 +2638,14 @@ export async function tickExecution(id: string, userId: string) {
     context.macro_calendar = macroCalendar
     context.data_quality_summary = summarizeDataQuality(dataQuality)
     context.intraday_data = intradayData
+    context.northbound_flow = northboundFlowData
+    context.margin_trading = marginTradingData
+    context.dragon_tiger = dragonTigerData
+    context.institution_holding = institutionHoldingData
 
     logs.push({
       at: now,
-      text: `增强数据加载完成：交易日历 ${nextTradingDays.length} 天，指数 ${summarizeBenchmarks(indexBenchmarks).length} 组，资金流 ${fundFlow.length} 条，事件 ${stockEvents.length} 条，复权 ${adjustFactors.length} 条，行业 ${industryAggregation.length} 条，业绩预期 ${earningsExpectation.length} 条，分时 ${intradayData.length} 条`
+      text: `增强数据加载完成：交易日历 ${nextTradingDays.length} 天，指数 ${summarizeBenchmarks(indexBenchmarks).length} 组，资金流 ${fundFlow.length} 条，事件 ${stockEvents.length} 条，复权 ${adjustFactors.length} 条，行业 ${industryAggregation.length} 条，业绩预期 ${earningsExpectation.length} 条，分时 ${intradayData.length} 条，北向资金 ${northboundFlowData.length} 条，融资融券 ${marginTradingData.length} 条，龙虎榜 ${dragonTigerData.length} 条，机构持仓 ${institutionHoldingData.length} 条`
     })
 
     // 调用AI深度分析（耗时较长，先刷新updated_at防止被标记为过期）

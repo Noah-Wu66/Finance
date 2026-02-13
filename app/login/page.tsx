@@ -44,7 +44,7 @@ export default function LoginPage() {
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-primary-600 text-white font-bold text-xl mb-4">
             T
           </div>
-          <h1 className="text-xl font-semibold text-[var(--fg)] m-0">登录 TradingAgents</h1>
+          <h1 className="text-xl font-semibold text-[var(--fg)] m-0">登录 Finance Agents</h1>
           <p className="mt-2 text-sm text-[var(--fg-muted)]">AI 驱动的智能股票分析平台</p>
         </div>
 

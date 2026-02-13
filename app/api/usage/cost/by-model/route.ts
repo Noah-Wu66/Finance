@@ -11,11 +11,10 @@ export async function GET(request: NextRequest) {
   }
 
   const stats = await computeUsageStatistics(user.userId)
-  const items = Object.entries(stats.by_model).map(([model_name, value]) => ({
+  const items = Object.entries(stats.by_model).map(([model_name, count]) => ({
     model_name,
-    count: value.count,
-    cost: value.cost
+    count
   }))
 
-  return ok({ items }, '获取模型成本成功')
+  return ok({ items }, '获取模型统计成功')
 }

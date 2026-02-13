@@ -49,7 +49,7 @@ export default function RegisterPage() {
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-primary-600 text-white font-bold text-xl mb-4">
             T
           </div>
-          <h1 className="text-xl font-semibold text-[var(--fg)] m-0">注册 TradingAgents</h1>
+          <h1 className="text-xl font-semibold text-[var(--fg)] m-0">注册 Finance Agents</h1>
           <p className="mt-2 text-sm text-[var(--fg-muted)]">创建账号，开始使用 AI 股票分析</p>
         </div>
 

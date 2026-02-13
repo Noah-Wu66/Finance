@@ -11,11 +11,10 @@ export async function GET(request: NextRequest) {
   }
 
   const stats = await computeUsageStatistics(user.userId)
-  const items = Object.entries(stats.by_provider).map(([provider, value]) => ({
+  const items = Object.entries(stats.by_provider).map(([provider, count]) => ({
     provider,
-    count: value.count,
-    cost: value.cost
+    count
   }))
 
-  return ok({ items }, '获取供应商成本成功')
+  return ok({ items }, '获取供应商统计成功')
 }

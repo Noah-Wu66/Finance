@@ -522,6 +522,219 @@ export async function fetchIntraday(code: string, period = '1'): Promise<{ succe
 }
 
 // ============================================================
+// 10. 北向资金 - 东方财富
+// ============================================================
+export async function fetchNorthboundFlow(): Promise<{ success: boolean; message: string; count: number }> {
+  if (await isFresh('northbound_flow', {})) {
+    return { success: true, message: '北向资金缓存有效', count: 0 }
+  }
+
+  try {
+    const url = 'https://push2his.eastmoney.com/api/qt/kline.kline?cb=&secid=1.000001&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=0&end=20500101&lmt=30&ut=7eea3edcaed734bea9cbfc24409ed989&cb='
+
+    const res = await safeFetch(url)
+    if (!res.ok) return { success: false, message: `北向资金 HTTP ${res.status}`, count: 0 }
+
+    const text = await res.text()
+    const jsonMatch = text.match(/\(([\s\S]*)\)/)
+    if (!jsonMatch) return { success: false, message: '北向资金格式解析失败', count: 0 }
+
+    const json = JSON.parse(jsonMatch[1])
+    const klines = json?.data?.klines as string[] | undefined
+    if (!klines || klines.length === 0) return { success: false, message: '北向资金无数据', count: 0 }
+
+    const db = await getDb()
+    const now = new Date()
+    const ops = klines.map((line) => {
+      const p = line.split(',')
+      if (p.length < 6) return null
+      const tradeDate = p[0].replace(/-/g, '')
+      return {
+        updateOne: {
+          filter: { trade_date: tradeDate },
+          update: {
+            $set: {
+              trade_date: tradeDate,
+              net_buy: toNum(p[2]),
+              sh_net_buy: toNum(p[3]),
+              sz_net_buy: toNum(p[4]),
+              updated_at: now
+            },
+            $setOnInsert: { created_at: now }
+          },
+          upsert: true
+        }
+      }
+    }).filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
+
+    if (ops.length > 0) {
+      await db.collection('northbound_flow').bulkWrite(ops, { ordered: false }).catch(() => {})
+    }
+    return { success: true, message: `北向资金已更新 ${ops.length} 条`, count: ops.length }
+  } catch (err) {
+    return { success: false, message: `北向资金拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
+  }
+}
+
+// ============================================================
+// 11. 融资融券 - 东方财富
+// ============================================================
+export async function fetchMarginTrading(code: string): Promise<{ success: boolean; message: string; count: number }> {
+  if (await isFresh('margin_trading', { symbol: code })) {
+    return { success: true, message: `${code} 融资融券缓存有效`, count: 0 }
+  }
+
+  try {
+    const secId = getSecId(code)
+    const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_RZRQ_LSHJ&columns=TRADE_DATE,RZYE,RQYE,RZMRE,RQMCL,RZCHE,RQCHL&filter=(SECURITY_CODE="${code}")&pageSize=30&pageNumber=1&sortColumns=TRADE_DATE&sortTypes=-1`
+
+    const res = await safeFetch(url)
+    if (!res.ok) return { success: false, message: `融资融券 HTTP ${res.status}`, count: 0 }
+
+    const json = await res.json()
+    const rows = json?.result?.data as Array<Record<string, unknown>> | undefined
+    if (!rows || rows.length === 0) return { success: false, message: '融资融券无数据', count: 0 }
+
+    const db = await getDb()
+    const now = new Date()
+    const ops = rows.map((row) => {
+      const tradeDate = String(row.TRADE_DATE || '').slice(0, 10).replace(/-/g, '')
+      if (!tradeDate) return null
+      return {
+        updateOne: {
+          filter: { symbol: code, trade_date: tradeDate },
+          update: {
+            $set: {
+              symbol: code, trade_date: tradeDate,
+              margin_balance: toNum(row.RZYE),
+              short_balance: toNum(row.RQYE),
+              margin_buy: toNum(row.RZMRE),
+              short_sell: toNum(row.RQMCL),
+              margin_repay: toNum(row.RZCHE),
+              short_repay: toNum(row.RQCHL),
+              updated_at: now
+            },
+            $setOnInsert: { created_at: now }
+          },
+          upsert: true
+        }
+      }
+    }).filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
+
+    if (ops.length > 0) {
+      await db.collection('margin_trading').bulkWrite(ops, { ordered: false }).catch(() => {})
+    }
+    return { success: true, message: `${code} 融资融券已更新 ${ops.length} 条`, count: ops.length }
+  } catch (err) {
+    return { success: false, message: `融资融券拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
+  }
+}
+
+// ============================================================
+// 12. 龙虎榜 - 东方财富
+// ============================================================
+export async function fetchDragonTiger(code: string): Promise<{ success: boolean; message: string; count: number }> {
+  if (await isFresh('dragon_tiger', { symbol: code })) {
+    return { success: true, message: `${code} 龙虎榜缓存有效`, count: 0 }
+  }
+
+  try {
+    const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_BILLBOARD_DAILYDETAIL&columns=TRADE_DATE,EXPLAIN,ACCUM_AMT,BUY_AMT,BUY_RATIO,SELL_AMT,SELL_RATIO,NET_AMT,ACCUM_AMT,CHANGE_RATE&filter=(SECURITY_CODE="${code}")&pageSize=30&pageNumber=1&sortColumns=TRADE_DATE&sortTypes=-1`
+
+    const res = await safeFetch(url)
+    if (!res.ok) return { success: false, message: `龙虎榜 HTTP ${res.status}`, count: 0 }
+
+    const json = await res.json()
+    const rows = json?.result?.data as Array<Record<string, unknown>> | undefined
+    if (!rows || rows.length === 0) return { success: false, message: '龙虎榜无数据', count: 0 }
+
+    const db = await getDb()
+    const now = new Date()
+    const ops = rows.map((row) => {
+      const tradeDate = String(row.TRADE_DATE || '').slice(0, 10).replace(/-/g, '')
+      if (!tradeDate) return null
+      return {
+        updateOne: {
+          filter: { symbol: code, trade_date: tradeDate },
+          update: {
+            $set: {
+              symbol: code, trade_date: tradeDate,
+              reason: String(row.EXPLAIN || ''),
+              total_amount: toNum(row.ACCUM_AMT),
+              buy_amount: toNum(row.BUY_AMT),
+              buy_ratio: toNum(row.BUY_RATIO),
+              sell_amount: toNum(row.SELL_AMT),
+              sell_ratio: toNum(row.SELL_RATIO),
+              net_amount: toNum(row.NET_AMT),
+              change_rate: toNum(row.CHANGE_RATE),
+              updated_at: now
+            },
+            $setOnInsert: { created_at: now }
+          },
+          upsert: true
+        }
+      }
+    }).filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
+
+    if (ops.length > 0) {
+      await db.collection('dragon_tiger').bulkWrite(ops, { ordered: false }).catch(() => {})
+    }
+    return { success: true, message: `${code} 龙虎榜已更新 ${ops.length} 条`, count: ops.length }
+  } catch (err) {
+    return { success: false, message: `龙虎榜拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
+  }
+}
+
+// ============================================================
+// 13. 机构持仓 - 东方财富
+// ============================================================
+export async function fetchInstitutionHolding(code: string): Promise<{ success: boolean; message: string; count: number }> {
+  if (await isFresh('institution_holding', { symbol: code })) {
+    return { success: true, message: `${code} 机构持仓缓存有效`, count: 0 }
+  }
+
+  try {
+    const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_HOLDER_NUM&columns=REPORT_DATE,HOLDER_NUM,HOLDER_NUM_CHANGE&filter=(SECURITY_CODE="${code}")&pageSize=10&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1`
+
+    const res = await safeFetch(url)
+    if (!res.ok) return { success: false, message: `机构持仓 HTTP ${res.status}`, count: 0 }
+
+    const json = await res.json()
+    const rows = json?.result?.data as Array<Record<string, unknown>> | undefined
+    if (!rows || rows.length === 0) return { success: false, message: '机构持仓无数据', count: 0 }
+
+    const db = await getDb()
+    const now = new Date()
+    const ops = rows.map((row) => {
+      const reportDate = String(row.REPORT_DATE || '').slice(0, 10).replace(/-/g, '')
+      if (!reportDate) return null
+      return {
+        updateOne: {
+          filter: { symbol: code, report_date: reportDate },
+          update: {
+            $set: {
+              symbol: code, report_date: reportDate,
+              holder_num: toNum(row.HOLDER_NUM),
+              holder_change: toNum(row.HOLDER_NUM_CHANGE),
+              updated_at: now
+            },
+            $setOnInsert: { created_at: now }
+          },
+          upsert: true
+        }
+      }
+    }).filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
+
+    if (ops.length > 0) {
+      await db.collection('institution_holding').bulkWrite(ops, { ordered: false }).catch(() => {})
+    }
+    return { success: true, message: `${code} 机构持仓已更新 ${ops.length} 条`, count: ops.length }
+  } catch (err) {
+    return { success: false, message: `机构持仓拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
+  }
+}
+
+// ============================================================
 // 一键拉取所有增强数据
 // ============================================================
 export async function fetchAllQuantData(params: {
@@ -542,32 +755,44 @@ export async function fetchAllQuantData(params: {
   ])
 
   const [
+    northboundResult,
     fundFlowResult,
     industryResult,
     earningsResult,
     financialResult,
     eventsResult,
     macroResult,
-    intradayResult
+    intradayResult,
+    marginResult,
+    dragonTigerResult,
+    institutionResult
   ] = await Promise.all([
+    fetchNorthboundFlow(),
     fetchFundFlow(symbol),
     fetchIndustryAggregation(industry),
     fetchEarningsExpectation(symbol),
     fetchFinancialEnhanced(symbol),
     fetchStockEvents(symbol),
     fetchMacroCalendar(),
-    fetchIntraday(symbol, '1')
+    fetchIntraday(symbol, '1'),
+    fetchMarginTrading(symbol),
+    fetchDragonTiger(symbol),
+    fetchInstitutionHolding(symbol)
   ])
 
   const results: Record<string, { success: boolean; message: string }> = {
     trading_calendar: calendarResult,
+    northbound_flow: northboundResult,
     fund_flow: fundFlowResult,
     industry_aggregation: industryResult,
     earnings_expectation: earningsResult,
     financial_enhanced: financialResult,
     stock_events: eventsResult,
     macro_calendar: macroResult,
-    intraday: intradayResult
+    intraday: intradayResult,
+    margin_trading: marginResult,
+    dragon_tiger: dragonTigerResult,
+    institution_holding: institutionResult
   }
   for (let i = 0; i < indexCodes.length; i++) {
     results[`index_${indexCodes[i]}`] = indexResults[i]

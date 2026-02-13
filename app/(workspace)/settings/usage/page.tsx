@@ -15,7 +15,6 @@ interface UsageStats {
   total_requests: number
   total_input_tokens: number
   total_output_tokens: number
-  total_cost: number
 }
 
 interface UsageRecord {
@@ -25,7 +24,6 @@ interface UsageRecord {
   model_name: string
   input_tokens: number
   output_tokens: number
-  cost: number
 }
 
 export default function SettingsUsagePage() {
@@ -64,7 +62,7 @@ export default function SettingsUsagePage() {
     <div className="space-y-6">
       <PageHeader
         title="使用统计"
-        description="查看分析请求、Token 和成本统计"
+        description="查看分析请求和 Token 统计"
         actions={
           <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
             <Button variant="secondary" onClick={load} disabled={loading}>
@@ -116,7 +114,7 @@ export default function SettingsUsagePage() {
                     <span className="text-sm text-[var(--fg-secondary)]">{item.provider}</span>
                     <span className="font-mono text-xs text-[var(--fg-muted)]">{item.model_name}</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="grid grid-cols-2 gap-2 text-xs">
                     <div className="rounded-md bg-[var(--bg-secondary)] px-2.5 py-2">
                       <p className="m-0 text-[var(--fg-muted)]">输入</p>
                       <p className="m-0 mt-0.5 tabular-nums text-[var(--fg-secondary)]">{item.input_tokens.toLocaleString()}</p>
@@ -124,10 +122,6 @@ export default function SettingsUsagePage() {
                     <div className="rounded-md bg-[var(--bg-secondary)] px-2.5 py-2">
                       <p className="m-0 text-[var(--fg-muted)]">输出</p>
                       <p className="m-0 mt-0.5 tabular-nums text-[var(--fg-secondary)]">{item.output_tokens.toLocaleString()}</p>
-                    </div>
-                    <div className="rounded-md bg-[var(--bg-secondary)] px-2.5 py-2">
-                      <p className="m-0 text-[var(--fg-muted)]">成本</p>
-                      <p className="m-0 mt-0.5 tabular-nums text-[var(--fg-secondary)]">{item.cost}</p>
                     </div>
                   </div>
                 </div>
@@ -143,7 +137,6 @@ export default function SettingsUsagePage() {
                     <Th>模型</Th>
                     <Th>输入</Th>
                     <Th>输出</Th>
-                    <Th>成本</Th>
                   </tr>
                 </Thead>
                 <Tbody>
@@ -154,7 +147,6 @@ export default function SettingsUsagePage() {
                       <Td className="font-mono text-xs">{item.model_name}</Td>
                       <Td className="tabular-nums">{item.input_tokens.toLocaleString()}</Td>
                       <Td className="tabular-nums">{item.output_tokens.toLocaleString()}</Td>
-                      <Td className="tabular-nums">{item.cost}</Td>
                     </Tr>
                   ))}
                 </Tbody>
