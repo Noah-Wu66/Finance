@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
   if (!user) return fail('未登录', 401)
 
   const body = (await request.json().catch(() => ({}))) as Payload
-  const dataSource = (body.data_source || 'tushare').trim()
+  const dataSource = (body.data_source || 'mairui').trim()
 
   const userObjectId = maybeObjectId(user.userId)
   if (!userObjectId) return fail('用户ID无效', 400)

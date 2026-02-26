@@ -163,7 +163,12 @@ async function loadQuotePack(symbol: string) {
   const db = await getDb()
   const rows = await db
     .collection('stock_quotes')
-    .find({ symbol, data_source: 'eastmoney_kline' })
+    .find({
+      symbol,
+      data_source: {
+        $in: ['mairui_a_stock_daily', 'mairui_a_stock']
+      }
+    })
     .sort({ trade_date: -1 })
     .limit(30)
     .toArray()
@@ -206,7 +211,7 @@ async function loadFundamentals(symbol: string) {
     }
   }
 
-  // financial_data 没有时从 stock_basic_info 读取（东方财富实时行情写入的 PE/PB）
+  // financial_data 没有时从 stock_basic_info 读取（行情同步写入的 PE/PB）
   const basicDoc = await db.collection('stock_basic_info').findOne({ symbol })
   if (basicDoc && (basicDoc.pe || basicDoc.pb)) {
     return {
@@ -266,7 +271,12 @@ async function loadKlineHistory(symbol: string, limit = 60) {
   const db = await getDb()
   const rows = await db
     .collection('stock_quotes')
-    .find({ symbol, data_source: 'eastmoney_kline' })
+    .find({
+      symbol,
+      data_source: {
+        $in: ['mairui_a_stock_daily', 'mairui_a_stock']
+      }
+    })
     .sort({ trade_date: -1 })
     .limit(limit)
     .toArray()
@@ -2465,7 +2475,7 @@ export async function tickExecution(id: string, userId: string) {
       try {
         const fetchResult = await fetchAStockData(execution.symbol)
         if (fetchResult.success) {
-          logs.push({ at: now, text: `已从东方财富拉取最新数据：${fetchResult.message}` })
+          logs.push({ at: now, text: `已拉取最新数据（麦蕊）：${fetchResult.message}` })
         } else {
           logs.push({ at: now, text: `在线拉取失败（${fetchResult.message}），将使用数据库已有数据` })
         }

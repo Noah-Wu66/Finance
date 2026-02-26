@@ -12,16 +12,13 @@ export async function GET(request: NextRequest) {
   return ok(
     {
       primary_source: {
-        name: 'tushare',
+        name: 'mairui',
         priority: 1,
-        reason: '数据覆盖完整，现场执行稳定'
+        reason: '接口覆盖全面，支持A股/指数/京市/科创/基金'
       },
-      fallback_sources: [
-        { name: 'akshare', priority: 2 },
-        { name: 'baostock', priority: 3 }
-      ],
-      suggestions: ['建议优先使用 Tushare，缺失数据自动切换备用源。'],
-      warnings: ['现场执行模式不会后台自动重试，请在页面内手动重跑。']
+      fallback_sources: [],
+      suggestions: ['系统已切换为仅使用麦蕊数据源。'],
+      warnings: ['请确保 Vercel 已配置 MAIRUI_LICENCE。']
     },
     '获取同步建议成功'
   )

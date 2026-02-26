@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
+import { fetchAStockData } from '@/lib/fetch-a-stock'
+import { fetchAStockExtendedSnapshot } from '@/lib/mairui-data'
 import { fail, ok } from '@/lib/http'
 
 interface Payload {
@@ -8,7 +10,7 @@ interface Payload {
   sync_historical?: boolean
   sync_financial?: boolean
   sync_basic?: boolean
-  data_source?: 'tushare' | 'akshare'
+  data_source?: 'mairui'
   days?: number
 }
 
@@ -20,35 +22,38 @@ export async function POST(request: NextRequest) {
   const symbols = (body.symbols || []).map((x) => String(x).trim().toUpperCase()).filter(Boolean)
   if (symbols.length === 0) return fail('请传入股票列表', 400)
 
+  let successCount = 0
+  let failedCount = 0
+  const details: Array<Record<string, unknown>> = []
+
+  for (const symbol of symbols) {
+    const core = await fetchAStockData(symbol)
+    const shouldFetchExtended = body.sync_basic !== false || body.sync_financial !== false
+    const extended = shouldFetchExtended
+      ? await fetchAStockExtendedSnapshot(symbol)
+      : null
+
+    if (core.success) {
+      successCount += 1
+    } else {
+      failedCount += 1
+    }
+
+    details.push({
+      symbol,
+      core,
+      extended
+    })
+  }
+
   return ok(
     {
       total: symbols.length,
-      symbols,
-      historical_sync: body.sync_historical
-        ? {
-            success_count: symbols.length,
-            error_count: 0,
-            total_records: symbols.length * (body.days || 30),
-            message: '历史数据检查完成'
-          }
-        : null,
-      financial_sync: body.sync_financial
-        ? {
-            success_count: symbols.length,
-            error_count: 0,
-            total_symbols: symbols.length,
-            message: '财务数据检查完成'
-          }
-        : null,
-      basic_sync: body.sync_basic
-        ? {
-            success_count: symbols.length,
-            error_count: 0,
-            total_symbols: symbols.length,
-            message: '基础数据检查完成'
-          }
-        : null
+      success_count: successCount,
+      failed_count: failedCount,
+      data_source: 'mairui',
+      details
     },
-    '批量同步完成'
+    failedCount === 0 ? '批量同步完成' : '批量同步完成（部分失败）'
   )
 }

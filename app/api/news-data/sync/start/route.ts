@@ -15,11 +15,13 @@ export async function POST(request: NextRequest) {
   if (!user) return fail('未登录', 401)
 
   const body = (await request.json().catch(() => ({}))) as Payload
+  const requested = (body.data_sources || []).map((item) => String(item).trim().toLowerCase())
+  const dataSources = requested.filter((item) => item === 'mairui')
   return ok(
     {
       sync_type: body.symbol ? 'single_stock' : 'market',
       symbol: body.symbol || undefined,
-      data_sources: body.data_sources || ['tushare', 'akshare'],
+      data_sources: dataSources.length > 0 ? dataSources : ['mairui'],
       hours_back: body.hours_back || 24,
       max_news_per_source: body.max_news_per_source || 50
     },

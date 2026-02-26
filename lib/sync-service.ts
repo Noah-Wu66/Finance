@@ -1,43 +1,19 @@
 import { getDb } from '@/lib/db'
+import { fetchAStockList, hasMairuiLicence } from '@/lib/mairui-data'
 
-async function safeFetch(url: string, timeoutMs = 30000): Promise<Response> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
+async function fetchStockListFromMairui(): Promise<{ success: boolean; message: string; stocks: Array<{ symbol: string; name: string; jys?: string }> }> {
   try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Referer': 'https://quote.eastmoney.com/'
-      }
-    })
-    return res
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
-async function fetchStockListFromEastMoney(): Promise<{ success: boolean; message: string; stocks: Array<{ symbol: string; name: string }> }> {
-  const url = 'https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=6000&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&fid=f62&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f12,f14'
-
-  try {
-    const res = await safeFetch(url)
-    if (!res.ok) {
-      return { success: false, message: `HTTP ${res.status}`, stocks: [] }
+    const result = await fetchAStockList()
+    if (!result.success || !result.data) {
+      return { success: false, message: result.message, stocks: [] }
     }
 
-    const json = await res.json()
-    const items = json?.data?.diff as Array<{ f12: string; f14: string }> | undefined
-
-    if (!items || items.length === 0) {
-      return { success: false, message: '无数据', stocks: [] }
-    }
-
-    const stocks = items
-      .filter(item => item.f12 && item.f14)
-      .map(item => ({
-        symbol: item.f12,
-        name: item.f14
+    const stocks = result.data
+      .filter((item) => item.dm && item.mc)
+      .map((item) => ({
+        symbol: String(item.dm).trim().toUpperCase().replace(/\.(SH|SZ|BJ)$/i, ''),
+        name: String(item.mc).trim(),
+        jys: item.jys
       }))
 
     return { success: true, message: `获取 ${stocks.length} 只股票`, stocks }
@@ -62,7 +38,8 @@ export interface SyncStatusRecord {
   created_at: Date
 }
 
-export async function runStockBasicsSync(force = false, preferredSources?: string[]) {
+export async function runStockBasicsSync(force = false, _preferredSources?: string[]) {
+  void _preferredSources
   const db = await getDb()
   const basics = db.collection('stock_basic_info')
   const history = db.collection<SyncStatusRecord>('sync_history')
@@ -73,12 +50,31 @@ export async function runStockBasicsSync(force = false, preferredSources?: strin
   let total = await basics.countDocuments()
   let inserted = 0
   let updated = 0
-  let errors = 0
+  const errors = 0
   let message = ''
+  const selectedSource = 'mairui'
 
   if (force || total === 0) {
-    const fetchResult = await fetchStockListFromEastMoney()
+    if (!hasMairuiLicence()) {
+      const status: SyncStatusRecord = {
+        job: 'stock_basics_sync',
+        status: 'failed',
+        started_at: startedAt.toISOString(),
+        finished_at: new Date().toISOString(),
+        total,
+        inserted: 0,
+        updated: 0,
+        errors: 1,
+        last_trade_date: nowDate,
+        data_sources_used: [selectedSource],
+        message: '未配置 MAIRUI_LICENCE，无法同步股票列表',
+        created_at: new Date()
+      }
+      await history.insertOne(status)
+      return status
+    }
 
+    const fetchResult = await fetchStockListFromMairui()
     if (!fetchResult.success) {
       const status: SyncStatusRecord = {
         job: 'stock_basics_sync',
@@ -90,7 +86,7 @@ export async function runStockBasicsSync(force = false, preferredSources?: strin
         updated: 0,
         errors: 1,
         last_trade_date: nowDate,
-        data_sources_used: ['eastmoney'],
+        data_sources_used: [selectedSource],
         message: `获取股票列表失败: ${fetchResult.message}`,
         created_at: new Date()
       }
@@ -100,15 +96,15 @@ export async function runStockBasicsSync(force = false, preferredSources?: strin
 
     const stocks = fetchResult.stocks
     const now = new Date()
-    const ops = stocks.map(stock => ({
+    const ops = stocks.map((stock) => ({
       updateOne: {
         filter: { symbol: stock.symbol },
         update: {
           $set: {
             symbol: stock.symbol,
             name: stock.name,
-            market: stock.symbol.startsWith('6') || stock.symbol.startsWith('9') ? '沪市' : '深市',
-            source: 'eastmoney',
+            market: stock.jys === 'sh' || stock.symbol.startsWith('6') || stock.symbol.startsWith('9') ? '沪市' : '深市',
+            source: selectedSource,
             updated_at: now
           },
           $setOnInsert: { created_at: now }
@@ -129,7 +125,6 @@ export async function runStockBasicsSync(force = false, preferredSources?: strin
     message = `数据库已有 ${total} 只股票，跳过同步`
   }
 
-  const source = preferredSources && preferredSources.length > 0 ? preferredSources : ['eastmoney']
   const status: SyncStatusRecord = {
     job: 'stock_basics_sync',
     status: 'success',
@@ -140,7 +135,7 @@ export async function runStockBasicsSync(force = false, preferredSources?: strin
     updated,
     errors,
     last_trade_date: nowDate,
-    data_sources_used: source,
+    data_sources_used: [selectedSource],
     source_stats: {
       primary: {
         total

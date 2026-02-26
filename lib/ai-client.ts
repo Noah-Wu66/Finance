@@ -1,6 +1,6 @@
 interface AnalyzeParams {
   systemPrompt: string
-  messages: Array<{role: string, content: string}>
+  messages: Array<{ role: string; content: string }>
   depth: 'deep'
 }
 
@@ -13,58 +13,145 @@ interface AnalyzeResult {
   thinking?: string
 }
 
-// 硬编码配置 - Claude Opus 4.6 统一配置
 const AI_CONFIG = {
-  provider: 'anthropic' as const,
-  model: 'claude-opus-4-6',
-  max_tokens: 128000,
+  provider: 'google' as const,
+  model: 'google/gemini-3.1-pro-preview',
+  max_output_tokens: 65535,
   timeout: 120,
-  enable_tools: false,
+  api_version: 'v1',
+  base_url: 'https://zenmux.ai/api/vertex-ai'
 }
 
-// 导出模型信息供外部使用
 export const AI_MODEL_INFO = {
   provider: AI_CONFIG.provider,
-  model: AI_CONFIG.model,
+  model: AI_CONFIG.model
 } as const
 
-// 从环境变量获取API Key
 function getApiKey(): string {
-  const apiKey = process.env.ANTHROPIC_API_KEY
+  const apiKey = (process.env.ZENMUX_API_KEY || '').trim()
   if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY 环境变量未设置')
+    throw new Error('ZENMUX_API_KEY 环境变量未设置')
   }
   return apiKey
 }
 
-// 从环境变量获取API Base URL
 function getApiBase(): string {
-  return process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com/v1'
+  return AI_CONFIG.base_url
+}
+
+function getGenerationConfig() {
+  return {
+    maxOutputTokens: AI_CONFIG.max_output_tokens,
+    thinkingConfig: {
+      thinkingLevel: 'HIGH'
+    }
+  }
+}
+
+function resolveProviderAndModel(model: string): { provider: string; model: string } {
+  const raw = String(model || '').trim()
+  if (!raw) {
+    return { provider: AI_CONFIG.provider, model: 'gemini-3.1-pro-preview' }
+  }
+
+  const parts = raw.split('/').filter(Boolean)
+  if (parts.length >= 2) {
+    return { provider: parts[0], model: parts.slice(1).join('/') }
+  }
+
+  return { provider: AI_CONFIG.provider, model: raw }
+}
+
+function buildEndpoint(action: 'generateContent' | 'streamGenerateContent'): string {
+  const { provider, model } = resolveProviderAndModel(AI_CONFIG.model)
+  const apiBase = getApiBase()
+  return `${apiBase}/${AI_CONFIG.api_version}/publishers/${encodeURIComponent(provider)}/models/${encodeURIComponent(model)}:${action}`
+}
+
+function toVertexRole(role: string): 'user' | 'model' {
+  const normalized = String(role || '').trim().toLowerCase()
+  if (normalized === 'assistant' || normalized === 'model') return 'model'
+  return 'user'
+}
+
+function buildContents(messages: Array<{ role: string; content: string }>) {
+  return messages
+    .map((message) => {
+      const text = String(message.content || '')
+      if (!text.trim()) return null
+      return {
+        role: toVertexRole(message.role),
+        parts: [{ text }]
+      }
+    })
+    .filter(Boolean)
+}
+
+function buildRequestBody(params: AnalyzeParams) {
+  const body: Record<string, unknown> = {
+    contents: buildContents(params.messages),
+    generationConfig: getGenerationConfig()
+  }
+
+  if (params.systemPrompt.trim()) {
+    body.systemInstruction = {
+      parts: [{ text: params.systemPrompt }]
+    }
+  }
+
+  return body
+}
+
+function extractTextAndThinking(candidate: any): { content: string; thinking: string } {
+  const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : []
+  let content = ''
+  let thinking = ''
+
+  for (const part of parts) {
+    const text = typeof part?.text === 'string' ? part.text : ''
+    if (!text) continue
+    if (part?.thought === true) {
+      thinking += text
+    } else {
+      content += text
+    }
+  }
+
+  return { content, thinking }
+}
+
+function extractUsage(data: any) {
+  return {
+    input_tokens: Number(data?.usageMetadata?.promptTokenCount || 0),
+    output_tokens: Number(data?.usageMetadata?.candidatesTokenCount || 0)
+  }
+}
+
+async function parseErrorMessage(response: Response): Promise<string> {
+  const fallback = `HTTP ${response.status}`
+  try {
+    const data = await response.json()
+    return String(data?.error?.message || fallback)
+  } catch {
+    return fallback
+  }
 }
 
 export async function analyzeWithAI(params: AnalyzeParams): Promise<AnalyzeResult> {
   const apiKey = getApiKey()
-  const apiBase = getApiBase()
-  
-  const requestBody: Record<string, unknown> = {
-    model: AI_CONFIG.model,
-    max_tokens: AI_CONFIG.max_tokens,
-    system: params.systemPrompt,
-    messages: params.messages,
-    thinking: { type: 'adaptive' },
-    output_config: { effort: 'max' }
-  }
+  const endpoint = buildEndpoint('generateContent')
+  const requestBody = buildRequestBody(params)
 
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), AI_CONFIG.timeout * 1000)
 
   try {
-    const response = await fetch(`${apiBase}/messages`, {
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2025-05-22'
+        Accept: 'application/json',
+        Authorization: `Bearer ${apiKey}`
       },
       body: JSON.stringify(requestBody),
       signal: controller.signal
@@ -73,31 +160,18 @@ export async function analyzeWithAI(params: AnalyzeParams): Promise<AnalyzeResul
     clearTimeout(timeoutId)
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: { message: '未知错误' } }))
-      throw new Error(`AI调用失败: ${errorData.error?.message || `HTTP ${response.status}`}`)
+      const message = await parseErrorMessage(response)
+      throw new Error(`AI调用失败: ${message}`)
     }
 
     const data = await response.json()
-    
-    // 提取文本内容和思考过程
-    let content = ''
-    let thinking = ''
-    
-    for (const block of data.content || []) {
-      if (block.type === 'text') {
-        content += block.text
-      } else if (block.type === 'thinking') {
-        thinking += block.thinking
-      }
-    }
+    const candidate = Array.isArray(data?.candidates) ? data.candidates[0] : null
+    const parsed = extractTextAndThinking(candidate)
 
     return {
-      content,
-      usage: {
-        input_tokens: data.usage?.input_tokens || 0,
-        output_tokens: data.usage?.output_tokens || 0
-      },
-      thinking: thinking || undefined
+      content: parsed.content,
+      usage: extractUsage(data),
+      thinking: parsed.thinking || undefined
     }
   } catch (error) {
     clearTimeout(timeoutId)
@@ -108,34 +182,46 @@ export async function analyzeWithAI(params: AnalyzeParams): Promise<AnalyzeResul
   }
 }
 
+function processStreamLine(line: string): any | null {
+  const trimmed = line.trim()
+  if (!trimmed) return null
+  if (trimmed.startsWith('event:')) return null
+
+  const payload = trimmed.startsWith('data:') ? trimmed.slice(5).trim() : trimmed
+  if (!payload || payload === '[DONE]') return null
+
+  try {
+    return JSON.parse(payload)
+  } catch {
+    return null
+  }
+}
+
+function normalizeStreamChunks(payload: any): any[] {
+  if (Array.isArray(payload)) return payload
+  if (payload && typeof payload === 'object') return [payload]
+  return []
+}
+
 export async function streamAnalyzeWithAI(
   params: AnalyzeParams,
   onChunk: (chunk: string) => void,
   onThinking?: (thinking: string) => void
-): Promise<{ usage: { input_tokens: number, output_tokens: number } }> {
+): Promise<{ usage: { input_tokens: number; output_tokens: number } }> {
   const apiKey = getApiKey()
-  const apiBase = getApiBase()
-  
-  const requestBody: Record<string, unknown> = {
-    model: AI_CONFIG.model,
-    max_tokens: AI_CONFIG.max_tokens,
-    system: params.systemPrompt,
-    messages: params.messages,
-    thinking: { type: 'adaptive' },
-    output_config: { effort: 'max' },
-    stream: true
-  }
+  const endpoint = buildEndpoint('streamGenerateContent')
+  const requestBody = buildRequestBody(params)
 
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), AI_CONFIG.timeout * 1000)
 
   try {
-    const response = await fetch(`${apiBase}/messages`, {
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2025-05-22'
+        Accept: 'text/event-stream',
+        Authorization: `Bearer ${apiKey}`
       },
       body: JSON.stringify(requestBody),
       signal: controller.signal
@@ -144,8 +230,8 @@ export async function streamAnalyzeWithAI(
     clearTimeout(timeoutId)
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: { message: '未知错误' } }))
-      throw new Error(`AI调用失败: ${errorData.error?.message || `HTTP ${response.status}`}`)
+      const message = await parseErrorMessage(response)
+      throw new Error(`AI调用失败: ${message}`)
     }
 
     const reader = response.body?.getReader()
@@ -155,8 +241,7 @@ export async function streamAnalyzeWithAI(
 
     const decoder = new TextDecoder()
     let buffer = ''
-    let inputTokens = 0
-    let outputTokens = 0
+    let usage = { input_tokens: 0, output_tokens: 0 }
 
     while (true) {
       const { done, value } = await reader.read()
@@ -167,40 +252,37 @@ export async function streamAnalyzeWithAI(
       buffer = lines.pop() || ''
 
       for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6)
-          if (data === '[DONE]') continue
+        const payload = processStreamLine(line)
+        if (!payload) continue
 
-          try {
-            const event = JSON.parse(data)
-            
-            // 处理内容块
-            if (event.type === 'content_block_delta') {
-              if (event.delta?.type === 'text_delta') {
-                onChunk(event.delta.text)
-              } else if (event.delta?.type === 'thinking_delta' && onThinking) {
-                onThinking(event.delta.thinking)
-              }
-            }
-            
-            // 处理usage信息
-            if (event.type === 'message_delta' && event.usage) {
-              inputTokens = event.usage.input_tokens || inputTokens
-              outputTokens = event.usage.output_tokens || outputTokens
-            }
-          } catch {
-            // 忽略解析错误
+        for (const chunk of normalizeStreamChunks(payload)) {
+          const candidate = Array.isArray(chunk?.candidates) ? chunk.candidates[0] : null
+          const parsed = extractTextAndThinking(candidate)
+
+          if (parsed.content) onChunk(parsed.content)
+          if (parsed.thinking && onThinking) onThinking(parsed.thinking)
+
+          if (chunk?.usageMetadata) {
+            usage = extractUsage(chunk)
           }
         }
       }
     }
 
-    return {
-      usage: {
-        input_tokens: inputTokens,
-        output_tokens: outputTokens
+    if (buffer.trim()) {
+      const payload = processStreamLine(buffer)
+      for (const chunk of normalizeStreamChunks(payload)) {
+        if (chunk?.usageMetadata) {
+          usage = extractUsage(chunk)
+        }
+        const candidate = Array.isArray(chunk?.candidates) ? chunk.candidates[0] : null
+        const parsed = extractTextAndThinking(candidate)
+        if (parsed.content) onChunk(parsed.content)
+        if (parsed.thinking && onThinking) onThinking(parsed.thinking)
       }
     }
+
+    return { usage }
   } catch (error) {
     clearTimeout(timeoutId)
     if (error instanceof Error && error.name === 'AbortError') {
@@ -212,8 +294,8 @@ export async function streamAnalyzeWithAI(
 
 export async function isAIEnabled(): Promise<boolean> {
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY
-    return !!apiKey && apiKey.length > 10
+    const apiKey = (process.env.ZENMUX_API_KEY || '').trim()
+    return apiKey.length > 10
   } catch {
     return false
   }

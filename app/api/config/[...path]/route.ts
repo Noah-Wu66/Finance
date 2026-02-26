@@ -35,7 +35,7 @@ async function getConfigState() {
   const init = {
     name: 'live_config_state',
     default_llm: 'live-deep',
-    default_data_source: 'tushare',
+    default_data_source: 'mairui',
     created_at: now,
     updated_at: now
   }
@@ -78,7 +78,7 @@ async function buildSystemConfig() {
     llm_configs: llmConfigs,
     default_llm: String(state.default_llm || 'live-deep'),
     data_source_configs: dataSourceConfigs,
-    default_data_source: String(state.default_data_source || 'tushare'),
+    default_data_source: String(state.default_data_source || 'mairui'),
     database_configs: databaseConfigs,
     system_settings: (settings?.value as Record<string, unknown>) || {
       mode: 'page_live_execution',

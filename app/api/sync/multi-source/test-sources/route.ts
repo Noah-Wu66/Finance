@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
+import { hasMairuiLicence } from '@/lib/mairui-data'
 
 interface Payload {
   source_name?: string
@@ -18,23 +19,11 @@ export async function POST(request: NextRequest) {
 
   const all = [
     {
-      name: 'tushare',
+      name: 'mairui',
       priority: 1,
-      available: true,
-      message: '连接测试成功',
-      token_source: 'database'
-    },
-    {
-      name: 'akshare',
-      priority: 2,
-      available: true,
-      message: '连接测试成功'
-    },
-    {
-      name: 'baostock',
-      priority: 3,
-      available: true,
-      message: '连接测试成功'
+      available: hasMairuiLicence(),
+      message: hasMairuiLicence() ? '连接测试成功' : '未配置 MAIRUI_LICENCE',
+      token_source: 'env(MAIRUI_LICENCE)'
     }
   ]
 

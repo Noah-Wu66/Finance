@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
+import { hasMairuiLicence } from '@/lib/mairui-data'
 
 export async function GET(request: NextRequest) {
   const user = await getRequestUser(request)
@@ -11,11 +12,12 @@ export async function GET(request: NextRequest) {
 
   return ok(
     {
-      name: 'tushare',
+      name: 'mairui',
       priority: 1,
-      description: '现场执行模式默认使用 Tushare 优先策略',
-      token_source: 'database',
-      token_source_display: '数据库配置'
+      available: hasMairuiLicence(),
+      description: '现场执行模式仅使用麦蕊数据源',
+      token_source: 'env(MAIRUI_LICENCE)',
+      token_source_display: '环境变量'
     },
     '获取当前数据源成功'
   )

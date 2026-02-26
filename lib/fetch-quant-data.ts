@@ -1,22 +1,7 @@
 import { getDb } from '@/lib/db'
+import { hasMairuiLicence, mairuiApi } from '@/lib/mairui-data'
 
 const FRESHNESS_MS = 30 * 60 * 1000
-
-async function safeFetch(url: string, timeoutMs = 15000): Promise<Response> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    return await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Referer': 'https://quote.eastmoney.com/'
-      }
-    })
-  } finally {
-    clearTimeout(timer)
-  }
-}
 
 function daysAgoYmd(n: number): string {
   const d = new Date()
@@ -28,14 +13,59 @@ function todayYmd(): string {
   return new Date().toISOString().slice(0, 10).replace(/-/g, '')
 }
 
-function getSecId(code: string): string {
-  if (code.startsWith('6') || code.startsWith('9')) return `1.${code}`
-  return `0.${code}`
+function toNum(v: unknown): number {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
 }
 
-function getMarketStr(code: string): string {
-  if (code.startsWith('6') || code.startsWith('9')) return 'sh'
-  return 'sz'
+function toYmd(value: unknown): string {
+  const source = String(value || '').trim()
+  if (!source) return ''
+  const compact = source.replace(/[^0-9]/g, '')
+  if (compact.length >= 8) return compact.slice(0, 8)
+  const parsed = new Date(source)
+  if (Number.isNaN(parsed.getTime())) return ''
+  const y = parsed.getFullYear().toString()
+  const m = String(parsed.getMonth() + 1).padStart(2, '0')
+  const d = String(parsed.getDate()).padStart(2, '0')
+  return `${y}${m}${d}`
+}
+
+function asArray<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[]
+  if (value && typeof value === 'object') return [value as T]
+  return []
+}
+
+function normalizeCode(code: string): string {
+  return String(code || '').trim().toUpperCase().replace(/\.(SH|SZ|BJ)$/i, '')
+}
+
+function ensureCodeWithMarket(code: string): string {
+  const normalized = String(code || '').trim().toUpperCase()
+  if (/\.(SH|SZ|BJ)$/i.test(normalized)) return normalized
+  const raw = normalizeCode(normalized)
+  if (raw.startsWith('6') || raw.startsWith('9')) return `${raw}.SH`
+  if (raw.startsWith('8') || raw.startsWith('4')) return `${raw}.BJ`
+  return `${raw}.SZ`
+}
+
+function firstNumber(row: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    if (row[key] != null) {
+      const n = Number(row[key])
+      if (Number.isFinite(n)) return n
+    }
+  }
+  return undefined
+}
+
+function firstString(row: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = String(row[key] ?? '').trim()
+    if (value) return value
+  }
+  return ''
 }
 
 async function isFresh(collection: string, query: Record<string, unknown>): Promise<boolean> {
@@ -45,49 +75,45 @@ async function isFresh(collection: string, query: Record<string, unknown>): Prom
   return Date.now() - new Date(doc.updated_at as string | Date).getTime() < FRESHNESS_MS
 }
 
-function toNum(v: unknown): number {
-  const n = Number(v)
-  return Number.isFinite(n) ? n : 0
+function ensureMairui(): { ok: true } | { ok: false; message: string } {
+  if (!hasMairuiLicence()) return { ok: false, message: '未配置 MAIRUI_LICENCE' }
+  return { ok: true }
 }
 
-// ============================================================
-// 1. 交易日历 - 新浪财经
-// ============================================================
 export async function fetchTradingCalendar(): Promise<{ success: boolean; message: string; count: number }> {
   if (await isFresh('trading_calendar', { market: 'SSE' })) {
     return { success: true, message: '交易日历缓存有效', count: 0 }
   }
 
+  const licence = ensureMairui()
+  if (!licence.ok) return { success: false, message: licence.message, count: 0 }
+
   try {
-    const url = 'https://finance.sina.com.cn/realstock/company/klc_td_sh.txt'
-    const res = await safeFetch(url, 20000)
-    if (!res.ok) return { success: false, message: `新浪交易日历 HTTP ${res.status}`, count: 0 }
+    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsindex.history('000001.SH', 'd', { lt: 90 }))
+    if (rows.length === 0) return { success: false, message: '交易日历无数据', count: 0 }
 
-    const text = await res.text()
-    const dateMatches = text.match(/\d{4}-\d{2}-\d{2}/g)
-    if (!dateMatches || dateMatches.length === 0) {
-      return { success: false, message: '未解析到交易日期', count: 0 }
-    }
-
-    const tradeDates = new Set(dateMatches.map((d) => d.replace(/-/g, '')))
     const db = await getDb()
     const now = new Date()
-    const today = todayYmd()
+    const tradeDates = new Set<string>()
+    for (const row of rows) {
+      const date = toYmd(row.t || row.date)
+      if (date) tradeDates.add(date)
+    }
 
-    const ops = []
-    for (const date of tradeDates) {
-      if (date < daysAgoYmd(30) || date > today) continue
-      ops.push({
+    const today = todayYmd()
+    const minDate = daysAgoYmd(45)
+    const ops = Array.from(tradeDates)
+      .filter((date) => date >= minDate && date <= today)
+      .map((date) => ({
         updateOne: {
           filter: { market: 'SSE', date },
           update: {
-            $set: { market: 'SSE', date, is_trading_day: 1, updated_at: now },
+            $set: { market: 'SSE', date, is_trading_day: 1, source: 'mairui', updated_at: now },
             $setOnInsert: { created_at: now }
           },
           upsert: true
         }
-      })
-    }
+      }))
 
     if (ops.length > 0) {
       await db.collection('trading_calendar').bulkWrite(ops, { ordered: false }).catch(() => {})
@@ -98,49 +124,47 @@ export async function fetchTradingCalendar(): Promise<{ success: boolean; messag
   }
 }
 
-// ============================================================
-// 2. 指数历史K线 - 东方财富
-// ============================================================
 export async function fetchIndexDaily(indexCode = '000300', days = 120): Promise<{ success: boolean; message: string; count: number }> {
   if (await isFresh('index_daily', { index_code: indexCode })) {
     return { success: true, message: `指数 ${indexCode} 缓存有效`, count: 0 }
   }
 
+  const licence = ensureMairui()
+  if (!licence.ok) return { success: false, message: licence.message, count: 0 }
+
   try {
-    const secId = indexCode.startsWith('399') ? `0.${indexCode}` : `1.${indexCode}`
-    const beg = daysAgoYmd(days)
-    const end = todayYmd()
-    const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secId}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=0&beg=${beg}&end=${end}&ut=7eea3edcaed734bea9cbfc24409ed989`
-
-    const res = await safeFetch(url)
-    if (!res.ok) return { success: false, message: `指数K线 HTTP ${res.status}`, count: 0 }
-
-    const json = await res.json()
-    const klines = json?.data?.klines as string[] | undefined
-    if (!klines || klines.length === 0) return { success: false, message: '指数K线无数据', count: 0 }
+    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsindex.history(ensureCodeWithMarket(indexCode), 'd', { lt: days }))
+    if (rows.length === 0) return { success: false, message: '指数K线无数据', count: 0 }
 
     const db = await getDb()
     const now = new Date()
-    const ops = klines.map((line) => {
-      const p = line.split(',')
-      if (p.length < 9) return null
-      const tradeDate = p[0].replace(/-/g, '')
-      return {
-        updateOne: {
-          filter: { index_code: indexCode, trade_date: tradeDate },
-          update: {
-            $set: {
-              index_code: indexCode, trade_date: tradeDate,
-              open: toNum(p[1]), close: toNum(p[2]), high: toNum(p[3]), low: toNum(p[4]),
-              volume: toNum(p[5]), pct_chg: toNum(p[8]),
-              updated_at: now
+    const ops = rows
+      .map((row) => {
+        const tradeDate = toYmd(row.t || row.date)
+        if (!tradeDate) return null
+        return {
+          updateOne: {
+            filter: { index_code: indexCode, trade_date: tradeDate },
+            update: {
+              $set: {
+                index_code: indexCode,
+                trade_date: tradeDate,
+                open: toNum(row.o),
+                close: toNum(row.c),
+                high: toNum(row.h),
+                low: toNum(row.l),
+                volume: toNum(row.v),
+                pct_chg: toNum(row.pc),
+                source: 'mairui',
+                updated_at: now
+              },
+              $setOnInsert: { created_at: now }
             },
-            $setOnInsert: { created_at: now }
-          },
-          upsert: true
+            upsert: true
+          }
         }
-      }
-    }).filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
+      })
+      .filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
 
     if (ops.length > 0) {
       await db.collection('index_daily').bulkWrite(ops, { ordered: false }).catch(() => {})
@@ -151,146 +175,149 @@ export async function fetchIndexDaily(indexCode = '000300', days = 120): Promise
   }
 }
 
-// ============================================================
-// 3. 个股资金流 - 东方财富
-// ============================================================
 export async function fetchFundFlow(code: string): Promise<{ success: boolean; message: string; count: number }> {
   if (await isFresh('stock_fund_flow', { symbol: code })) {
     return { success: true, message: `${code} 资金流缓存有效`, count: 0 }
   }
 
+  const licence = ensureMairui()
+  if (!licence.ok) return { success: false, message: licence.message, count: 0 }
+
   try {
-    const market = getMarketStr(code)
-    const secId = getSecId(code)
-    const url = `https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get?secid=${secId}&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65&ut=b2884a393a59ad64002292a3e90d46a5&klt=101&lmt=30`
-
-    const res = await safeFetch(url)
-    if (!res.ok) return { success: false, message: `资金流 HTTP ${res.status}`, count: 0 }
-
-    const json = await res.json()
-    const klines = json?.data?.klines as string[] | undefined
-    if (!klines || klines.length === 0) return { success: false, message: '资金流无数据', count: 0 }
+    const symbol = normalizeCode(code)
+    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsstock.historyTransaction(symbol, { lt: 30 }))
+    if (rows.length === 0) return { success: false, message: '资金流无数据', count: 0 }
 
     const db = await getDb()
     const now = new Date()
-    const ops = klines.map((line) => {
-      const p = line.split(',')
-      if (p.length < 5) return null
-      const tradeDate = p[0].replace(/-/g, '')
-      return {
-        updateOne: {
-          filter: { symbol: code, trade_date: tradeDate },
-          update: {
-            $set: {
-              symbol: code, trade_date: tradeDate,
-              main_inflow: toNum(p[1]),
-              updated_at: now
+    const ops = rows
+      .map((row) => {
+        const tradeDate = toYmd(row.t || row.date || row.rq)
+        if (!tradeDate) return null
+        const mainInflow = firstNumber(row, ['zljlr', 'jlr', 'main_inflow', 'f62'])
+        return {
+          updateOne: {
+            filter: { symbol, trade_date: tradeDate },
+            update: {
+              $set: {
+                symbol,
+                trade_date: tradeDate,
+                main_inflow: mainInflow == null ? 0 : mainInflow,
+                source: 'mairui',
+                updated_at: now
+              },
+              $setOnInsert: { created_at: now }
             },
-            $setOnInsert: { created_at: now }
-          },
-          upsert: true
+            upsert: true
+          }
         }
-      }
-    }).filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
+      })
+      .filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
 
     if (ops.length > 0) {
       await db.collection('stock_fund_flow').bulkWrite(ops, { ordered: false }).catch(() => {})
     }
-    return { success: true, message: `${code} 资金流已更新 ${ops.length} 条`, count: ops.length }
+    return { success: true, message: `${symbol} 资金流已更新 ${ops.length} 条`, count: ops.length }
   } catch (err) {
     return { success: false, message: `资金流拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
   }
 }
 
-// ============================================================
-// 4. 板块资金流（行业聚合） - 东方财富
-// ============================================================
 export async function fetchIndustryAggregation(industry: string): Promise<{ success: boolean; message: string; count: number }> {
   if (!industry) return { success: false, message: '行业名为空', count: 0 }
   if (await isFresh('industry_aggregation', { industry_name: industry })) {
     return { success: true, message: `行业 ${industry} 缓存有效`, count: 0 }
   }
 
+  const licence = ensureMairui()
+  if (!licence.ok) return { success: false, message: licence.message, count: 0 }
+
   try {
-    const url = `https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=100&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&fid=f62&fs=m:90+t:2&fields=f12,f14,f62,f184,f66,f69,f72,f75,f78,f81,f84,f87,f204,f205,f124`
+    const concepts = asArray<Record<string, unknown>>(await mairuiApi.hszg.list())
+    const hit = concepts.find((row) => {
+      const name = firstString(row, ['name', 'mc'])
+      return name === industry || name.includes(industry) || industry.includes(name)
+    })
+    if (!hit) return { success: false, message: `未找到行业概念 ${industry}`, count: 0 }
 
-    const res = await safeFetch(url)
-    if (!res.ok) return { success: false, message: `板块资金流 HTTP ${res.status}`, count: 0 }
+    const conceptCode = firstString(hit, ['code', 'dm'])
+    if (!conceptCode) return { success: false, message: `行业 ${industry} 缺少概念代码`, count: 0 }
 
-    const json = await res.json()
-    const items = json?.data?.diff as Array<Record<string, unknown>> | undefined
-    if (!items || items.length === 0) return { success: false, message: '板块资金流无数据', count: 0 }
+    const members = asArray<Record<string, unknown>>(await mairuiApi.hszg.gg(conceptCode))
+    const stockCodes = members
+      .map((row) => firstString(row, ['dm', 'code']))
+      .filter(Boolean)
+      .slice(0, 300)
+    if (stockCodes.length === 0) return { success: false, message: `行业 ${industry} 无成分股`, count: 0 }
+
+    const quotes = asArray<Record<string, unknown>>(await mairuiApi.hsrl.ssjyMore(stockCodes))
+    const validQuotes = quotes.filter((row) => firstString(row, ['dm', 'code']))
+
+    const totalMainInflow = validQuotes.reduce((sum, row) => sum + (firstNumber(row, ['zljlr', 'jlr', 'main_inflow', 'f62']) || 0), 0)
+    const totalPct = validQuotes.reduce((sum, row) => sum + (firstNumber(row, ['pc', 'pct_chg', 'f3']) || 0), 0)
+    const totalAmount = validQuotes.reduce((sum, row) => sum + (firstNumber(row, ['cje', 'a', 'amount', 'f6']) || 0), 0)
+    const sentiment = validQuotes.length > 0 ? Number((totalPct / validQuotes.length).toFixed(4)) : 0
 
     const db = await getDb()
     const now = new Date()
     const tradeDate = todayYmd()
-    let matched = false
+    await db.collection('industry_aggregation').updateOne(
+      { industry_name: industry, trade_date: tradeDate },
+      {
+        $set: {
+          industry_name: industry,
+          trade_date: tradeDate,
+          industry_main_inflow: totalMainInflow,
+          industry_sentiment: sentiment,
+          industry_heat: totalAmount,
+          sample_count: validQuotes.length,
+          source: 'mairui',
+          updated_at: now
+        },
+        $setOnInsert: { created_at: now }
+      },
+      { upsert: true }
+    )
 
-    const ops = items.map((item) => {
-      const name = String(item.f14 || '')
-      if (!name) return null
-      if (name === industry) matched = true
-      return {
-        updateOne: {
-          filter: { industry_name: name, trade_date: tradeDate },
-          update: {
-            $set: {
-              industry_name: name, trade_date: tradeDate,
-              industry_main_inflow: toNum(item.f62),
-              industry_sentiment: toNum(item.f184),
-              industry_heat: toNum(item.f66),
-              updated_at: now
-            },
-            $setOnInsert: { created_at: now }
-          },
-          upsert: true
-        }
-      }
-    }).filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
-
-    if (ops.length > 0) {
-      await db.collection('industry_aggregation').bulkWrite(ops, { ordered: false }).catch(() => {})
-    }
-    return { success: true, message: `板块资金流已更新 ${ops.length} 条${matched ? '' : `（未匹配到 ${industry}）`}`, count: ops.length }
+    return { success: true, message: `行业 ${industry} 聚合已更新`, count: validQuotes.length }
   } catch (err) {
     return { success: false, message: `板块资金流拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
   }
 }
 
-// ============================================================
-// 5. 业绩预告 - 东方财富
-// ============================================================
 export async function fetchEarningsExpectation(code: string): Promise<{ success: boolean; message: string; count: number }> {
   if (await isFresh('earnings_expectation', { symbol: code })) {
     return { success: true, message: `${code} 业绩预期缓存有效`, count: 0 }
   }
 
+  const licence = ensureMairui()
+  if (!licence.ok) return { success: false, message: licence.message, count: 0 }
+
   try {
-    const filter = `(SECURITY_CODE="${code}")`
-    const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?sortColumns=NOTICE_DATE&sortTypes=-1&pageSize=10&pageNumber=1&reportName=RPT_PUBLIC_OP_NEWPREDICT&columns=ALL&filter=${encodeURIComponent(filter)}`
-
-    const res = await safeFetch(url)
-    if (!res.ok) return { success: false, message: `业绩预告 HTTP ${res.status}`, count: 0 }
-
-    const json = await res.json()
-    const rows = json?.result?.data as Array<Record<string, unknown>> | undefined
-    if (!rows || rows.length === 0) return { success: false, message: '业绩预告无数据', count: 0 }
+    const symbol = normalizeCode(code)
+    const rows = asArray<Record<string, unknown>>(await mairuiApi.hscp.yjyg(symbol))
+    if (rows.length === 0) return { success: false, message: '业绩预告无数据', count: 0 }
 
     const db = await getDb()
     const now = new Date()
     const ops = rows.map((row) => {
-      const announceDate = String(row.NOTICE_DATE || '').slice(0, 10).replace(/-/g, '') || 'latest'
-      const forecastType = String(row.PREDICT_FINANCE_CODE || row.PREDICT_TYPE || 'forecast')
+      const announceDate = toYmd(row.pdate || row.date) || 'latest'
+      const sourceType = firstString(row, ['type']) || 'forecast'
       return {
         updateOne: {
-          filter: { symbol: code, announce_date: announceDate, source_type: forecastType },
+          filter: { symbol, announce_date: announceDate, source_type: sourceType },
           update: {
             $set: {
-              symbol: code, announce_date: announceDate, source_type: forecastType,
-              forecast_type: String(row.PREDICT_TYPE || ''),
-              profit_change_pct: row.ADD_AMP ? toNum(row.ADD_AMP) : undefined,
-              forecast_value: row.PREDICT_FINANCE ? String(row.PREDICT_FINANCE) : undefined,
-              change_reason: row.CHANGE_REASON_EXPLAIN ? String(row.CHANGE_REASON_EXPLAIN) : undefined,
+              symbol,
+              announce_date: announceDate,
+              source_type: sourceType,
+              forecast_type: firstString(row, ['type', 'forecast_type']) || undefined,
+              profit_change_pct: firstNumber(row, ['chg', 'pct', 'profit_change_pct']),
+              eps: firstNumber(row, ['eps', 'old']),
+              revenue: firstNumber(row, ['revenue', 'zysr']),
+              net_profit: firstNumber(row, ['net_profit', 'jlr']),
+              summary: firstString(row, ['abs', 'summary']) || undefined,
+              source: 'mairui',
               updated_at: now
             },
             $setOnInsert: { created_at: now }
@@ -303,440 +330,322 @@ export async function fetchEarningsExpectation(code: string): Promise<{ success:
     if (ops.length > 0) {
       await db.collection('earnings_expectation').bulkWrite(ops, { ordered: false }).catch(() => {})
     }
-    return { success: true, message: `${code} 业绩预告已更新 ${ops.length} 条`, count: ops.length }
+    return { success: true, message: `${symbol} 业绩预告已更新 ${ops.length} 条`, count: ops.length }
   } catch (err) {
     return { success: false, message: `业绩预告拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
   }
 }
 
-// ============================================================
-// 6. 增强财务 - 东方财富
-// ============================================================
 export async function fetchFinancialEnhanced(code: string): Promise<{ success: boolean; message: string }> {
   if (await isFresh('financial_enhanced', { symbol: code })) {
     return { success: true, message: `${code} 增强财务缓存有效` }
   }
 
+  const licence = ensureMairui()
+  if (!licence.ok) return { success: false, message: licence.message }
+
   try {
-    const filter = `(SECURITY_CODE="${code}")`
-    const columns = 'SECURITY_CODE,REPORT_DATE,GROSSPROFIT_MARGIN,ASSET_LIAB_RATIO,OPERATE_INCOME_YOY,NETPROFIT_YOY,OPERATE_CASHFLOW_NETAMOUNT,NETPROFIT'
-    const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?sortColumns=REPORT_DATE&sortTypes=-1&pageSize=1&pageNumber=1&reportName=RPT_DMSK_FN_ZCFZ&columns=${columns}&filter=${encodeURIComponent(filter)}`
+    const symbol = normalizeCode(code)
+    const [cwzbRaw, cashflowRaw] = await Promise.all([
+      mairuiApi.hscp.cwzb(symbol),
+      mairuiApi.hsstock.financial.cashflow(ensureCodeWithMarket(symbol), { lt: 1 })
+    ])
 
-    const res = await safeFetch(url)
-    if (!res.ok) return { success: false, message: `增强财务 HTTP ${res.status}` }
+    const cwzb = asArray<Record<string, unknown>>(cwzbRaw)[0] || {}
+    const cashflow = asArray<Record<string, unknown>>(cashflowRaw)[0] || {}
+    const reportPeriod = toYmd(cwzb.date || cashflow.date) || 'latest'
 
-    const json = await res.json()
-    const row = json?.result?.data?.[0]
-    if (!row) return { success: false, message: '增强财务无数据' }
-
-    const reportPeriod = String(row.REPORT_DATE || '').slice(0, 10).replace(/-/g, '') || 'latest'
-    const netProfit = toNum(row.NETPROFIT)
-    const ocf = toNum(row.OPERATE_CASHFLOW_NETAMOUNT)
+    const netProfit = firstNumber(cwzb, ['jlr', 'net_profit', 'parent_net_profit']) || 0
+    const ocf = firstNumber(cashflow, ['jyxjll', 'operate_cashflow', 'net_cash_operate']) || 0
 
     const db = await getDb()
     const now = new Date()
     await db.collection('financial_enhanced').updateOne(
-      { symbol: code, report_period: reportPeriod },
+      { symbol, report_period: reportPeriod },
       {
         $set: {
-          symbol: code, report_period: reportPeriod,
-          profit_yoy: row.NETPROFIT_YOY != null ? toNum(row.NETPROFIT_YOY) : undefined,
-          gross_margin: row.GROSSPROFIT_MARGIN != null ? toNum(row.GROSSPROFIT_MARGIN) : undefined,
-          debt_to_asset: row.ASSET_LIAB_RATIO != null ? toNum(row.ASSET_LIAB_RATIO) : undefined,
+          symbol,
+          report_period: reportPeriod,
+          profit_yoy: firstNumber(cwzb, ['jlzz', 'profit_yoy', 'jlrzz']),
+          gross_margin: firstNumber(cwzb, ['mll', 'gross_margin']),
+          debt_to_asset: firstNumber(cwzb, ['zcfzl', 'debt_to_asset']),
           operating_cashflow: ocf || undefined,
-          ocf_to_profit: netProfit !== 0 ? toNum((ocf / netProfit).toFixed(4)) : undefined,
+          ocf_to_profit: netProfit !== 0 ? Number((ocf / netProfit).toFixed(4)) : undefined,
+          source: 'mairui',
           updated_at: now
         },
         $setOnInsert: { created_at: now }
       },
       { upsert: true }
     )
-    return { success: true, message: `${code} 增强财务已更新` }
+    return { success: true, message: `${symbol} 增强财务已更新` }
   } catch (err) {
     return { success: false, message: `增强财务拉取失败: ${err instanceof Error ? err.message : '未知'}` }
   }
 }
 
-// ============================================================
-// 7. 公告事件 - 东方财富
-// ============================================================
 export async function fetchStockEvents(code: string): Promise<{ success: boolean; message: string; count: number }> {
   if (await isFresh('stock_events', { symbol: code })) {
     return { success: true, message: `${code} 公告缓存有效`, count: 0 }
   }
 
+  const licence = ensureMairui()
+  if (!licence.ok) return { success: false, message: licence.message, count: 0 }
+
   try {
-    const filter = `(SECURITY_CODE="${code}")`
-    const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?sortColumns=NOTICE_DATE&sortTypes=-1&pageSize=30&pageNumber=1&reportName=RPT_CUSTOM_NOTICE&columns=SECURITY_CODE,NOTICE_DATE,NOTICE_TITLE,NOTICE_TYPE&filter=${encodeURIComponent(filter)}`
-
-    const res = await safeFetch(url)
-    if (!res.ok) return { success: false, message: `公告 HTTP ${res.status}`, count: 0 }
-
-    const json = await res.json()
-    const rows = json?.result?.data as Array<Record<string, unknown>> | undefined
-    if (!rows || rows.length === 0) return { success: false, message: '公告无数据', count: 0 }
+    const symbol = normalizeCode(code)
+    const rows = asArray<Record<string, unknown>>(await mairuiApi.hscp.ljgg(symbol))
+    if (rows.length === 0) return { success: false, message: '公告无数据', count: 0 }
 
     const db = await getDb()
     const now = new Date()
-    const ops = rows.map((row) => {
-      const title = String(row.NOTICE_TITLE || '').trim()
-      const eventDate = String(row.NOTICE_DATE || '').slice(0, 10).replace(/-/g, '') || todayYmd()
-      if (!title) return null
-      return {
-        updateOne: {
-          filter: { symbol: code, event_date: eventDate, title },
-          update: {
-            $set: {
-              symbol: code, event_type: String(row.NOTICE_TYPE || 'announcement'),
-              event_date: eventDate, title, impact: 'unknown',
-              updated_at: now
-            },
-            $setOnInsert: { created_at: now }
-          },
-          upsert: true
-        }
-      }
-    }).filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
-
-    if (ops.length > 0) {
-      await db.collection('stock_events').bulkWrite(ops, { ordered: false }).catch(() => {})
-    }
-    return { success: true, message: `${code} 公告已更新 ${ops.length} 条`, count: ops.length }
-  } catch (err) {
-    return { success: false, message: `公告拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
-  }
-}
-
-// ============================================================
-// 8. 宏观日历 - 东方财富
-// ============================================================
-export async function fetchMacroCalendar(): Promise<{ success: boolean; message: string; count: number }> {
-  if (await isFresh('macro_calendar', {})) {
-    return { success: true, message: '宏观日历缓存有效', count: 0 }
-  }
-
-  const db = await getDb()
-  const now = new Date()
-  let total = 0
-
-  const macroApis: Array<{ indicator: string; url: string; valuePath: (row: Record<string, unknown>) => number | undefined; datePath: (row: Record<string, unknown>) => string }> = [
-    {
-      indicator: 'CPI_YoY',
-      url: 'https://datacenter-web.eastmoney.com/api/data/v1/get?sortColumns=REPORT_DATE&sortTypes=-1&pageSize=6&pageNumber=1&reportName=RPT_ECONOMY_CPI&columns=REPORT_DATE,NATIONAL_SAME',
-      valuePath: (row) => row.NATIONAL_SAME != null ? toNum(row.NATIONAL_SAME) : undefined,
-      datePath: (row) => String(row.REPORT_DATE || '').slice(0, 10)
-    },
-    {
-      indicator: 'PMI',
-      url: 'https://datacenter-web.eastmoney.com/api/data/v1/get?sortColumns=REPORT_DATE&sortTypes=-1&pageSize=6&pageNumber=1&reportName=RPT_ECONOMY_PMI&columns=REPORT_DATE,MAKE_INDEX',
-      valuePath: (row) => row.MAKE_INDEX != null ? toNum(row.MAKE_INDEX) : undefined,
-      datePath: (row) => String(row.REPORT_DATE || '').slice(0, 10)
-    }
-  ]
-
-  for (const api of macroApis) {
-    try {
-      const res = await safeFetch(api.url)
-      if (!res.ok) continue
-      const json = await res.json()
-      const rows = json?.result?.data as Array<Record<string, unknown>> | undefined
-      if (!rows) continue
-
-      const ops = rows.map((row) => {
-        const date = api.datePath(row)
-        const value = api.valuePath(row)
-        if (!date) return null
+    const ops = rows
+      .map((row) => {
+        const title = firstString(row, ['title', 'name', 'ggmc'])
+        const eventDate = toYmd(row.date || row.pdate || row.t) || todayYmd()
+        if (!title) return null
         return {
           updateOne: {
-            filter: { date, indicator: api.indicator },
+            filter: { symbol, event_date: eventDate, title },
             update: {
-              $set: { date, indicator: api.indicator, value, source: 'eastmoney', updated_at: now },
+              $set: {
+                symbol,
+                event_type: firstString(row, ['type', 'event_type']) || 'announcement',
+                event_date: eventDate,
+                title,
+                impact: 'unknown',
+                url: firstString(row, ['url', 'link']) || undefined,
+                source: 'mairui',
+                updated_at: now
+              },
               $setOnInsert: { created_at: now }
             },
             upsert: true
           }
         }
-      }).filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
+      })
+      .filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
 
-      if (ops.length > 0) {
-        await db.collection('macro_calendar').bulkWrite(ops, { ordered: false }).catch(() => {})
-        total += ops.length
-      }
-    } catch {
-      continue
+    if (ops.length > 0) {
+      await db.collection('stock_events').bulkWrite(ops, { ordered: false }).catch(() => {})
     }
+    return { success: true, message: `${symbol} 公告已更新 ${ops.length} 条`, count: ops.length }
+  } catch (err) {
+    return { success: false, message: `公告拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
   }
-
-  return { success: total > 0, message: `宏观日历已更新 ${total} 条`, count: total }
 }
 
-// ============================================================
-// 9. 分时盘口 - 东方财富
-// ============================================================
+export async function fetchMacroCalendar(): Promise<{ success: boolean; message: string; count: number }> {
+  return { success: false, message: '麦蕊官方接口未提供宏观日历，此项已跳过', count: 0 }
+}
+
 export async function fetchIntraday(code: string, period = '1'): Promise<{ success: boolean; message: string; count: number }> {
   if (await isFresh('stock_intraday', { symbol: code, period })) {
     return { success: true, message: `${code} 分时缓存有效`, count: 0 }
   }
 
+  const licence = ensureMairui()
+  if (!licence.ok) return { success: false, message: licence.message, count: 0 }
+
   try {
-    const secId = getSecId(code)
-    const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secId}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=${period}&fqt=0&end=20500101&lmt=120&ut=7eea3edcaed734bea9cbfc24409ed989`
-
-    const res = await safeFetch(url)
-    if (!res.ok) return { success: false, message: `分时 HTTP ${res.status}`, count: 0 }
-
-    const json = await res.json()
-    const klines = json?.data?.klines as string[] | undefined
-    if (!klines || klines.length === 0) return { success: false, message: '分时无数据', count: 0 }
+    const symbol = normalizeCode(code)
+    const mairuiPeriod = period.endsWith('m') ? period : `${period}m`
+    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsstock.latest(ensureCodeWithMarket(symbol), mairuiPeriod, 'n', { lt: 120 }))
+    if (rows.length === 0) return { success: false, message: '分时无数据', count: 0 }
 
     const db = await getDb()
     const now = new Date()
-    const ops = klines.map((line) => {
-      const p = line.split(',')
-      if (p.length < 7) return null
-      const datetime = p[0]
-      return {
-        updateOne: {
-          filter: { symbol: code, datetime, period },
-          update: {
-            $set: {
-              symbol: code, datetime, period,
-              open: toNum(p[1]), close: toNum(p[2]), high: toNum(p[3]), low: toNum(p[4]),
-              volume: toNum(p[5]), amount: toNum(p[6]),
-              updated_at: now
+    const ops = rows
+      .map((row) => {
+        const datetime = String(row.t || row.datetime || '').trim()
+        if (!datetime) return null
+        return {
+          updateOne: {
+            filter: { symbol, datetime, period },
+            update: {
+              $set: {
+                symbol,
+                datetime,
+                period,
+                open: toNum(row.o),
+                close: toNum(row.c),
+                high: toNum(row.h),
+                low: toNum(row.l),
+                volume: toNum(row.v),
+                amount: toNum(row.a),
+                source: 'mairui',
+                updated_at: now
+              },
+              $setOnInsert: { created_at: now }
             },
-            $setOnInsert: { created_at: now }
-          },
-          upsert: true
+            upsert: true
+          }
         }
-      }
-    }).filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
+      })
+      .filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
 
     if (ops.length > 0) {
       await db.collection('stock_intraday').bulkWrite(ops, { ordered: false }).catch(() => {})
     }
-    return { success: true, message: `${code} 分时已更新 ${ops.length} 条`, count: ops.length }
+    return { success: true, message: `${symbol} 分时已更新 ${ops.length} 条`, count: ops.length }
   } catch (err) {
     return { success: false, message: `分时拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
   }
 }
 
-// ============================================================
-// 10. 北向资金 - 东方财富
-// ============================================================
 export async function fetchNorthboundFlow(): Promise<{ success: boolean; message: string; count: number }> {
-  if (await isFresh('northbound_flow', {})) {
-    return { success: true, message: '北向资金缓存有效', count: 0 }
-  }
-
-  try {
-    const url = 'https://push2his.eastmoney.com/api/qt/kline.kline?cb=&secid=1.000001&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=0&end=20500101&lmt=30&ut=7eea3edcaed734bea9cbfc24409ed989&cb='
-
-    const res = await safeFetch(url)
-    if (!res.ok) return { success: false, message: `北向资金 HTTP ${res.status}`, count: 0 }
-
-    const text = await res.text()
-    const jsonMatch = text.match(/\(([\s\S]*)\)/)
-    if (!jsonMatch) return { success: false, message: '北向资金格式解析失败', count: 0 }
-
-    const json = JSON.parse(jsonMatch[1])
-    const klines = json?.data?.klines as string[] | undefined
-    if (!klines || klines.length === 0) return { success: false, message: '北向资金无数据', count: 0 }
-
-    const db = await getDb()
-    const now = new Date()
-    const ops = klines.map((line) => {
-      const p = line.split(',')
-      if (p.length < 6) return null
-      const tradeDate = p[0].replace(/-/g, '')
-      return {
-        updateOne: {
-          filter: { trade_date: tradeDate },
-          update: {
-            $set: {
-              trade_date: tradeDate,
-              net_buy: toNum(p[2]),
-              sh_net_buy: toNum(p[3]),
-              sz_net_buy: toNum(p[4]),
-              updated_at: now
-            },
-            $setOnInsert: { created_at: now }
-          },
-          upsert: true
-        }
-      }
-    }).filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
-
-    if (ops.length > 0) {
-      await db.collection('northbound_flow').bulkWrite(ops, { ordered: false }).catch(() => {})
-    }
-    return { success: true, message: `北向资金已更新 ${ops.length} 条`, count: ops.length }
-  } catch (err) {
-    return { success: false, message: `北向资金拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
-  }
+  return { success: false, message: '麦蕊官方接口未提供北向资金汇总，此项已跳过', count: 0 }
 }
 
-// ============================================================
-// 11. 融资融券 - 东方财富
-// ============================================================
 export async function fetchMarginTrading(code: string): Promise<{ success: boolean; message: string; count: number }> {
   if (await isFresh('margin_trading', { symbol: code })) {
     return { success: true, message: `${code} 融资融券缓存有效`, count: 0 }
   }
 
+  const licence = ensureMairui()
+  if (!licence.ok) return { success: false, message: licence.message, count: 0 }
+
   try {
-    const secId = getSecId(code)
-    const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_RZRQ_LSHJ&columns=TRADE_DATE,RZYE,RQYE,RZMRE,RQMCL,RZCHE,RQCHL&filter=(SECURITY_CODE="${code}")&pageSize=30&pageNumber=1&sortColumns=TRADE_DATE&sortTypes=-1`
-
-    const res = await safeFetch(url)
-    if (!res.ok) return { success: false, message: `融资融券 HTTP ${res.status}`, count: 0 }
-
-    const json = await res.json()
-    const rows = json?.result?.data as Array<Record<string, unknown>> | undefined
-    if (!rows || rows.length === 0) return { success: false, message: '融资融券无数据', count: 0 }
+    const symbol = normalizeCode(code)
+    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsstock.financial.hm(ensureCodeWithMarket(symbol), { lt: 30 }))
+    if (rows.length === 0) return { success: false, message: '融资融券无数据', count: 0 }
 
     const db = await getDb()
     const now = new Date()
-    const ops = rows.map((row) => {
-      const tradeDate = String(row.TRADE_DATE || '').slice(0, 10).replace(/-/g, '')
-      if (!tradeDate) return null
-      return {
-        updateOne: {
-          filter: { symbol: code, trade_date: tradeDate },
-          update: {
-            $set: {
-              symbol: code, trade_date: tradeDate,
-              margin_balance: toNum(row.RZYE),
-              short_balance: toNum(row.RQYE),
-              margin_buy: toNum(row.RZMRE),
-              short_sell: toNum(row.RQMCL),
-              margin_repay: toNum(row.RZCHE),
-              short_repay: toNum(row.RQCHL),
-              updated_at: now
+    const ops = rows
+      .map((row) => {
+        const tradeDate = toYmd(row.t || row.date || row.rq)
+        if (!tradeDate) return null
+        return {
+          updateOne: {
+            filter: { symbol, trade_date: tradeDate },
+            update: {
+              $set: {
+                symbol,
+                trade_date: tradeDate,
+                margin_balance: firstNumber(row, ['rzye', 'margin_balance']) || 0,
+                short_balance: firstNumber(row, ['rqye', 'short_balance']) || 0,
+                margin_buy: firstNumber(row, ['rzmre', 'margin_buy']) || 0,
+                short_sell: firstNumber(row, ['rqmcl', 'short_sell']) || 0,
+                source: 'mairui',
+                updated_at: now
+              },
+              $setOnInsert: { created_at: now }
             },
-            $setOnInsert: { created_at: now }
-          },
-          upsert: true
+            upsert: true
+          }
         }
-      }
-    }).filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
+      })
+      .filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
 
     if (ops.length > 0) {
       await db.collection('margin_trading').bulkWrite(ops, { ordered: false }).catch(() => {})
     }
-    return { success: true, message: `${code} 融资融券已更新 ${ops.length} 条`, count: ops.length }
+    return { success: true, message: `${symbol} 融资融券已更新 ${ops.length} 条`, count: ops.length }
   } catch (err) {
     return { success: false, message: `融资融券拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
   }
 }
 
-// ============================================================
-// 12. 龙虎榜 - 东方财富
-// ============================================================
 export async function fetchDragonTiger(code: string): Promise<{ success: boolean; message: string; count: number }> {
   if (await isFresh('dragon_tiger', { symbol: code })) {
     return { success: true, message: `${code} 龙虎榜缓存有效`, count: 0 }
   }
 
+  const licence = ensureMairui()
+  if (!licence.ok) return { success: false, message: licence.message, count: 0 }
+
   try {
-    const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_BILLBOARD_DAILYDETAIL&columns=TRADE_DATE,EXPLAIN,ACCUM_AMT,BUY_AMT,BUY_RATIO,SELL_AMT,SELL_RATIO,NET_AMT,ACCUM_AMT,CHANGE_RATE&filter=(SECURITY_CODE="${code}")&pageSize=30&pageNumber=1&sortColumns=TRADE_DATE&sortTypes=-1`
-
-    const res = await safeFetch(url)
-    if (!res.ok) return { success: false, message: `龙虎榜 HTTP ${res.status}`, count: 0 }
-
-    const json = await res.json()
-    const rows = json?.result?.data as Array<Record<string, unknown>> | undefined
-    if (!rows || rows.length === 0) return { success: false, message: '龙虎榜无数据', count: 0 }
+    const symbol = normalizeCode(code)
+    const rows = asArray<Record<string, unknown>>(await mairuiApi.hscp.ljds(symbol))
+    if (rows.length === 0) return { success: false, message: '龙虎榜无数据', count: 0 }
 
     const db = await getDb()
     const now = new Date()
-    const ops = rows.map((row) => {
-      const tradeDate = String(row.TRADE_DATE || '').slice(0, 10).replace(/-/g, '')
-      if (!tradeDate) return null
-      return {
-        updateOne: {
-          filter: { symbol: code, trade_date: tradeDate },
-          update: {
-            $set: {
-              symbol: code, trade_date: tradeDate,
-              reason: String(row.EXPLAIN || ''),
-              total_amount: toNum(row.ACCUM_AMT),
-              buy_amount: toNum(row.BUY_AMT),
-              buy_ratio: toNum(row.BUY_RATIO),
-              sell_amount: toNum(row.SELL_AMT),
-              sell_ratio: toNum(row.SELL_RATIO),
-              net_amount: toNum(row.NET_AMT),
-              change_rate: toNum(row.CHANGE_RATE),
-              updated_at: now
+    const ops = rows
+      .map((row) => {
+        const tradeDate = toYmd(row.date || row.t || row.rq)
+        if (!tradeDate) return null
+        return {
+          updateOne: {
+            filter: { symbol, trade_date: tradeDate },
+            update: {
+              $set: {
+                symbol,
+                trade_date: tradeDate,
+                reason: firstString(row, ['reason', 'type', 'name']),
+                total_amount: firstNumber(row, ['amount', 'total_amount']) || 0,
+                buy_amount: firstNumber(row, ['buy_amount']) || 0,
+                sell_amount: firstNumber(row, ['sell_amount']) || 0,
+                net_amount: firstNumber(row, ['net_amount', 'jlr']) || 0,
+                source: 'mairui',
+                updated_at: now
+              },
+              $setOnInsert: { created_at: now }
             },
-            $setOnInsert: { created_at: now }
-          },
-          upsert: true
+            upsert: true
+          }
         }
-      }
-    }).filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
+      })
+      .filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
 
     if (ops.length > 0) {
       await db.collection('dragon_tiger').bulkWrite(ops, { ordered: false }).catch(() => {})
     }
-    return { success: true, message: `${code} 龙虎榜已更新 ${ops.length} 条`, count: ops.length }
+    return { success: true, message: `${symbol} 龙虎榜已更新 ${ops.length} 条`, count: ops.length }
   } catch (err) {
     return { success: false, message: `龙虎榜拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
   }
 }
 
-// ============================================================
-// 13. 机构持仓 - 东方财富
-// ============================================================
 export async function fetchInstitutionHolding(code: string): Promise<{ success: boolean; message: string; count: number }> {
   if (await isFresh('institution_holding', { symbol: code })) {
     return { success: true, message: `${code} 机构持仓缓存有效`, count: 0 }
   }
 
+  const licence = ensureMairui()
+  if (!licence.ok) return { success: false, message: licence.message, count: 0 }
+
   try {
-    const url = `https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_HOLDER_NUM&columns=REPORT_DATE,HOLDER_NUM,HOLDER_NUM_CHANGE&filter=(SECURITY_CODE="${code}")&pageSize=10&pageNumber=1&sortColumns=REPORT_DATE&sortTypes=-1`
-
-    const res = await safeFetch(url)
-    if (!res.ok) return { success: false, message: `机构持仓 HTTP ${res.status}`, count: 0 }
-
-    const json = await res.json()
-    const rows = json?.result?.data as Array<Record<string, unknown>> | undefined
-    if (!rows || rows.length === 0) return { success: false, message: '机构持仓无数据', count: 0 }
+    const symbol = normalizeCode(code)
+    const rows = asArray<Record<string, unknown>>(await mairuiApi.hscp.gdbh(symbol))
+    if (rows.length === 0) return { success: false, message: '机构持仓无数据', count: 0 }
 
     const db = await getDb()
     const now = new Date()
-    const ops = rows.map((row) => {
-      const reportDate = String(row.REPORT_DATE || '').slice(0, 10).replace(/-/g, '')
-      if (!reportDate) return null
-      return {
-        updateOne: {
-          filter: { symbol: code, report_date: reportDate },
-          update: {
-            $set: {
-              symbol: code, report_date: reportDate,
-              holder_num: toNum(row.HOLDER_NUM),
-              holder_change: toNum(row.HOLDER_NUM_CHANGE),
-              updated_at: now
+    const ops = rows
+      .map((row) => {
+        const reportDate = toYmd(row.date || row.rdate || row.t)
+        if (!reportDate) return null
+        return {
+          updateOne: {
+            filter: { symbol, report_date: reportDate },
+            update: {
+              $set: {
+                symbol,
+                report_date: reportDate,
+                holder_num: firstNumber(row, ['gdhs', 'holder_num']) || 0,
+                holder_change: firstNumber(row, ['change', 'holder_change']) || 0,
+                source: 'mairui',
+                updated_at: now
+              },
+              $setOnInsert: { created_at: now }
             },
-            $setOnInsert: { created_at: now }
-          },
-          upsert: true
+            upsert: true
+          }
         }
-      }
-    }).filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
+      })
+      .filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
 
     if (ops.length > 0) {
       await db.collection('institution_holding').bulkWrite(ops, { ordered: false }).catch(() => {})
     }
-    return { success: true, message: `${code} 机构持仓已更新 ${ops.length} 条`, count: ops.length }
+    return { success: true, message: `${symbol} 机构持仓已更新 ${ops.length} 条`, count: ops.length }
   } catch (err) {
     return { success: false, message: `机构持仓拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
   }
 }
 
-// ============================================================
-// 一键拉取所有增强数据
-// ============================================================
 export async function fetchAllQuantData(params: {
   symbol: string
   market: string

@@ -24,13 +24,13 @@ export async function GET(request: NextRequest) {
     db
       .collection('stock_quotes')
       .find({ symbol })
-      .sort({ trade_date: -1 })
+      .sort({ trade_date: -1, updated_at: -1 })
       .limit(1)
       .next(),
     db
       .collection('stock_quotes')
       .find({ symbol })
-      .sort({ trade_date: -1 })
+      .sort({ trade_date: -1, updated_at: -1 })
       .skip(1)
       .limit(1)
       .next(),
@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
       change,
       change_percent: changePercent,
       volume: Number(latestQuote?.volume ?? 0),
-      market_cap: Number(basic?.market_cap ?? 0),
+      market_cap: Number(basic?.total_mv ?? basic?.market_cap ?? 0),
       pe_ratio: Number(financial?.pe ?? 0),
       pb_ratio: Number(financial?.pb ?? 0),
       dividend_yield: Number(financial?.dividend_yield ?? 0)

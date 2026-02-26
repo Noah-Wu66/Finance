@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
+import { fetchAStockData } from '@/lib/fetch-a-stock'
+import { fetchAStockExtendedSnapshot } from '@/lib/mairui-data'
 import { fail, ok } from '@/lib/http'
 
 interface Payload {
@@ -9,16 +11,8 @@ interface Payload {
   sync_historical?: boolean
   sync_financial?: boolean
   sync_basic?: boolean
-  data_source?: 'tushare' | 'akshare'
+  data_source?: 'mairui'
   days?: number
-}
-
-function result(message: string, records = 0) {
-  return {
-    success: true,
-    records,
-    message
-  }
 }
 
 export async function POST(request: NextRequest) {
@@ -29,14 +23,24 @@ export async function POST(request: NextRequest) {
   const symbol = (body.symbol || '').trim().toUpperCase()
   if (!symbol) return fail('缺少股票代码', 400)
 
+  const core = await fetchAStockData(symbol)
+
+  const shouldFetchExtended = body.sync_basic !== false || body.sync_financial !== false
+  const extended = shouldFetchExtended
+    ? await fetchAStockExtendedSnapshot(symbol)
+    : null
+
   return ok(
     {
       symbol,
-      realtime_sync: body.sync_realtime === false ? null : result('实时行情已检查', 1),
-      historical_sync: body.sync_historical ? result('历史行情已检查', body.days || 30) : null,
-      financial_sync: body.sync_financial ? result('财务数据已检查', 1) : null,
-      basic_sync: body.sync_basic ? result('基础信息已检查', 1) : null
+      data_source: 'mairui',
+      core,
+      extended,
+      realtime_sync: core.realtime,
+      historical_sync: core.kline,
+      financial_sync: core.financial,
+      basic_sync: core.profile
     },
-    '单股同步完成'
+    core.success ? '单股同步完成' : '单股同步完成（部分失败）'
   )
 }

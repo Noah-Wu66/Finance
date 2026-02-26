@@ -2,13 +2,7 @@ import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
-
-/**
- * 从东方财富实时获取 4 大指数行情
- * 上证指数 1.000001 / 深证成指 0.399001 / 北证50 0.899050 / 创业板指 0.399006
- *
- * 实时接口拿不到数据时，自动请求历史 K 线接口获取最近一个交易日的数据
- */
+import { hasMairuiLicence, mairuiApi } from '@/lib/mairui-data'
 
 interface IndexItem {
   code: string
@@ -25,90 +19,64 @@ interface IndexItem {
 }
 
 const INDEX_LIST = [
-  { secId: '1.000001', code: '000001', name: '上证指数' },
-  { secId: '0.399001', code: '399001', name: '深证成指' },
-  { secId: '0.899050', code: '899050', name: '北证50' },
-  { secId: '0.399006', code: '399006', name: '创业板指' }
+  { code: '000001', codeWithMarket: '000001.SH', name: '上证指数' },
+  { code: '399001', codeWithMarket: '399001.SZ', name: '深证成指' },
+  { code: '899050', codeWithMarket: '899050.BJ', name: '北证50' },
+  { code: '399006', codeWithMarket: '399006.SZ', name: '创业板指' }
 ]
 
-const FETCH_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-  'Referer': 'https://quote.eastmoney.com/'
+function toNum(value: unknown): number {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : 0
 }
 
-async function safeFetch(url: string, timeoutMs = 8000): Promise<Response> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    return await fetch(url, { signal: controller.signal, headers: FETCH_HEADERS })
-  } finally {
-    clearTimeout(timer)
-  }
+function asArray<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[]
+  if (value && typeof value === 'object') return [value as T]
+  return []
 }
 
-/** 实时行情接口 */
-async function fetchRealtimeIndex(secId: string): Promise<IndexItem | null> {
-  const fields = 'f2,f3,f4,f5,f6,f7,f12,f14,f15,f16,f17,f18'
-  const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${secId}&fields=${fields}&ut=fa5fd1943c7b386f172d6893dbbd1`
-
+async function fetchRealtimeIndex(code: string): Promise<IndexItem | null> {
   try {
-    const res = await safeFetch(url)
-    if (!res.ok) return null
-    const json = await res.json()
-    const d = json?.data
-    if (!d || !d.f12) return null
-
+    const row = asArray<Record<string, unknown>>(await mairuiApi.hsindex.realTime(code))[0]
+    if (!row) return null
     return {
-      code: String(d.f12),
-      name: String(d.f14 || ''),
-      price: Number(d.f2 || 0),
-      change: Number(d.f4 || 0),
-      pct_chg: Number(d.f3 || 0),
-      open: Number(d.f17 || 0),
-      high: Number(d.f15 || 0),
-      low: Number(d.f16 || 0),
-      pre_close: Number(d.f18 || 0),
-      volume: Number(d.f5 || 0),
-      amount: Number(d.f6 || 0)
+      code,
+      name: String(row.mc || row.name || ''),
+      price: toNum(row.p),
+      change: toNum(row.ud),
+      pct_chg: toNum(row.pc),
+      open: toNum(row.o),
+      high: toNum(row.h),
+      low: toNum(row.l),
+      pre_close: toNum(row.yc),
+      volume: toNum(row.v),
+      amount: toNum(row.cje)
     }
   } catch {
     return null
   }
 }
 
-/** 历史 K 线接口（取最近一个交易日，不受交易时段限制） */
-async function fetchKlineIndex(secId: string, name: string): Promise<IndexItem | null> {
-  const end = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-  const beg = new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10).replace(/-/g, '')
-  const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secId}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=0&beg=${beg}&end=${end}&ut=7eea3edcaed734bea9cbfc24409ed989`
-
+async function fetchKlineIndex(codeWithMarket: string, code: string, name: string): Promise<IndexItem | null> {
   try {
-    const res = await safeFetch(url)
-    if (!res.ok) return null
-    const json = await res.json()
-    const klines = json?.data?.klines as string[] | undefined
-    const code = json?.data?.code as string | undefined
-    const kName = json?.data?.name as string | undefined
-    if (!klines || klines.length === 0) return null
-
-    // 取最后一条（最近交易日）
-    // 格式: 日期,开,收,高,低,成交量,成交额,振幅,涨跌幅,涨跌额,换手率
-    const last = klines[klines.length - 1]
-    const p = last.split(',')
-    if (p.length < 11) return null
-
+    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsindex.history(codeWithMarket, 'd', { lt: 10 }))
+    if (rows.length === 0) return null
+    const row = rows[rows.length - 1]
+    const close = toNum(row.c)
+    const preClose = toNum(row.pc)
     return {
-      code: code || secId.split('.')[1],
-      name: kName || name,
-      price: Number(p[2]),       // 收盘价
-      change: Number(p[9]),      // 涨跌额
-      pct_chg: Number(p[8]),     // 涨跌幅
-      open: Number(p[1]),
-      high: Number(p[3]),
-      low: Number(p[4]),
-      pre_close: Number(p[2]) - Number(p[9]),  // 收盘价 - 涨跌额 = 昨收
-      volume: Number(p[5]),
-      amount: Number(p[6])
+      code,
+      name: String(row.mc || name),
+      price: close,
+      change: close - preClose,
+      pct_chg: toNum(row.zf || row.pc),
+      open: toNum(row.o),
+      high: toNum(row.h),
+      low: toNum(row.l),
+      pre_close: preClose,
+      volume: toNum(row.v),
+      amount: toNum(row.a)
     }
   } catch {
     return null
@@ -118,26 +86,21 @@ async function fetchKlineIndex(secId: string, name: string): Promise<IndexItem |
 export async function GET(request: NextRequest) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
+  if (!hasMairuiLicence()) return fail('未配置 MAIRUI_LICENCE', 503)
 
   const results: IndexItem[] = []
+  const realtimeList = await Promise.all(INDEX_LIST.map((item) => fetchRealtimeIndex(item.code)))
 
-  // 先并行请求所有实时数据
-  const fetches = await Promise.all(INDEX_LIST.map((item) => fetchRealtimeIndex(item.secId)))
-
-  // 收集需要走历史接口的
   const fallbackTasks: Promise<{ index: number; item: IndexItem | null }>[] = []
   for (let i = 0; i < INDEX_LIST.length; i++) {
-    if (fetches[i]) {
-      results[i] = fetches[i]!
+    if (realtimeList[i]) {
+      results[i] = realtimeList[i] as IndexItem
     } else {
       const cfg = INDEX_LIST[i]
-      fallbackTasks.push(
-        fetchKlineIndex(cfg.secId, cfg.name).then((item) => ({ index: i, item }))
-      )
+      fallbackTasks.push(fetchKlineIndex(cfg.codeWithMarket, cfg.code, cfg.name).then((item) => ({ index: i, item })))
     }
   }
 
-  // 并行请求历史数据
   if (fallbackTasks.length > 0) {
     const fallbackResults = await Promise.all(fallbackTasks)
     for (const { index, item } of fallbackResults) {
@@ -145,9 +108,15 @@ export async function GET(request: NextRequest) {
       results[index] = item || {
         code: cfg.code,
         name: cfg.name,
-        price: 0, change: 0, pct_chg: 0,
-        open: 0, high: 0, low: 0, pre_close: 0,
-        volume: 0, amount: 0
+        price: 0,
+        change: 0,
+        pct_chg: 0,
+        open: 0,
+        high: 0,
+        low: 0,
+        pre_close: 0,
+        volume: 0,
+        amount: 0
       }
     }
   }
