@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
+import { fetchAStockProfileSummary, fetchAStockQuote } from '@/lib/mairui-data'
 import { getStockBasicByCode, getLatestQuoteByCode } from '@/lib/stock-data'
 
 interface Params {
@@ -14,10 +15,14 @@ export async function GET(request: NextRequest, { params }: Params) {
 
   const { symbol: rawSymbol } = await params
   const symbol = rawSymbol.toUpperCase()
-  const [basic, quote] = await Promise.all([getStockBasicByCode(symbol), getLatestQuoteByCode(symbol)])
+  let [basic, quote] = await Promise.all([getStockBasicByCode(symbol), getLatestQuoteByCode(symbol)])
+
   if (!basic && !quote) {
-    return fail('股票不存在', 404)
+    await Promise.all([fetchAStockProfileSummary(symbol), fetchAStockQuote(symbol)])
+      ;[basic, quote] = await Promise.all([getStockBasicByCode(symbol), getLatestQuoteByCode(symbol)])
   }
+
+  if (!basic && !quote) return fail('股票不存在', 404)
 
   return ok(
     {

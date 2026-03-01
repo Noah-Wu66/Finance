@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
+import { fetchAStockDaily } from '@/lib/mairui-data'
 import { getDailyQuotesByCode } from '@/lib/stock-data'
 
 interface Params {
@@ -18,7 +19,13 @@ export async function GET(request: NextRequest, { params }: Params) {
   const limit = Math.min(500, Math.max(1, Number(request.nextUrl.searchParams.get('limit') || '120')))
   const adj = (request.nextUrl.searchParams.get('adj') || 'none') as 'none' | 'qfq' | 'hfq'
 
-  const rows = await getDailyQuotesByCode(symbol, { limit })
+  let rows = await getDailyQuotesByCode(symbol, { limit })
+
+  if (rows.length === 0) {
+    await fetchAStockDaily(symbol, limit)
+    rows = await getDailyQuotesByCode(symbol, { limit })
+  }
+
   const items = rows.map((row) => ({
     time: row.trade_date,
     open: row.open,

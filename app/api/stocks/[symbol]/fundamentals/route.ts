@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
+import { fetchAStockFinancialSummary, fetchAStockProfileSummary } from '@/lib/mairui-data'
 import { getFundamentalsByCode, getStockBasicByCode } from '@/lib/stock-data'
 
 interface Params {
@@ -14,7 +15,13 @@ export async function GET(request: NextRequest, { params }: Params) {
 
   const { symbol: rawSymbol } = await params
   const symbol = rawSymbol.toUpperCase()
-  const [basic, funda] = await Promise.all([getStockBasicByCode(symbol), getFundamentalsByCode(symbol)])
+  let [basic, funda] = await Promise.all([getStockBasicByCode(symbol), getFundamentalsByCode(symbol)])
+
+  if (!basic && !funda) {
+    await Promise.all([fetchAStockProfileSummary(symbol), fetchAStockFinancialSummary(symbol)])
+      ;[basic, funda] = await Promise.all([getStockBasicByCode(symbol), getFundamentalsByCode(symbol)])
+  }
+
   if (!basic && !funda) return fail('基本面数据不存在', 404)
 
   return ok(

@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
+import { fetchAStockQuote } from '@/lib/mairui-data'
 import { getLatestQuoteByCode } from '@/lib/stock-data'
 
 interface Params {
@@ -14,7 +15,13 @@ export async function GET(request: NextRequest, { params }: Params) {
 
   const { symbol: rawSymbol } = await params
   const symbol = rawSymbol.toUpperCase()
-  const quote = await getLatestQuoteByCode(symbol)
+  let quote = await getLatestQuoteByCode(symbol)
+
+  if (!quote) {
+    await fetchAStockQuote(symbol)
+    quote = await getLatestQuoteByCode(symbol)
+  }
+
   if (!quote) return fail('行情不存在', 404)
 
   return ok(

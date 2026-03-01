@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
+import { fetchAStockQuote } from '@/lib/mairui-data'
 import { getLatestQuoteByCode } from '@/lib/stock-data'
 
 interface Params {
@@ -13,10 +14,14 @@ export async function GET(request: NextRequest, { params }: Params) {
   if (!user) return fail('未登录', 401)
 
   const { code } = await params
-  const quote = await getLatestQuoteByCode(code)
+  let quote = await getLatestQuoteByCode(code)
+
   if (!quote) {
-    return fail('行情不存在', 404)
+    await fetchAStockQuote(code)
+    quote = await getLatestQuoteByCode(code)
   }
+
+  if (!quote) return fail('行情不存在', 404)
 
   return ok(quote, '获取行情成功')
 }

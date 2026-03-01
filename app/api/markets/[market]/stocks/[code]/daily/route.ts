@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
+import { fetchAStockDaily } from '@/lib/mairui-data'
 import { getDailyQuotesByCode } from '@/lib/stock-data'
 
 interface Params {
@@ -17,11 +18,20 @@ export async function GET(request: NextRequest, { params }: Params) {
   const endDate = request.nextUrl.searchParams.get('end_date') || undefined
   const limit = Math.min(500, Math.max(1, Number(request.nextUrl.searchParams.get('limit') || '100')))
 
-  const quotes = await getDailyQuotesByCode(code, {
+  let quotes = await getDailyQuotesByCode(code, {
     startDate,
     endDate,
     limit
   })
+
+  if (quotes.length === 0) {
+    await fetchAStockDaily(code, limit)
+    quotes = await getDailyQuotesByCode(code, {
+      startDate,
+      endDate,
+      limit
+    })
+  }
 
   return ok(
     {

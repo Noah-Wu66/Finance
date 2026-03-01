@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server'
 import { getRequestUser } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { fail, ok } from '@/lib/http'
+import { fetchAStockQuote } from '@/lib/mairui-data'
 import { maybeObjectId } from '@/lib/mongo-helpers'
 
 export async function GET(request: NextRequest) {
@@ -29,12 +30,22 @@ export async function GET(request: NextRequest) {
   const quotes: Record<string, { price: number; pct_chg: number; trade_date: string }> = {}
 
   for (const code of codes) {
-    const row = await db
+    let row = await db
       .collection('stock_quotes')
       .find({ symbol: code })
       .sort({ trade_date: -1 })
       .limit(1)
       .next()
+
+    if (!row) {
+      await fetchAStockQuote(code)
+      row = await db
+        .collection('stock_quotes')
+        .find({ symbol: code })
+        .sort({ trade_date: -1 })
+        .limit(1)
+        .next()
+    }
 
     if (row) {
       quotes[code] = {
