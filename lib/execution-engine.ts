@@ -13,16 +13,13 @@ const BATCH_COLLECTION = 'web_batches'
 const CALENDAR_COLLECTION = 'trading_calendar'
 const INDEX_COLLECTION = 'index_daily'
 const FUND_FLOW_COLLECTION = 'stock_fund_flow'
-const EVENT_COLLECTION = 'stock_events'
 const FINANCIAL_ENHANCED_COLLECTION = 'financial_enhanced'
 const NEWS_SENTIMENT_COLLECTION = 'news_sentiment'
 const ADJUST_FACTOR_COLLECTION = 'stock_adjust_factors'
 const CORPORATE_ACTION_COLLECTION = 'stock_corporate_actions'
 const INDUSTRY_AGG_COLLECTION = 'industry_aggregation'
 const EARNINGS_EXPECT_COLLECTION = 'earnings_expectation'
-const MACRO_CALENDAR_COLLECTION = 'macro_calendar'
 const DATA_QUALITY_COLLECTION = 'data_quality'
-const INTRADAY_COLLECTION = 'stock_intraday'
 const QUANT_AUTO_FETCH_LOG_COLLECTION = 'quant_auto_fetch_logs'
 const NORTHBOUND_FLOW_COLLECTION = 'northbound_flow'
 const MARGIN_TRADING_COLLECTION = 'margin_trading'
@@ -313,15 +310,6 @@ interface FundFlowItem {
   short_balance?: number
 }
 
-interface StockEventItem {
-  symbol: string
-  event_type: string
-  event_date: string
-  title: string
-  impact: string
-  url?: string
-}
-
 interface FinancialEnhancedItem {
   symbol: string
   report_period: string
@@ -377,13 +365,6 @@ interface EarningsExpectationItem {
   net_profit?: number
 }
 
-interface MacroCalendarItem {
-  date: string
-  indicator: string
-  value?: number
-  previous?: number
-}
-
 interface DataQualityItem {
   dataset: string
   symbol?: string
@@ -391,18 +372,6 @@ interface DataQualityItem {
   latency_sec?: number
   source?: string
   quality_flag?: string
-}
-
-interface IntradayItem {
-  symbol: string
-  datetime: string
-  period: string
-  open?: number
-  high?: number
-  low?: number
-  close?: number
-  volume?: number
-  amount?: number
 }
 
 function toNumber(value: unknown): number {
@@ -469,15 +438,12 @@ async function detectMissingEnhancedDatasets(params: {
     tradingDaysCount,
     indexCount,
     fundFlowCount,
-    eventCount,
     financialCount,
     sentimentCount,
     adjustFactorCount,
     corporateActionCount,
     industryAggCount,
-    earningsCount,
-    macroCount,
-    intradayCount
+    earningsCount
   ] = await Promise.all([
     db.collection(CALENDAR_COLLECTION).countDocuments({
       market: { $in: getCalendarMarketCandidates(market) },
@@ -492,10 +458,6 @@ async function detectMissingEnhancedDatasets(params: {
       symbol,
       trade_date: { $gte: ymdDaysAgo(45) }
     }, { limit: 20 }),
-    db.collection(EVENT_COLLECTION).countDocuments({
-      symbol,
-      event_date: { $gte: ymdDaysAgo(180) }
-    }, { limit: 20 }),
     db.collection(FINANCIAL_ENHANCED_COLLECTION).countDocuments({ symbol }, { limit: 1 }),
     db.collection(NEWS_SENTIMENT_COLLECTION).countDocuments({ symbol }, { limit: 20 }),
     db.collection(ADJUST_FACTOR_COLLECTION).countDocuments({ symbol }, { limit: 10 }),
@@ -503,23 +465,18 @@ async function detectMissingEnhancedDatasets(params: {
     industry
       ? db.collection(INDUSTRY_AGG_COLLECTION).countDocuments({ industry_name: industry }, { limit: 10 })
       : Promise.resolve(0),
-    db.collection(EARNINGS_EXPECT_COLLECTION).countDocuments({ symbol }, { limit: 10 }),
-    db.collection(MACRO_CALENDAR_COLLECTION).countDocuments({}, { limit: 5 }),
-    db.collection(INTRADAY_COLLECTION).countDocuments({ symbol, period: '1' }, { limit: 60 })
+    db.collection(EARNINGS_EXPECT_COLLECTION).countDocuments({ symbol }, { limit: 10 })
   ])
 
   if (tradingDaysCount < 10) missing.push('trading_calendar')
   if (indexCount < 20) missing.push('index_daily')
   if (fundFlowCount < 8) missing.push('stock_fund_flow')
-  if (eventCount < 3) missing.push('stock_events')
   if (financialCount < 1) missing.push('financial_enhanced')
   if (sentimentCount < 5) missing.push('news_sentiment')
   if (adjustFactorCount < 3) missing.push('stock_adjust_factors')
   if (corporateActionCount < 2) missing.push('stock_corporate_actions')
   if (industry && industryAggCount < 1) missing.push('industry_aggregation')
   if (earningsCount < 1) missing.push('earnings_expectation')
-  if (macroCount < 1) missing.push('macro_calendar')
-  if (intradayCount < 20) missing.push('stock_intraday')
 
   return missing
 }
@@ -728,25 +685,6 @@ async function loadFundFlow(symbol: string, limit = 30): Promise<FundFlowItem[]>
   }))
 }
 
-async function loadStockEvents(symbol: string, limit = 50): Promise<StockEventItem[]> {
-  const db = await getDb()
-  const rows = await db
-    .collection(EVENT_COLLECTION)
-    .find({ symbol })
-    .sort({ event_date: -1, updated_at: -1, created_at: -1 })
-    .limit(limit)
-    .toArray()
-
-  return rows.map((row) => ({
-    symbol,
-    event_type: String(row.event_type || 'announcement'),
-    event_date: normalizeYmd(row.event_date),
-    title: String(row.title || ''),
-    impact: String(row.impact || 'unknown'),
-    url: row.url ? String(row.url) : undefined
-  }))
-}
-
 async function loadEnhancedFinancial(symbol: string): Promise<FinancialEnhancedItem | null> {
   const db = await getDb()
   const row = await db
@@ -864,23 +802,6 @@ async function loadEarningsExpectation(symbol: string, limit = 20): Promise<Earn
   }))
 }
 
-async function loadMacroCalendar(limit = 40): Promise<MacroCalendarItem[]> {
-  const db = await getDb()
-  const rows = await db
-    .collection(MACRO_CALENDAR_COLLECTION)
-    .find({})
-    .sort({ date: -1, updated_at: -1, created_at: -1 })
-    .limit(limit)
-    .toArray()
-
-  return rows.map((row) => ({
-    date: String(row.date || ''),
-    indicator: String(row.indicator || ''),
-    value: row.value == null ? undefined : toNumber(row.value),
-    previous: row.previous == null ? undefined : toNumber(row.previous)
-  })).filter((row) => row.indicator)
-}
-
 async function loadDataQualitySnapshot(symbol: string, limit = 30): Promise<DataQualityItem[]> {
   const db = await getDb()
   const rows = await db
@@ -898,28 +819,6 @@ async function loadDataQualitySnapshot(symbol: string, limit = 30): Promise<Data
     source: row.source ? String(row.source) : undefined,
     quality_flag: row.quality_flag ? String(row.quality_flag) : undefined
   })).filter((row) => row.dataset)
-}
-
-async function loadIntraday(symbol: string, period = '1', limit = 180): Promise<IntradayItem[]> {
-  const db = await getDb()
-  const rows = await db
-    .collection(INTRADAY_COLLECTION)
-    .find({ symbol, period })
-    .sort({ datetime: -1, updated_at: -1, created_at: -1 })
-    .limit(limit)
-    .toArray()
-
-  return rows.map((row) => ({
-    symbol,
-    datetime: String(row.datetime || ''),
-    period,
-    open: row.open == null ? undefined : toNumber(row.open),
-    high: row.high == null ? undefined : toNumber(row.high),
-    low: row.low == null ? undefined : toNumber(row.low),
-    close: row.close == null ? undefined : toNumber(row.close),
-    volume: row.volume == null ? undefined : toNumber(row.volume),
-    amount: row.amount == null ? undefined : toNumber(row.amount)
-  })).filter((row) => row.datetime)
 }
 
 interface NorthboundFlowItem {
@@ -1577,14 +1476,11 @@ async function runAIAnalysis(
   const nextTradingDays = (execution.context.next_trading_days as string[] | undefined) || []
   const indexBenchmarks = (execution.context.index_benchmarks as IndexDailyItem[] | undefined) || []
   const fundFlow = (execution.context.fund_flow as FundFlowItem[] | undefined) || []
-  const stockEvents = (execution.context.stock_events as StockEventItem[] | undefined) || []
   const enhancedFinancial = (execution.context.financial_enhanced as FinancialEnhancedItem | null | undefined) || null
   const adjustFactors = (execution.context.adjust_factors as AdjustFactorItem[] | undefined) || []
   const corporateActions = (execution.context.corporate_actions as CorporateActionItem[] | undefined) || []
   const industryAggregation = (execution.context.industry_aggregation as IndustryAggregationItem[] | undefined) || []
   const earningsExpectation = (execution.context.earnings_expectation as EarningsExpectationItem[] | undefined) || []
-  const macroCalendar = (execution.context.macro_calendar as MacroCalendarItem[] | undefined) || []
-  const intradayData = (execution.context.intraday_data as IntradayItem[] | undefined) || []
   const dataQualitySummary = (execution.context.data_quality_summary as {
     total: number
     bad_count: number
@@ -1646,10 +1542,6 @@ async function runAIAnalysis(
     }).join('\n')
     : '暂无资金流数据'
 
-  const stockEventText = stockEvents.length > 0
-    ? stockEvents.slice(0, 30).map((item, i) => `${i + 1}. [${item.event_date}] [${item.event_type}] [影响:${item.impact}] ${item.title}`).join('\n')
-    : '暂无公告事件数据'
-
   const enhancedFinancialText = enhancedFinancial
     ? `报告期:${enhancedFinancial.report_period || '未知'}；净利润同比:${enhancedFinancial.profit_yoy ?? 'N/A'}；毛利率:${enhancedFinancial.gross_margin ?? 'N/A'}；资产负债率:${enhancedFinancial.debt_to_asset ?? 'N/A'}；经营现金流:${enhancedFinancial.operating_cashflow ?? 'N/A'}；经营现金流/净利润:${enhancedFinancial.ocf_to_profit ?? 'N/A'}`
     : '暂无增强财务数据'
@@ -1674,17 +1566,9 @@ async function runAIAnalysis(
     ? earningsExpectation.slice(0, 20).map((item, i) => `${i + 1}. ${item.announce_date} [${item.source_type}] 类型:${item.forecast_type ?? 'N/A'} 净利变动:${item.profit_change_pct ?? 'N/A'} EPS:${item.eps ?? 'N/A'}`).join('\n')
     : '暂无业绩预期数据'
 
-  const macroText = macroCalendar.length > 0
-    ? macroCalendar.slice(0, 20).map((item, i) => `${i + 1}. ${item.date} ${item.indicator}: 当前${item.value ?? 'N/A'} 前值${item.previous ?? 'N/A'}`).join('\n')
-    : '暂无宏观日历数据'
-
   const dataQualityText = dataQualitySummary
     ? `共${dataQualitySummary.total}条质量记录，异常${dataQualitySummary.bad_count}条；问题：${dataQualitySummary.top_issues.join('、') || '无'}`
     : '暂无数据质量快照'
-
-  const intradayText = intradayData.length > 0
-    ? intradayData.slice(0, 60).reverse().map((item, i) => `${i + 1}. ${item.datetime} O:${item.open ?? 'N/A'} H:${item.high ?? 'N/A'} L:${item.low ?? 'N/A'} C:${item.close ?? 'N/A'} V:${item.volume ?? 'N/A'}`).join('\n')
-    : '暂无分时盘口数据'
 
   const tradingDayText = nextTradingDays.length > 0
     ? nextTradingDays.map((d) => formatYmd(d)).join('、')
@@ -1712,7 +1596,7 @@ async function runAIAnalysis(
 1. 技术面分析：K线形态、趋势、支撑位/压力位、成交量变化
 2. 基本面分析：估值水平、盈利能力、行业地位
 3. 消息面分析：结合最新新闻资讯和深度阅读的网页内容，分析利好利空因素、政策影响、行业动态
-4. 资金面与事件面分析：结合资金流、公告事件、新闻情绪评估短中期动量
+4. 资金面分析：结合资金流、新闻情绪评估短中期动量
 5. 公司行为与数据可信度分析：识别复权、分红送转、异常或过期数据的影响
 6. 行业与宏观共振分析：判断行业资金/情绪和宏观环境是否支撑个股走势
 7. 综合研判：多空力量对比、风险评估
@@ -1755,9 +1639,6 @@ ${fundFlowText}
 ${newsSummary}
 ${readPagesSummary ? `\n【深度阅读的网页内容（共${readPagesData.length}篇）】\n${readPagesSummary}` : ''}
 
-【公告与事件（近期）】
-${stockEventText}
-
 【财务增强指标】
 ${enhancedFinancialText}
 
@@ -1772,12 +1653,6 @@ ${industryAggText}
 
 【业绩预期/预告】
 ${earningsText}
-
-【宏观日历】
-${macroText}
-
-【分时盘口（最近）】
-${intradayText}
 
 【新闻情绪摘要】
 ${sentimentText}
@@ -1890,14 +1765,11 @@ async function buildReport(execution: ExecutionDoc) {
   const nextTradingDays = (execution.context.next_trading_days as string[] | undefined) || []
   const indexBenchmarks = (execution.context.index_benchmarks as IndexDailyItem[] | undefined) || []
   const fundFlow = (execution.context.fund_flow as FundFlowItem[] | undefined) || []
-  const stockEvents = (execution.context.stock_events as StockEventItem[] | undefined) || []
   const enhancedFinancial = (execution.context.financial_enhanced as FinancialEnhancedItem | null | undefined) || null
   const adjustFactors = (execution.context.adjust_factors as AdjustFactorItem[] | undefined) || []
   const corporateActions = (execution.context.corporate_actions as CorporateActionItem[] | undefined) || []
   const industryAggregation = (execution.context.industry_aggregation as IndustryAggregationItem[] | undefined) || []
   const earningsExpectation = (execution.context.earnings_expectation as EarningsExpectationItem[] | undefined) || []
-  const macroCalendar = (execution.context.macro_calendar as MacroCalendarItem[] | undefined) || []
-  const intradayData = (execution.context.intraday_data as IntradayItem[] | undefined) || []
   const dataQualitySummary = (execution.context.data_quality_summary as {
     total: number
     bad_count: number
@@ -1954,14 +1826,11 @@ async function buildReport(execution: ExecutionDoc) {
     next_trading_days: nextTradingDays,
     benchmark_summary: benchmarkSummary,
     fund_flow: fundFlow,
-    stock_events: stockEvents,
     financial_enhanced: enhancedFinancial,
     adjust_factors: adjustFactors,
     corporate_actions: corporateActions,
     industry_aggregation: industryAggregation,
     earnings_expectation: earningsExpectation,
-    macro_calendar: macroCalendar,
-    intraday_data: intradayData,
     data_quality_summary: dataQualitySummary,
     quant_auto_fetch: quantAutoFetch,
     news_sentiment_summary: newsSentimentSummary,
@@ -1984,14 +1853,11 @@ async function buildReport(execution: ExecutionDoc) {
         next_trading_days: nextTradingDays,
         benchmark_summary: benchmarkSummary,
         fund_flow_count: fundFlow.length,
-        stock_event_count: stockEvents.length,
         financial_enhanced: enhancedFinancial,
         adjust_factor_count: adjustFactors.length,
         corporate_action_count: corporateActions.length,
         industry_aggregation_count: industryAggregation.length,
         earnings_expectation_count: earningsExpectation.length,
-        macro_calendar_count: macroCalendar.length,
-        intraday_count: intradayData.length,
         data_quality_summary: dataQualitySummary,
         quant_auto_fetch: quantAutoFetch,
         news_sentiment_summary: newsSentimentSummary,
@@ -2026,14 +1892,11 @@ async function buildReport(execution: ExecutionDoc) {
     next_trading_days: nextTradingDays,
     benchmark_summary: benchmarkSummary,
     fund_flow: fundFlow,
-    stock_events: stockEvents,
     financial_enhanced: enhancedFinancial,
     adjust_factors: adjustFactors,
     corporate_actions: corporateActions,
     industry_aggregation: industryAggregation,
     earnings_expectation: earningsExpectation,
-    macro_calendar: macroCalendar,
-    intraday_data: intradayData,
     data_quality_summary: dataQualitySummary,
     quant_auto_fetch: quantAutoFetch,
     news_sentiment_summary: newsSentimentSummary,
@@ -2583,16 +2446,13 @@ export async function tickExecution(id: string, userId: string) {
       nextTradingDays,
       indexBenchmarks,
       fundFlow,
-      stockEvents,
       enhancedFinancial,
       newsSentiment,
       adjustFactors,
       corporateActions,
       industryAggregation,
       earningsExpectation,
-      macroCalendar,
       dataQuality,
-      intradayData,
       northboundFlowData,
       marginTradingData,
       dragonTigerData,
@@ -2601,16 +2461,13 @@ export async function tickExecution(id: string, userId: string) {
       loadNextTradingDays(lastKlineDate, execution.market, 10).catch(() => []),
       loadIndexBenchmarks(lastKlineDate, execution.market, 60).catch(() => []),
       loadFundFlow(execution.symbol, 30).catch(() => []),
-      loadStockEvents(execution.symbol, 50).catch(() => []),
       loadEnhancedFinancial(execution.symbol).catch(() => null),
       loadNewsSentiment(execution.symbol, 50).catch(() => []),
       loadAdjustFactors(execution.symbol, 30).catch(() => []),
       loadCorporateActions(execution.symbol, 30).catch(() => []),
       loadIndustryAggregation(basic.industry || '', 20).catch(() => []),
       loadEarningsExpectation(execution.symbol, 20).catch(() => []),
-      loadMacroCalendar(40).catch(() => []),
       loadDataQualitySnapshot(execution.symbol, 30).catch(() => []),
-      loadIntraday(execution.symbol, '1', 180).catch(() => []),
       loadNorthboundFlow(30).catch(() => []),
       loadMarginTrading(execution.symbol, 30).catch(() => []),
       loadDragonTiger(execution.symbol, 20).catch(() => []),
@@ -2620,16 +2477,13 @@ export async function tickExecution(id: string, userId: string) {
     context.next_trading_days = nextTradingDays
     context.index_benchmarks = indexBenchmarks
     context.fund_flow = fundFlow
-    context.stock_events = stockEvents
     context.financial_enhanced = enhancedFinancial
     context.news_sentiment_summary = summarizeNewsSentiment(newsSentiment)
     context.adjust_factors = adjustFactors
     context.corporate_actions = corporateActions
     context.industry_aggregation = industryAggregation
     context.earnings_expectation = earningsExpectation
-    context.macro_calendar = macroCalendar
     context.data_quality_summary = summarizeDataQuality(dataQuality)
-    context.intraday_data = intradayData
     context.northbound_flow = northboundFlowData
     context.margin_trading = marginTradingData
     context.dragon_tiger = dragonTigerData
@@ -2637,7 +2491,7 @@ export async function tickExecution(id: string, userId: string) {
 
     logs.push({
       at: now,
-      text: `增强数据加载完成：交易日历 ${nextTradingDays.length} 天，指数 ${summarizeBenchmarks(indexBenchmarks).length} 组，资金流 ${fundFlow.length} 条，事件 ${stockEvents.length} 条，复权 ${adjustFactors.length} 条，行业 ${industryAggregation.length} 条，业绩预期 ${earningsExpectation.length} 条，分时 ${intradayData.length} 条，北向资金 ${northboundFlowData.length} 条，融资融券 ${marginTradingData.length} 条，龙虎榜 ${dragonTigerData.length} 条，机构持仓 ${institutionHoldingData.length} 条`
+      text: `增强数据加载完成：交易日历 ${nextTradingDays.length} 天，指数 ${summarizeBenchmarks(indexBenchmarks).length} 组，资金流 ${fundFlow.length} 条，复权 ${adjustFactors.length} 条，行业 ${industryAggregation.length} 条，业绩预期 ${earningsExpectation.length} 条，北向资金 ${northboundFlowData.length} 条，融资融券 ${marginTradingData.length} 条，龙虎榜 ${dragonTigerData.length} 条，机构持仓 ${institutionHoldingData.length} 条`
     })
 
     // 调用AI深度分析（耗时较长，先刷新updated_at防止被标记为过期）

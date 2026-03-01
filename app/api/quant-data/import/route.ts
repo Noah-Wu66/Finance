@@ -8,16 +8,13 @@ type DatasetType =
   | 'trading_calendar'
   | 'index_daily'
   | 'stock_fund_flow'
-  | 'stock_events'
   | 'financial_enhanced'
   | 'news_sentiment'
   | 'stock_adjust_factors'
   | 'stock_corporate_actions'
   | 'industry_aggregation'
   | 'earnings_expectation'
-  | 'macro_calendar'
   | 'data_quality'
-  | 'stock_intraday'
 
 interface ImportPayload {
   dataset?: DatasetType
@@ -35,12 +32,6 @@ function normalizeYmd(value: unknown): string {
   const compact = text.replace(/[^0-9]/g, '')
   if (compact.length >= 8) return compact.slice(0, 8)
   return ''
-}
-
-function normalizeImpact(value: unknown): string {
-  const impact = String(value || '').trim()
-  if (!impact) return 'unknown'
-  return impact
 }
 
 function getQualityFields(row: Record<string, unknown>) {
@@ -67,10 +58,6 @@ async function ensureIndexes(dataset: DatasetType) {
     await db.collection('stock_fund_flow').createIndex({ symbol: 1, trade_date: 1 }, { unique: true })
     return
   }
-  if (dataset === 'stock_events') {
-    await db.collection('stock_events').createIndex({ symbol: 1, event_date: 1, title: 1 }, { unique: true })
-    return
-  }
   if (dataset === 'financial_enhanced') {
     await db.collection('financial_enhanced').createIndex({ symbol: 1, report_period: 1 }, { unique: true })
     return
@@ -95,16 +82,8 @@ async function ensureIndexes(dataset: DatasetType) {
     await db.collection('earnings_expectation').createIndex({ symbol: 1, announce_date: 1, source_type: 1 }, { unique: true })
     return
   }
-  if (dataset === 'macro_calendar') {
-    await db.collection('macro_calendar').createIndex({ date: 1, indicator: 1 }, { unique: true })
-    return
-  }
   if (dataset === 'data_quality') {
     await db.collection('data_quality').createIndex({ dataset: 1, symbol: 1, as_of: 1 }, { unique: true })
-    return
-  }
-  if (dataset === 'stock_intraday') {
-    await db.collection('stock_intraday').createIndex({ symbol: 1, datetime: 1, period: 1 }, { unique: true })
   }
 }
 
@@ -232,43 +211,6 @@ export async function POST(request: NextRequest) {
       modified: result?.modifiedCount || 0,
       upserted: result?.upsertedCount || 0
     }, '资金流导入完成')
-  }
-
-  if (dataset === 'stock_events') {
-    const ops = records.map((row) => {
-      const symbol = String(row.symbol || '').trim().toUpperCase()
-      const eventDate = normalizeYmd(row.event_date)
-      const title = String(row.title || '').trim()
-      return {
-        updateOne: {
-          filter: { symbol, event_date: eventDate, title },
-          update: {
-            $set: {
-              symbol,
-              event_type: String(row.event_type || 'announcement').trim() || 'announcement',
-              event_date: eventDate,
-              title,
-              impact: normalizeImpact(row.impact),
-              url: row.url ? String(row.url) : undefined,
-              ...getQualityFields(row),
-              updated_at: now,
-              updated_by: user.userId
-            },
-            $setOnInsert: { created_at: now }
-          },
-          upsert: true
-        }
-      }
-    }).filter((op) => op.updateOne.filter.symbol && op.updateOne.filter.event_date && op.updateOne.filter.title)
-
-    const result = ops.length > 0 ? await db.collection('stock_events').bulkWrite(ops, { ordered: false }) : null
-    return ok({
-      dataset,
-      accepted: ops.length,
-      matched: result?.matchedCount || 0,
-      modified: result?.modifiedCount || 0,
-      upserted: result?.upsertedCount || 0
-    }, '公告事件导入完成')
   }
 
   if (dataset === 'financial_enhanced') {
@@ -472,34 +414,6 @@ export async function POST(request: NextRequest) {
     return ok({ dataset, accepted: ops.length, matched: result?.matchedCount || 0, modified: result?.modifiedCount || 0, upserted: result?.upsertedCount || 0 }, '业绩预期导入完成')
   }
 
-  if (dataset === 'macro_calendar') {
-    const ops = records.map((row) => {
-      const date = String(row.date || '').trim() || 'latest'
-      const indicator = String(row.indicator || '').trim()
-      return {
-        updateOne: {
-          filter: { date, indicator },
-          update: {
-            $set: {
-              date,
-              indicator,
-              value: row.value == null ? undefined : toNumber(row.value),
-              previous: row.previous == null ? undefined : toNumber(row.previous),
-              ...getQualityFields(row),
-              updated_at: now,
-              updated_by: user.userId
-            },
-            $setOnInsert: { created_at: now }
-          },
-          upsert: true
-        }
-      }
-    }).filter((op) => op.updateOne.filter.indicator)
-
-    const result = ops.length > 0 ? await db.collection('macro_calendar').bulkWrite(ops, { ordered: false }) : null
-    return ok({ dataset, accepted: ops.length, matched: result?.matchedCount || 0, modified: result?.modifiedCount || 0, upserted: result?.upsertedCount || 0 }, '宏观日历导入完成')
-  }
-
   if (dataset === 'data_quality') {
     const ops = records.map((row) => {
       const datasetName = String(row.dataset || '').trim()
@@ -528,40 +442,6 @@ export async function POST(request: NextRequest) {
 
     const result = ops.length > 0 ? await db.collection('data_quality').bulkWrite(ops, { ordered: false }) : null
     return ok({ dataset, accepted: ops.length, matched: result?.matchedCount || 0, modified: result?.modifiedCount || 0, upserted: result?.upsertedCount || 0 }, '数据质量导入完成')
-  }
-
-  if (dataset === 'stock_intraday') {
-    const ops = records.map((row) => {
-      const symbol = String(row.symbol || '').trim().toUpperCase()
-      const dateTime = String(row.datetime || row.time || '').trim()
-      const period = String(row.period || '1').trim() || '1'
-      return {
-        updateOne: {
-          filter: { symbol, datetime: dateTime, period },
-          update: {
-            $set: {
-              symbol,
-              datetime: dateTime,
-              period,
-              open: row.open == null ? undefined : toNumber(row.open),
-              high: row.high == null ? undefined : toNumber(row.high),
-              low: row.low == null ? undefined : toNumber(row.low),
-              close: row.close == null ? undefined : toNumber(row.close),
-              volume: row.volume == null ? undefined : toNumber(row.volume),
-              amount: row.amount == null ? undefined : toNumber(row.amount),
-              ...getQualityFields(row),
-              updated_at: now,
-              updated_by: user.userId
-            },
-            $setOnInsert: { created_at: now }
-          },
-          upsert: true
-        }
-      }
-    }).filter((op) => op.updateOne.filter.symbol && op.updateOne.filter.datetime)
-
-    const result = ops.length > 0 ? await db.collection('stock_intraday').bulkWrite(ops, { ordered: false }) : null
-    return ok({ dataset, accepted: ops.length, matched: result?.matchedCount || 0, modified: result?.modifiedCount || 0, upserted: result?.upsertedCount || 0 }, '分时盘口导入完成')
   }
 
   return fail(`不支持的数据集: ${dataset}`, 400)

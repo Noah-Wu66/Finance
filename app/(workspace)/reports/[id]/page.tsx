@@ -47,15 +47,6 @@ interface FundFlowItem {
   short_balance?: number
 }
 
-interface StockEventItem {
-  symbol: string
-  event_type: string
-  event_date: string
-  title: string
-  impact: string
-  url?: string
-}
-
 interface FinancialEnhancedItem {
   symbol: string
   report_period: string
@@ -107,29 +98,10 @@ interface EarningsExpectationItem {
   eps?: number
 }
 
-interface MacroCalendarItem {
-  date: string
-  indicator: string
-  value?: number
-  previous?: number
-}
-
 interface DataQualitySummary {
   total: number
   bad_count: number
   top_issues: string[]
-}
-
-interface IntradayItem {
-  symbol: string
-  datetime: string
-  period: string
-  open?: number
-  high?: number
-  low?: number
-  close?: number
-  volume?: number
-  amount?: number
 }
 
 interface ReportDetail {
@@ -148,15 +120,12 @@ interface ReportDetail {
   next_trading_days?: string[]
   benchmark_summary?: BenchmarkSummaryItem[]
   fund_flow?: FundFlowItem[]
-  stock_events?: StockEventItem[]
   financial_enhanced?: FinancialEnhancedItem | null
   news_sentiment_summary?: NewsSentimentSummary | null
   adjust_factors?: AdjustFactorItem[]
   corporate_actions?: CorporateActionItem[]
   industry_aggregation?: IndustryAggregationItem[]
   earnings_expectation?: EarningsExpectationItem[]
-  macro_calendar?: MacroCalendarItem[]
-  intraday_data?: IntradayItem[]
   data_quality_summary?: DataQualitySummary | null
   news?: NewsItem[]
   search_rounds?: number
@@ -445,25 +414,6 @@ export default function ReportDetailPage() {
             </Card>
           )}
 
-          {detail.stock_events && detail.stock_events.length > 0 && (
-            <Card>
-              <h4 className="text-sm font-semibold text-[var(--fg)] mb-3">公告与事件（近50条）</h4>
-              <div className="space-y-2">
-                {detail.stock_events.slice(0, 20).map((item, idx) => (
-                  <div key={`${item.event_date}-${idx}`} className="rounded-lg bg-[var(--bg-secondary)] px-3 py-2">
-                    <p className="text-xs text-[var(--fg-muted)] m-0">{fmtDate(item.event_date)} · {item.event_type} · 影响 {item.impact}</p>
-                    <p className="text-sm text-[var(--fg)] m-0 mt-1">{item.title}</p>
-                    {item.url ? (
-                      <a className="text-xs text-primary-600 dark:text-primary-400 mt-1 inline-block" href={item.url} target="_blank" rel="noopener noreferrer">
-                        查看原文
-                      </a>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
-
           {(detail.financial_enhanced || detail.news_sentiment_summary) && (
             <Card>
               <h4 className="text-sm font-semibold text-[var(--fg)] mb-3">增强指标</h4>
@@ -546,38 +496,6 @@ export default function ReportDetailPage() {
                     <p className="text-xs text-[var(--fg-muted)] m-0">{fmtDate(item.announce_date)} · {item.source_type} · {item.forecast_type || '-'}</p>
                     <p className="text-xs text-[var(--fg-secondary)] m-0 mt-1">
                       净利变动 {fmtNumber(item.profit_change_pct, 2)}% · EPS {fmtNumber(item.eps, 4)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
-
-          {detail.macro_calendar && detail.macro_calendar.length > 0 && (
-            <Card>
-              <h4 className="text-sm font-semibold text-[var(--fg)] mb-3">宏观日历（最新）</h4>
-              <div className="space-y-2">
-                {detail.macro_calendar.slice(0, 12).map((item, idx) => (
-                  <div key={`${item.date}-${item.indicator}-${idx}`} className="rounded-lg bg-[var(--bg-secondary)] px-3 py-2">
-                    <p className="text-xs text-[var(--fg-muted)] m-0">{item.date} · {item.indicator}</p>
-                    <p className="text-xs text-[var(--fg-secondary)] m-0 mt-1">
-                      当前值 {fmtNumber(item.value, 4)} · 前值 {fmtNumber(item.previous, 4)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
-
-          {detail.intraday_data && detail.intraday_data.length > 0 && (
-            <Card>
-              <h4 className="text-sm font-semibold text-[var(--fg)] mb-3">分时盘口（最近1分钟）</h4>
-              <div className="space-y-2">
-                {detail.intraday_data.slice(0, 20).map((item, idx) => (
-                  <div key={`${item.datetime}-${idx}`} className="rounded-lg bg-[var(--bg-secondary)] px-3 py-2">
-                    <p className="text-xs text-[var(--fg-muted)] m-0">{item.datetime}</p>
-                    <p className="text-xs text-[var(--fg-secondary)] m-0 mt-1">
-                      O {fmtNumber(item.open, 3)} · H {fmtNumber(item.high, 3)} · L {fmtNumber(item.low, 3)} · C {fmtNumber(item.close, 3)} · V {fmtNumber(item.volume, 0)}
                     </p>
                   </div>
                 ))}

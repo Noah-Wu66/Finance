@@ -617,9 +617,6 @@ export async function fetchAStockExtendedSnapshot(code: string): Promise<{
     results.instrument = { success: false, message: err instanceof Error ? err.message : '未知错误' }
   }
 
-  // index_membership 无对应接口，跳过
-  results.index_membership = { success: true, count: 0, message: '跳过（Tushare 2000积分不提供指数成份）' }
-
   const allOk = Object.values(results).every((item) => item.success)
   return {
     success: allOk,
@@ -753,14 +750,6 @@ export async function fetchKcQuote(code: string): Promise<{
   return fetchAStockQuote(code)
 }
 
-export async function fetchKcOrderBook(_code: string): Promise<{
-  success: boolean
-  message: string
-  data?: Record<string, unknown>
-}> {
-  return { success: false, message: 'Tushare 2000积分档不提供实时五档盘口' }
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // 北交所
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -828,48 +817,12 @@ export async function fetchBjQuote(code: string): Promise<{
   return fetchAStockQuote(code)
 }
 
-export async function fetchBjOrderBook(_code: string): Promise<{
-  success: boolean
-  message: string
-  data?: Record<string, unknown>
-}> {
-  return { success: false, message: 'Tushare 2000积分档不提供实时五档盘口' }
-}
-
 export async function fetchBjIndexQuote(code: string): Promise<{
   success: boolean
   message: string
   data?: Record<string, unknown>
 }> {
   return fetchIndexQuote(code)
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// 基金（5000积分才有 fund_daily，暂时返回不支持）
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export async function fetchFundList(): Promise<{
-  success: boolean
-  message: string
-  data?: Array<{ dm: string; mc: string; jys: string }>
-}> {
-  return { success: false, message: 'Tushare fund_daily 需5000积分，暂不支持' }
-}
-
-export async function fetchFundQuote(_code: string): Promise<{
-  success: boolean
-  message: string
-  data?: Record<string, unknown>
-}> {
-  return { success: false, message: 'Tushare fund_daily 需5000积分，暂不支持' }
-}
-
-export async function fetchEtfFundList(): Promise<{
-  success: boolean
-  message: string
-  data?: Array<{ dm: string; mc: string; jys: string }>
-}> {
-  return { success: false, message: 'Tushare fund_daily 需5000积分，暂不支持' }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

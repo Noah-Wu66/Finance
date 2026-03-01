@@ -52,7 +52,6 @@ export async function GET(request: NextRequest, { params }: Params) {
   const nextTradingDays = Array.isArray(doc.next_trading_days) ? doc.next_trading_days : []
   const benchmarkSummary = Array.isArray(doc.benchmark_summary) ? doc.benchmark_summary : []
   const fundFlow = Array.isArray(doc.fund_flow) ? doc.fund_flow : []
-  const stockEvents = Array.isArray(doc.stock_events) ? doc.stock_events : []
   const financialEnhanced = (doc.financial_enhanced && typeof doc.financial_enhanced === 'object')
     ? (doc.financial_enhanced as Record<string, unknown>)
     : null
@@ -63,8 +62,6 @@ export async function GET(request: NextRequest, { params }: Params) {
   const corporateActions = Array.isArray(doc.corporate_actions) ? doc.corporate_actions : []
   const industryAggregation = Array.isArray(doc.industry_aggregation) ? doc.industry_aggregation : []
   const earningsExpectation = Array.isArray(doc.earnings_expectation) ? doc.earnings_expectation : []
-  const macroCalendar = Array.isArray(doc.macro_calendar) ? doc.macro_calendar : []
-  const intradayData = Array.isArray(doc.intraday_data) ? doc.intraday_data : []
   const dataQualitySummary = (doc.data_quality_summary && typeof doc.data_quality_summary === 'object')
     ? (doc.data_quality_summary as Record<string, unknown>)
     : null
@@ -110,15 +107,6 @@ export async function GET(request: NextRequest, { params }: Params) {
       ? fundFlow.slice(0, 20).map((row: unknown) => {
         const item = row as Record<string, unknown>
         return `- ${fmtDate(item.trade_date)} | 主力净流入 ${fmtNumber(item.main_inflow)} | 北向 ${fmtNumber(item.northbound_net)} | 融资 ${fmtNumber(item.margin_balance)} | 融券 ${fmtNumber(item.short_balance)}`
-      })
-      : ['- 无']),
-    '',
-    '## 公告与事件（前30条）',
-    '',
-    ...(stockEvents.length > 0
-      ? stockEvents.slice(0, 30).map((row: unknown) => {
-        const item = row as Record<string, unknown>
-        return `- [${fmtDate(item.event_date)}] [${String(item.event_type || '-')}] [影响:${String(item.impact || '-')}] ${String(item.title || '-')}`
       })
       : ['- 无']),
     '',
@@ -178,24 +166,6 @@ export async function GET(request: NextRequest, { params }: Params) {
       ? earningsExpectation.slice(0, 20).map((row: unknown) => {
         const item = row as Record<string, unknown>
         return `- ${fmtDate(item.announce_date)} [${String(item.source_type || '-')}] ${String(item.forecast_type || '-')} | 净利变动 ${fmtNumber(item.profit_change_pct)}% | EPS ${fmtNumber(item.eps, 4)}`
-      })
-      : ['- 无']),
-    '',
-    '## 宏观日历（前20条）',
-    '',
-    ...(macroCalendar.length > 0
-      ? macroCalendar.slice(0, 20).map((row: unknown) => {
-        const item = row as Record<string, unknown>
-        return `- ${String(item.date || '-')} ${String(item.indicator || '-')} | 当前 ${fmtNumber(item.value, 4)} | 前值 ${fmtNumber(item.previous, 4)}`
-      })
-      : ['- 无']),
-    '',
-    '## 分时盘口（前30条）',
-    '',
-    ...(intradayData.length > 0
-      ? intradayData.slice(0, 30).map((row: unknown) => {
-        const item = row as Record<string, unknown>
-        return `- ${String(item.datetime || '-')} | O ${fmtNumber(item.open, 3)} H ${fmtNumber(item.high, 3)} L ${fmtNumber(item.low, 3)} C ${fmtNumber(item.close, 3)} V ${fmtNumber(item.volume, 0)}`
       })
       : ['- 无']),
     '',

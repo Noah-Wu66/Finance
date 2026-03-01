@@ -445,24 +445,6 @@ export async function fetchFinancialEnhanced(code: string): Promise<{ success: b
   }
 }
 
-// ─── 公告（anns_d：需单独权限）───────────────────────────────────────────────
-
-export async function fetchStockEvents(_code: string): Promise<{ success: boolean; message: string; count: number }> {
-  return { success: false, message: 'Tushare 公告接口（anns_d）需单独开通权限，当前已跳过', count: 0 }
-}
-
-// ─── 宏观日历 ─────────────────────────────────────────────────────────────────
-
-export async function fetchMacroCalendar(): Promise<{ success: boolean; message: string; count: number }> {
-  return { success: false, message: 'Tushare 不提供宏观日历，此项已跳过', count: 0 }
-}
-
-// ─── 分钟线（stk_mins：需单独权限）──────────────────────────────────────────
-
-export async function fetchIntraday(_code: string, _period = '1'): Promise<{ success: boolean; message: string; count: number }> {
-  return { success: false, message: 'Tushare 分钟线（stk_mins）需单独开通分钟权限，当前已跳过', count: 0 }
-}
-
 // ─── 北向资金（moneyflow_hsgt）────────────────────────────────────────────────
 
 export async function fetchNorthboundFlow(): Promise<{ success: boolean; message: string; count: number }> {
@@ -754,9 +736,6 @@ export async function fetchAllQuantData(params: {
     industryResult,
     earningsResult,
     financialResult,
-    eventsResult,
-    macroResult,
-    intradayResult,
     marginResult,
     dragonTigerResult,
     institutionResult
@@ -766,9 +745,6 @@ export async function fetchAllQuantData(params: {
     fetchIndustryAggregation(industry),
     fetchEarningsExpectation(symbol),
     fetchFinancialEnhanced(symbol),
-    fetchStockEvents(symbol),
-    fetchMacroCalendar(),
-    fetchIntraday(symbol, '1'),
     fetchMarginTrading(symbol),
     fetchDragonTiger(symbol),
     fetchInstitutionHolding(symbol)
@@ -781,9 +757,6 @@ export async function fetchAllQuantData(params: {
     industry_aggregation: industryResult,
     earnings_expectation: earningsResult,
     financial_enhanced: financialResult,
-    stock_events: eventsResult,
-    macro_calendar: macroResult,
-    intraday: intradayResult,
     margin_trading: marginResult,
     dragon_tiger: dragonTigerResult,
     institution_holding: institutionResult
