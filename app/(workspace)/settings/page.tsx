@@ -31,7 +31,6 @@ const systemLinks = [
   { href: '/settings/usage', label: '使用统计' },
   { href: '/settings/logs', label: '操作日志' },
   { href: '/settings/system-logs', label: '系统日志' },
-  { href: '/settings/sync', label: '多数据源同步' },
   { href: '/settings/scheduler', label: '定时任务迁移说明' },
 ]
 
