@@ -280,25 +280,58 @@ export async function fetchAStockQuote(code: string): Promise<{
   const symbol = normalizeStockCode(code)
   try {
     const d = pickFirstRecord<Record<string, unknown>>(await mairuiApi.hsstock.realTime(symbol))
-    if (!d) return { success: false, message: '无数据' }
+    if (d) {
+      const now = new Date()
+      const tradeDate = toYmd(d.t) || toYmd(now)
+      const doc = {
+        symbol,
+        name: String(d.mc || d.name || symbol),
+        close: toNumber(d.p),
+        open: toNumber(d.o),
+        high: toNumber(d.h),
+        low: toNumber(d.l),
+        pre_close: toNumber(d.yc),
+        pct_chg: toNumber(d.pc),
+        change: toNumber(d.ud),
+        amplitude: toNumber(d.zf),
+        amount: toNumber(d.cje),
+        volume: toNumber(d.v),
+        pe: toNumber(d.pe),
+        turnover_rate: toNumber(d.tr),
+        pb: toNumber(d.pb_ratio),
+        trade_date: tradeDate,
+        data_source: 'mairui_a_stock',
+        updated_at: now,
+        created_at: now
+      }
+      const db = await getDb()
+      await db.collection('stock_quotes').updateOne(
+        { symbol, trade_date: tradeDate, data_source: 'mairui_a_stock' },
+        { $set: doc, $setOnInsert: { created_at: now } },
+        { upsert: true }
+      )
+      return { success: true, message: `已获取 ${doc.name}(${symbol}) 行情`, data: doc }
+    }
+
+    // 停盘时实时接口无数据，用最近一天的历史 K 线替代
+    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsstock.latest(ensureCodeWithMarket(symbol), 'd', 'n', { lt: 1 }))
+    const row = rows.length > 0 ? rows[rows.length - 1] : null
+    if (!row) return { success: false, message: '无数据（停盘且无历史）' }
     const now = new Date()
-    const tradeDate = toYmd(d.t) || toYmd(now)
+    const tradeDate = toYmd(row.t) || toYmd(now)
     const doc = {
       symbol,
-      name: String(d.mc || d.name || symbol),
-      close: toNumber(d.p),
-      open: toNumber(d.o),
-      high: toNumber(d.h),
-      low: toNumber(d.l),
-      pre_close: toNumber(d.yc),
-      pct_chg: toNumber(d.pc),
-      change: toNumber(d.ud),
-      amplitude: toNumber(d.zf),
-      amount: toNumber(d.cje),
-      volume: toNumber(d.v),
-      pe: toNumber(d.pe),
-      turnover_rate: toNumber(d.tr),
-      pb: toNumber(d.pb_ratio),
+      name: String(row.mc || symbol),
+      close: toNumber(row.c),
+      open: toNumber(row.o),
+      high: toNumber(row.h),
+      low: toNumber(row.l),
+      pre_close: toNumber(row.pc),
+      pct_chg: 0,
+      change: 0,
+      amplitude: 0,
+      amount: toNumber(row.a),
+      volume: toNumber(row.v),
       trade_date: tradeDate,
       data_source: 'mairui_a_stock',
       updated_at: now,
@@ -310,7 +343,7 @@ export async function fetchAStockQuote(code: string): Promise<{
       { $set: doc, $setOnInsert: { created_at: now } },
       { upsert: true }
     )
-    return { success: true, message: `已获取 ${doc.name}(${symbol}) 行情`, data: doc }
+    return { success: true, message: `已获取 ${symbol} 停盘前行情`, data: doc }
   } catch (err) {
     return { success: false, message: err instanceof Error ? err.message : '未知错误' }
   }
@@ -647,22 +680,55 @@ export async function fetchIndexQuote(code: string): Promise<{ success: boolean;
   const indexCode = normalizeStockCode(code)
   try {
     const d = pickFirstRecord<Record<string, unknown>>(await mairuiApi.hsindex.realTime(indexCode))
-    if (!d) return { success: false, message: '无数据' }
+    if (d) {
+      const now = new Date()
+      const tradeDate = toYmd(d.t) || toYmd(now)
+      const doc = {
+        symbol: indexCode,
+        name: String(d.mc || indexCode),
+        close: toNumber(d.p),
+        open: toNumber(d.o),
+        high: toNumber(d.h),
+        low: toNumber(d.l),
+        pre_close: toNumber(d.yc),
+        pct_chg: toNumber(d.pc),
+        change: toNumber(d.ud),
+        amplitude: toNumber(d.zf),
+        amount: toNumber(d.cje),
+        volume: toNumber(d.v),
+        trade_date: tradeDate,
+        data_source: 'mairui_index',
+        updated_at: now,
+        created_at: now
+      }
+      const db = await getDb()
+      await db.collection('stock_quotes').updateOne(
+        { symbol: indexCode, trade_date: tradeDate, data_source: 'mairui_index' },
+        { $set: doc, $setOnInsert: { created_at: now } },
+        { upsert: true }
+      )
+      return { success: true, message: `已获取 ${doc.name}(${indexCode}) 指数行情`, data: doc }
+    }
+
+    // 停盘时用最近一天的历史数据替代
+    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsindex.latest(ensureCodeWithMarket(indexCode), 'd', { lt: 1 }))
+    const row = rows.length > 0 ? rows[rows.length - 1] : null
+    if (!row) return { success: false, message: '无数据（停盘且无历史）' }
     const now = new Date()
-    const tradeDate = toYmd(d.t) || toYmd(now)
+    const tradeDate = toYmd(row.t) || toYmd(now)
     const doc = {
       symbol: indexCode,
-      name: String(d.mc || indexCode),
-      close: toNumber(d.p),
-      open: toNumber(d.o),
-      high: toNumber(d.h),
-      low: toNumber(d.l),
-      pre_close: toNumber(d.yc),
-      pct_chg: toNumber(d.pc),
-      change: toNumber(d.ud),
-      amplitude: toNumber(d.zf),
-      amount: toNumber(d.cje),
-      volume: toNumber(d.v),
+      name: String(row.mc || indexCode),
+      close: toNumber(row.c),
+      open: toNumber(row.o),
+      high: toNumber(row.h),
+      low: toNumber(row.l),
+      pre_close: toNumber(row.pc),
+      pct_chg: 0,
+      change: 0,
+      amplitude: 0,
+      amount: toNumber(row.a),
+      volume: toNumber(row.v),
       trade_date: tradeDate,
       data_source: 'mairui_index',
       updated_at: now,
@@ -674,7 +740,7 @@ export async function fetchIndexQuote(code: string): Promise<{ success: boolean;
       { $set: doc, $setOnInsert: { created_at: now } },
       { upsert: true }
     )
-    return { success: true, message: `已获取 ${doc.name}(${indexCode}) 指数行情`, data: doc }
+    return { success: true, message: `已获取 ${indexCode} 停盘前指数行情`, data: doc }
   } catch (err) {
     return { success: false, message: err instanceof Error ? err.message : '未知错误' }
   }
@@ -696,25 +762,58 @@ export async function fetchKcQuote(code: string): Promise<{ success: boolean; me
   const symbol = normalizeStockCode(code)
   try {
     const d = pickFirstRecord<Record<string, unknown>>(await mairuiApi.kc.realTime(symbol))
-    if (!d) return { success: false, message: '无数据' }
+    if (d) {
+      const now = new Date()
+      const tradeDate = toYmd(d.t) || toYmd(now)
+      const doc = {
+        symbol,
+        name: String(d.mc || symbol),
+        close: toNumber(d.p),
+        open: toNumber(d.o),
+        high: toNumber(d.h),
+        low: toNumber(d.l),
+        pre_close: toNumber(d.yc),
+        pct_chg: toNumber(d.pc),
+        change: toNumber(d.ud),
+        amplitude: toNumber(d.zf),
+        amount: toNumber(d.cje),
+        volume: toNumber(d.v),
+        pe: toNumber(d.pe),
+        turnover_rate: toNumber(d.tr),
+        pb: toNumber(d.pb_ratio),
+        trade_date: tradeDate,
+        data_source: 'mairui_kc',
+        updated_at: now,
+        created_at: now
+      }
+      const db = await getDb()
+      await db.collection('stock_quotes').updateOne(
+        { symbol, trade_date: tradeDate, data_source: 'mairui_kc' },
+        { $set: doc, $setOnInsert: { created_at: now } },
+        { upsert: true }
+      )
+      return { success: true, message: `已获取 ${doc.name}(${symbol}) 科创行情`, data: doc }
+    }
+
+    // 停盘时用最近一天的历史数据替代
+    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsstock.latest(ensureCodeWithMarket(symbol), 'd', 'n', { lt: 1 }))
+    const row = rows.length > 0 ? rows[rows.length - 1] : null
+    if (!row) return { success: false, message: '无数据（停盘且无历史）' }
     const now = new Date()
-    const tradeDate = toYmd(d.t) || toYmd(now)
+    const tradeDate = toYmd(row.t) || toYmd(now)
     const doc = {
       symbol,
-      name: String(d.mc || symbol),
-      close: toNumber(d.p),
-      open: toNumber(d.o),
-      high: toNumber(d.h),
-      low: toNumber(d.l),
-      pre_close: toNumber(d.yc),
-      pct_chg: toNumber(d.pc),
-      change: toNumber(d.ud),
-      amplitude: toNumber(d.zf),
-      amount: toNumber(d.cje),
-      volume: toNumber(d.v),
-      pe: toNumber(d.pe),
-      turnover_rate: toNumber(d.tr),
-      pb: toNumber(d.pb_ratio),
+      name: String(row.mc || symbol),
+      close: toNumber(row.c),
+      open: toNumber(row.o),
+      high: toNumber(row.h),
+      low: toNumber(row.l),
+      pre_close: toNumber(row.pc),
+      pct_chg: 0,
+      change: 0,
+      amplitude: 0,
+      amount: toNumber(row.a),
+      volume: toNumber(row.v),
       trade_date: tradeDate,
       data_source: 'mairui_kc',
       updated_at: now,
@@ -726,7 +825,7 @@ export async function fetchKcQuote(code: string): Promise<{ success: boolean; me
       { $set: doc, $setOnInsert: { created_at: now } },
       { upsert: true }
     )
-    return { success: true, message: `已获取 ${doc.name}(${symbol}) 科创行情`, data: doc }
+    return { success: true, message: `已获取 ${symbol} 停盘前科创行情`, data: doc }
   } catch (err) {
     return { success: false, message: err instanceof Error ? err.message : '未知错误' }
   }
@@ -769,25 +868,58 @@ export async function fetchBjQuote(code: string): Promise<{ success: boolean; me
   const symbol = normalizeStockCode(code)
   try {
     const d = pickFirstRecord<Record<string, unknown>>(await mairuiApi.bj.stockRealTime(symbol))
-    if (!d) return { success: false, message: '无数据' }
+    if (d) {
+      const now = new Date()
+      const tradeDate = toYmd(d.t) || toYmd(now)
+      const doc = {
+        symbol,
+        name: String(d.mc || symbol),
+        close: toNumber(d.p),
+        open: toNumber(d.o),
+        high: toNumber(d.h),
+        low: toNumber(d.l),
+        pre_close: toNumber(d.yc),
+        pct_chg: toNumber(d.pc),
+        change: toNumber(d.ud),
+        amplitude: toNumber(d.zf),
+        amount: toNumber(d.cje),
+        volume: toNumber(d.v),
+        pe: toNumber(d.pe),
+        turnover_rate: toNumber(d.tr),
+        pb: toNumber(d.pb_ratio),
+        trade_date: tradeDate,
+        data_source: 'mairui_bj',
+        updated_at: now,
+        created_at: now
+      }
+      const db = await getDb()
+      await db.collection('stock_quotes').updateOne(
+        { symbol, trade_date: tradeDate, data_source: 'mairui_bj' },
+        { $set: doc, $setOnInsert: { created_at: now } },
+        { upsert: true }
+      )
+      return { success: true, message: `已获取 ${doc.name}(${symbol}) 京市行情`, data: doc }
+    }
+
+    // 停盘时用最近一天的历史数据替代
+    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsstock.latest(ensureCodeWithMarket(symbol), 'd', 'n', { lt: 1 }))
+    const row = rows.length > 0 ? rows[rows.length - 1] : null
+    if (!row) return { success: false, message: '无数据（停盘且无历史）' }
     const now = new Date()
-    const tradeDate = toYmd(d.t) || toYmd(now)
+    const tradeDate = toYmd(row.t) || toYmd(now)
     const doc = {
       symbol,
-      name: String(d.mc || symbol),
-      close: toNumber(d.p),
-      open: toNumber(d.o),
-      high: toNumber(d.h),
-      low: toNumber(d.l),
-      pre_close: toNumber(d.yc),
-      pct_chg: toNumber(d.pc),
-      change: toNumber(d.ud),
-      amplitude: toNumber(d.zf),
-      amount: toNumber(d.cje),
-      volume: toNumber(d.v),
-      pe: toNumber(d.pe),
-      turnover_rate: toNumber(d.tr),
-      pb: toNumber(d.pb_ratio),
+      name: String(row.mc || symbol),
+      close: toNumber(row.c),
+      open: toNumber(row.o),
+      high: toNumber(row.h),
+      low: toNumber(row.l),
+      pre_close: toNumber(row.pc),
+      pct_chg: 0,
+      change: 0,
+      amplitude: 0,
+      amount: toNumber(row.a),
+      volume: toNumber(row.v),
       trade_date: tradeDate,
       data_source: 'mairui_bj',
       updated_at: now,
@@ -799,7 +931,7 @@ export async function fetchBjQuote(code: string): Promise<{ success: boolean; me
       { $set: doc, $setOnInsert: { created_at: now } },
       { upsert: true }
     )
-    return { success: true, message: `已获取 ${doc.name}(${symbol}) 京市行情`, data: doc }
+    return { success: true, message: `已获取 ${symbol} 停盘前京市行情`, data: doc }
   } catch (err) {
     return { success: false, message: err instanceof Error ? err.message : '未知错误' }
   }
