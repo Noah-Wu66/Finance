@@ -313,8 +313,8 @@ export async function fetchAStockQuote(code: string): Promise<{
       return { success: true, message: `已获取 ${doc.name}(${symbol}) 行情`, data: doc }
     }
 
-    // 停盘时实时接口无数据，用最近一天的历史 K 线替代
-    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsstock.latest(ensureCodeWithMarket(symbol), 'd', 'n', { lt: 1 }))
+    // 停盘时实时接口无数据，用最近的历史 K 线替代
+    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsstock.latest(ensureCodeWithMarket(symbol), 'd', 'n', { lt: 10 }))
     const row = rows.length > 0 ? rows[rows.length - 1] : null
     if (!row) return { success: false, message: '无数据（停盘且无历史）' }
     const now = new Date()
@@ -710,8 +710,8 @@ export async function fetchIndexQuote(code: string): Promise<{ success: boolean;
       return { success: true, message: `已获取 ${doc.name}(${indexCode}) 指数行情`, data: doc }
     }
 
-    // 停盘时用最近一天的历史数据替代
-    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsindex.latest(ensureCodeWithMarket(indexCode), 'd', { lt: 1 }))
+    // 停盘时用最近的历史数据替代
+    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsindex.latest(ensureCodeWithMarket(indexCode), 'd', { lt: 10 }))
     const row = rows.length > 0 ? rows[rows.length - 1] : null
     if (!row) return { success: false, message: '无数据（停盘且无历史）' }
     const now = new Date()
@@ -795,8 +795,8 @@ export async function fetchKcQuote(code: string): Promise<{ success: boolean; me
       return { success: true, message: `已获取 ${doc.name}(${symbol}) 科创行情`, data: doc }
     }
 
-    // 停盘时用最近一天的历史数据替代
-    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsstock.latest(ensureCodeWithMarket(symbol), 'd', 'n', { lt: 1 }))
+    // 停盘时用最近的历史数据替代
+    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsstock.latest(ensureCodeWithMarket(symbol), 'd', 'n', { lt: 10 }))
     const row = rows.length > 0 ? rows[rows.length - 1] : null
     if (!row) return { success: false, message: '无数据（停盘且无历史）' }
     const now = new Date()
@@ -901,8 +901,8 @@ export async function fetchBjQuote(code: string): Promise<{ success: boolean; me
       return { success: true, message: `已获取 ${doc.name}(${symbol}) 京市行情`, data: doc }
     }
 
-    // 停盘时用最近一天的历史数据替代
-    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsstock.latest(ensureCodeWithMarket(symbol), 'd', 'n', { lt: 1 }))
+    // 停盘时用最近的历史数据替代
+    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsstock.latest(ensureCodeWithMarket(symbol), 'd', 'n', { lt: 10 }))
     const row = rows.length > 0 ? rows[rows.length - 1] : null
     if (!row) return { success: false, message: '无数据（停盘且无历史）' }
     const now = new Date()

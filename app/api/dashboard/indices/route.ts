@@ -21,7 +21,6 @@ interface IndexItem {
 const INDEX_LIST = [
   { code: '000001', codeWithMarket: '000001.SH', name: '上证指数' },
   { code: '399001', codeWithMarket: '399001.SZ', name: '深证成指' },
-  { code: '899050', codeWithMarket: '899050.BJ', name: '北证50' },
   { code: '399006', codeWithMarket: '399006.SZ', name: '创业板指' }
 ]
 
