@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
     return ok(mapRows(rows, market), '搜索成功')
   }
 
-  // 2. 本地无结果 → 检查数据库有没有数据，没有的话从 mairui 拉取
+  // 2. 本地无结果 → 检查数据库有没有数据，没有的话从 tushare 拉取
   const db = await getDb()
   const count = await db.collection('stock_basic_info').estimatedDocumentCount()
   if (count === 0) {

@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
-import { hasMairuiLicence, mairuiApi } from '@/lib/mairui-data'
+import { hasMairuiLicence, tusharePost, daysAgoYmd, todayYmd } from '@/lib/mairui-data'
 
 interface IndexItem {
   code: string
@@ -29,53 +29,31 @@ function toNum(value: unknown): number {
   return Number.isFinite(n) ? n : 0
 }
 
-function asArray<T>(value: unknown): T[] {
-  if (Array.isArray(value)) return value as T[]
-  if (value && typeof value === 'object') return [value as T]
-  return []
-}
-
-async function fetchRealtimeIndex(code: string): Promise<IndexItem | null> {
+async function fetchIndexProxy(codeWithMarket: string, code: string, name: string): Promise<IndexItem | null> {
   try {
-    const row = asArray<Record<string, unknown>>(await mairuiApi.hsindex.realTime(code))[0]
-    if (!row) return null
-    return {
-      code,
-      name: String(row.mc || row.name || ''),
-      price: toNum(row.p),
-      change: toNum(row.ud),
-      pct_chg: toNum(row.pc),
-      open: toNum(row.o),
-      high: toNum(row.h),
-      low: toNum(row.l),
-      pre_close: toNum(row.yc),
-      volume: toNum(row.v),
-      amount: toNum(row.cje)
-    }
-  } catch {
-    return null
-  }
-}
-
-async function fetchKlineIndex(codeWithMarket: string, code: string, name: string): Promise<IndexItem | null> {
-  try {
-    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsindex.history(codeWithMarket, 'd', { lt: 10 }))
+    const rows = await tusharePost(
+      'index_daily',
+      { ts_code: codeWithMarket, start_date: daysAgoYmd(10), end_date: todayYmd() },
+      ['ts_code', 'trade_date', 'close', 'open', 'high', 'low', 'pre_close', 'change', 'pct_chg', 'vol', 'amount']
+    )
     if (rows.length === 0) return null
-    const row = rows[rows.length - 1]
-    const close = toNum(row.c)
-    const preClose = toNum(row.pc)
+
+    // 按日期倒序
+    rows.sort((a, b) => String(b.trade_date).localeCompare(String(a.trade_date)))
+    const row = rows[0]
+
     return {
       code,
-      name: String(row.mc || name),
-      price: close,
-      change: close - preClose,
-      pct_chg: toNum(row.zf || row.pc),
-      open: toNum(row.o),
-      high: toNum(row.h),
-      low: toNum(row.l),
-      pre_close: preClose,
-      volume: toNum(row.v),
-      amount: toNum(row.a)
+      name,
+      price: toNum(row.close),
+      change: toNum(row.change),
+      pct_chg: toNum(row.pct_chg),
+      open: toNum(row.open),
+      high: toNum(row.high),
+      low: toNum(row.low),
+      pre_close: toNum(row.pre_close),
+      volume: toNum(row.vol),
+      amount: toNum(row.amount)
     }
   } catch {
     return null
@@ -85,40 +63,28 @@ async function fetchKlineIndex(codeWithMarket: string, code: string, name: strin
 export async function GET(request: NextRequest) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
-  if (!hasMairuiLicence()) return fail('未配置 MAIRUI_LICENCE', 503)
+  if (!hasMairuiLicence()) return fail('未配置 TUSHARE_TOKEN', 503)
 
-  const results: IndexItem[] = []
-  const realtimeList = await Promise.all(INDEX_LIST.map((item) => fetchRealtimeIndex(item.code)))
+  const tasks = INDEX_LIST.map((item) => fetchIndexProxy(item.codeWithMarket, item.code, item.name))
+  const resultsData = await Promise.all(tasks)
 
-  const fallbackTasks: Promise<{ index: number; item: IndexItem | null }>[] = []
-  for (let i = 0; i < INDEX_LIST.length; i++) {
-    if (realtimeList[i]) {
-      results[i] = realtimeList[i] as IndexItem
-    } else {
-      const cfg = INDEX_LIST[i]
-      fallbackTasks.push(fetchKlineIndex(cfg.codeWithMarket, cfg.code, cfg.name).then((item) => ({ index: i, item })))
+  const finalResults: IndexItem[] = resultsData.map((res, i) => {
+    if (res) return res
+    const cfg = INDEX_LIST[i]
+    return {
+      code: cfg.code,
+      name: cfg.name,
+      price: 0,
+      change: 0,
+      pct_chg: 0,
+      open: 0,
+      high: 0,
+      low: 0,
+      pre_close: 0,
+      volume: 0,
+      amount: 0
     }
-  }
+  })
 
-  if (fallbackTasks.length > 0) {
-    const fallbackResults = await Promise.all(fallbackTasks)
-    for (const { index, item } of fallbackResults) {
-      const cfg = INDEX_LIST[index]
-      results[index] = item || {
-        code: cfg.code,
-        name: cfg.name,
-        price: 0,
-        change: 0,
-        pct_chg: 0,
-        open: 0,
-        high: 0,
-        low: 0,
-        pre_close: 0,
-        volume: 0,
-        amount: 0
-      }
-    }
-  }
-
-  return ok(results, '获取指数行情成功')
+  return ok(finalResults, '获取指数行情成功')
 }

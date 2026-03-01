@@ -71,12 +71,12 @@ export async function fetchAStockData(code: string): Promise<{
   if (!hasMairuiLicence()) {
     return {
       success: false,
-      message: '未配置 MAIRUI_LICENCE，无法同步',
-      realtime: { success: false, message: '未配置 MAIRUI_LICENCE' },
-      kline: { success: false, message: '未配置 MAIRUI_LICENCE', count: 0 },
-      financial: { success: false, message: '未配置 MAIRUI_LICENCE' },
-      profile: { success: false, message: '未配置 MAIRUI_LICENCE' },
-      extended: { success: false, message: '未配置 MAIRUI_LICENCE' }
+      message: '未配置 TUSHARE_TOKEN，无法同步',
+      realtime: { success: false, message: '未配置 TUSHARE_TOKEN' },
+      kline: { success: false, message: '未配置 TUSHARE_TOKEN', count: 0 },
+      financial: { success: false, message: '未配置 TUSHARE_TOKEN' },
+      profile: { success: false, message: '未配置 TUSHARE_TOKEN' },
+      extended: { success: false, message: '未配置 TUSHARE_TOKEN' }
     }
   }
 
@@ -85,7 +85,7 @@ export async function fetchAStockData(code: string): Promise<{
   const latestQuote = await db.collection('stock_quotes').findOne(
     {
       symbol: normalized,
-      data_source: { $in: ['mairui_a_stock_daily', 'mairui_a_stock'] }
+      data_source: { $in: ['tushare_a_stock_daily', 'tushare_a_stock'] }
     },
     { sort: { updated_at: -1 }, projection: { updated_at: 1 } }
   )
@@ -115,7 +115,7 @@ export async function fetchAStockData(code: string): Promise<{
     symbol: normalized,
     code: normalized,
     market: 'A股',
-    source: 'mairui',
+    source: 'tushare',
     updated_at: now
   }
 

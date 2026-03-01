@@ -10,7 +10,7 @@ interface Payload {
   sync_historical?: boolean
   sync_financial?: boolean
   sync_basic?: boolean
-  data_source?: 'mairui'
+  data_source?: 'tushare'
   days?: number
 }
 
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
       total: symbols.length,
       success_count: successCount,
       failed_count: failedCount,
-      data_source: 'mairui',
+      data_source: 'tushare',
       details
     },
     failedCount === 0 ? '批量同步完成' : '批量同步完成（部分失败）'

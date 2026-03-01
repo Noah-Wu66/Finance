@@ -11,7 +11,7 @@ interface Payload {
   sync_historical?: boolean
   sync_financial?: boolean
   sync_basic?: boolean
-  data_source?: 'mairui'
+  data_source?: 'tushare'
   days?: number
 }
 
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   return ok(
     {
       symbol,
-      data_source: 'mairui',
+      data_source: 'tushare',
       core,
       extended,
       realtime_sync: core.realtime,

@@ -166,7 +166,7 @@ async function loadQuotePack(symbol: string) {
     .find({
       symbol,
       data_source: {
-        $in: ['mairui_a_stock_daily', 'mairui_a_stock']
+        $in: ['tushare_a_stock_daily', 'tushare_a_stock']
       }
     })
     .sort({ trade_date: -1 })
@@ -274,7 +274,7 @@ async function loadKlineHistory(symbol: string, limit = 60) {
     .find({
       symbol,
       data_source: {
-        $in: ['mairui_a_stock_daily', 'mairui_a_stock']
+        $in: ['tushare_a_stock_daily', 'tushare_a_stock']
       }
     })
     .sort({ trade_date: -1 })
@@ -682,11 +682,11 @@ async function loadIndexBenchmarks(lastDate: string, market: string, limit = 60)
       index_code: { $in: getIndexCandidatesByMarket(market) },
       ...(startDate
         ? {
-            $or: [
-              { trade_date: { $lte: startDate } },
-              { trade_date: { $lte: formattedStart } }
-            ]
-          }
+          $or: [
+            { trade_date: { $lte: startDate } },
+            { trade_date: { $lte: formattedStart } }
+          ]
+        }
         : {})
     })
     .sort({ trade_date: -1 })
@@ -1612,19 +1612,19 @@ async function runAIAnalysis(
   const topNews = news.slice(0, 100)
   const newsSummary = topNews.length > 0
     ? topNews.map((n, i) =>
-        `${i + 1}. [${n.date}] [相关度:${n.score}] ${n.title}\n   ${n.snippet}`
-      ).join('\n')
+      `${i + 1}. [${n.date}] [相关度:${n.score}] ${n.title}\n   ${n.snippet}`
+    ).join('\n')
     : '暂无相关新闻'
 
   // 构建深度阅读的网页内容 - 每篇最多10000字符，避免prompt超出上下文窗口
   const MAX_PAGE_CHARS = 10000
   const readPagesSummary = readPagesData.length > 0
     ? readPagesData.map((p, i) => {
-        const truncated = p.content.length > MAX_PAGE_CHARS
-          ? p.content.slice(0, MAX_PAGE_CHARS) + '\n...(内容已截断)'
-          : p.content
-        return `===== 深度阅读 ${i + 1}: ${p.title} =====\n来源: ${p.url}\n${truncated}`
-      }).join('\n\n')
+      const truncated = p.content.length > MAX_PAGE_CHARS
+        ? p.content.slice(0, MAX_PAGE_CHARS) + '\n...(内容已截断)'
+        : p.content
+      return `===== 深度阅读 ${i + 1}: ${p.title} =====\n来源: ${p.url}\n${truncated}`
+    }).join('\n\n')
     : ''
 
   const benchmarkSummary = summarizeBenchmarks(indexBenchmarks)
@@ -1845,13 +1845,13 @@ ${tradingDayText}
     // 验证和提取预测K线
     const predictedKline = Array.isArray(parsed.predicted_kline)
       ? (parsed.predicted_kline as Array<Record<string, unknown>>).map((k) => ({
-          time: normalizeYmd(k.time),
-          open: Number(k.open ?? 0),
-          high: Number(k.high ?? 0),
-          low: Number(k.low ?? 0),
-          close: Number(k.close ?? 0),
-          volume: Number(k.volume ?? 0)
-        }))
+        time: normalizeYmd(k.time),
+        open: Number(k.open ?? 0),
+        high: Number(k.high ?? 0),
+        low: Number(k.low ?? 0),
+        close: Number(k.close ?? 0),
+        volume: Number(k.volume ?? 0)
+      }))
       : []
 
     const alignedPredictedKline = predictedKline.map((bar, idx) => ({
@@ -1929,10 +1929,10 @@ async function buildReport(execution: ExecutionDoc) {
   const keyPoints = aiAnalysis?.ai_key_points?.length
     ? aiAnalysis.ai_key_points
     : [
-        `行业：${basic.industry}`,
-        `价格：${quote.latestClose.toFixed(2)}，阶段变化 ${quote.changePct.toFixed(2)}%`,
-        `ROE：${financial.roe.toFixed(2)}%，PE：${financial.pe.toFixed(2)}，PB：${financial.pb.toFixed(2)}`
-      ]
+      `行业：${basic.industry}`,
+      `价格：${quote.latestClose.toFixed(2)}，阶段变化 ${quote.changePct.toFixed(2)}%`,
+      `ROE：${financial.roe.toFixed(2)}%，PE：${financial.pe.toFixed(2)}，PB：${financial.pb.toFixed(2)}`
+    ]
 
   const analysisId = `live_${Date.now()}_${execution.symbol}`
   const now = new Date()
@@ -2500,14 +2500,14 @@ export async function tickExecution(id: string, userId: string) {
     nextStep += 1
   } else if (execution.step === 4) {
     const basic = context.basic as { name: string; industry: string }
-    
+
     let searchState = (context.search_state as SearchState | undefined) || initSearchState()
-    
+
     if (searchState.phase === 'search') {
       const result = await executeOneSearchRound(searchState, basic.name, execution.symbol, basic.industry)
       searchState = result.state
       logs.push({ at: now, text: result.log })
-      
+
       if (result.done) {
         context.news = searchState.news
         context.read_pages = searchState.readPages
@@ -2537,7 +2537,7 @@ export async function tickExecution(id: string, userId: string) {
       const result = await executeOneReadRound(searchState, basic.name, execution.symbol, basic.industry)
       searchState = result.state
       logs.push({ at: now, text: result.log })
-      
+
       if (result.done) {
         context.news = searchState.news
         context.read_pages = searchState.readPages

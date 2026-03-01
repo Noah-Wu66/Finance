@@ -1,10 +1,9 @@
 import { getDb } from '@/lib/db'
 
-const MAIRUI_LICENCE = (process.env.MAIRUI_LICENCE || '').trim()
-const API_BASE = 'https://api.mairuiapi.com'
-const BULK_API_BASE = 'https://a.mairuiapi.com'
+const TUSHARE_TOKEN = (process.env.TUSHARE_TOKEN || '').trim()
+const TUSHARE_API = 'https://api.tushare.pro'
 
-type QueryValue = string | number | boolean | null | undefined
+// ─── 工具函数 ────────────────────────────────────────────────────────────────
 
 function toNumber(value: unknown): number {
   const num = Number(value)
@@ -24,248 +23,147 @@ function toYmd(value: unknown): string {
   return `${y}${m}${d}`
 }
 
+function todayYmd(): string {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}${m}${d}`
+}
+
+function daysAgoYmd(n: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - n)
+  return d.toISOString().slice(0, 10).replace(/-/g, '')
+}
+
+/** 纯数字代码 → Tushare 带后缀代码：000001 → 000001.SZ */
+function toTsCode(code: string): string {
+  const raw = String(code || '').trim().toUpperCase()
+  if (/\.(SH|SZ|BJ)$/i.test(raw)) return raw
+  const num = raw.replace(/\.(SH|SZ|BJ)$/i, '')
+  if (num.startsWith('6') || num.startsWith('9')) return `${num}.SH`
+  if (num.startsWith('8') || num.startsWith('4')) return `${num}.BJ`
+  return `${num}.SZ`
+}
+
+/** Tushare 代码 → 纯数字：000001.SZ → 000001 */
+function fromTsCode(tsCode: string): string {
+  return String(tsCode || '').trim().toUpperCase().replace(/\.(SH|SZ|BJ)$/i, '')
+}
+
 function normalizeStockCode(code: string): string {
-  return String(code || '').trim().toUpperCase().replace(/\.(SH|SZ|BJ)$/i, '')
+  return fromTsCode(code)
 }
 
-function ensureCodeWithMarket(code: string): string {
-  const normalized = String(code || '').trim().toUpperCase()
-  if (/\.(SH|SZ|BJ)$/i.test(normalized)) return normalized
-  const raw = normalizeStockCode(normalized)
-  if (raw.startsWith('6') || raw.startsWith('9')) return `${raw}.SH`
-  if (raw.startsWith('8') || raw.startsWith('4')) return `${raw}.BJ`
-  return `${raw}.SZ`
-}
+// ─── Tushare HTTP 客户端 ─────────────────────────────────────────────────────
 
-function buildQuery(params?: Record<string, QueryValue>): string {
-  if (!params) return ''
-  const qs = new URLSearchParams()
-  for (const [key, value] of Object.entries(params)) {
-    if (value === undefined || value === null || value === '') continue
-    qs.set(key, String(value))
-  }
-  const query = qs.toString()
-  return query ? `?${query}` : ''
-}
+async function tusharePost(
+  api_name: string,
+  params: Record<string, unknown>,
+  fields: string[]
+): Promise<Array<Record<string, unknown>>> {
+  if (!TUSHARE_TOKEN) throw new Error('未配置 TUSHARE_TOKEN 环境变量')
 
-function buildUrl(path: string, params?: Record<string, QueryValue>, useBulkHost = false): string {
-  if (!MAIRUI_LICENCE) {
-    throw new Error('未配置 MAIRUI_LICENCE 环境变量')
-  }
-  const base = useBulkHost ? BULK_API_BASE : API_BASE
-  const cleanPath = path.startsWith('/') ? path : `/${path}`
-  return `${base}${cleanPath}/${MAIRUI_LICENCE}${buildQuery(params)}`
-}
-
-async function safeFetch(url: string, timeoutMs = 15000): Promise<Response> {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const timer = setTimeout(() => controller.abort(), 20000)
+
+  let res: Response
   try {
-    return await fetch(url, {
+    res = await fetch(TUSHARE_API, {
+      method: 'POST',
       signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_name,
+        token: TUSHARE_TOKEN,
+        params,
+        fields: fields.join(',')
+      })
     })
   } finally {
     clearTimeout(timer)
   }
-}
 
-async function fetchJson(path: string, options?: {
-  params?: Record<string, QueryValue>
-  useBulkHost?: boolean
-  timeoutMs?: number
-}): Promise<any> {
-  const url = buildUrl(path, options?.params, options?.useBulkHost)
-  const res = await safeFetch(url, options?.timeoutMs || 15000)
-  if (!res.ok) {
-    throw new Error(`接口 ${path} 返回 HTTP ${res.status}`)
+  if (!res.ok) throw new Error(`Tushare HTTP ${res.status}`)
+
+  const json = await res.json()
+  if (json.code !== 0) throw new Error(`Tushare ${api_name} 错误：${json.msg}`)
+
+  const { fields: colNames, items } = json.data as {
+    fields: string[]
+    items: unknown[][]
   }
-  return await res.json()
+  if (!Array.isArray(items)) return []
+
+  return items.map((row) => {
+    const obj: Record<string, unknown> = {}
+    colNames.forEach((k, i) => {
+      obj[k] = row[i] ?? null
+    })
+    return obj
+  })
 }
 
-function asArray<T>(value: unknown): T[] {
-  if (Array.isArray(value)) return value as T[]
-  if (value && typeof value === 'object') return [value as T]
-  return []
-}
+// ─── 公开检测函数 ─────────────────────────────────────────────────────────────
 
 export function hasMairuiLicence(): boolean {
-  return MAIRUI_LICENCE.length > 0
+  return TUSHARE_TOKEN.length > 0
 }
 
-export const mairuiApi = {
-  hslt: {
-    list: () => fetchJson('/hslt/list'),
-    newStocks: () => fetchJson('/hslt/new'),
-    sectorsList: () => fetchJson('/hslt/sectorslist'),
-    primaryList: () => fetchJson('/hslt/primarylist'),
-    sectors: (boardName: string) => fetchJson(`/hslt/sectors/${encodeURIComponent(boardName)}`),
-    ztgc: (date: string) => fetchJson(`/hslt/ztgc/${date}`),
-    dtgc: (date: string) => fetchJson(`/hslt/dtgc/${date}`),
-    qsgc: (date: string) => fetchJson(`/hslt/qsgc/${date}`),
-    cxgc: (date: string) => fetchJson(`/hslt/cxgc/${date}`),
-    zbgc: (date: string) => fetchJson(`/hslt/zbgc/${date}`)
-  },
-  hszg: {
-    list: () => fetchJson('/hszg/list'),
-    gg: (conceptCode: string) => fetchJson(`/hszg/gg/${conceptCode}`),
-    zg: (stockCode: string) => fetchJson(`/hszg/zg/${normalizeStockCode(stockCode)}`)
-  },
-  hscp: {
-    gsjj: (stockCode: string) => fetchJson(`/hscp/gsjj/${normalizeStockCode(stockCode)}`),
-    sszs: (stockCode: string) => fetchJson(`/hscp/sszs/${normalizeStockCode(stockCode)}`),
-    ljgg: (stockCode: string) => fetchJson(`/hscp/ljgg/${normalizeStockCode(stockCode)}`),
-    ljds: (stockCode: string) => fetchJson(`/hscp/ljds/${normalizeStockCode(stockCode)}`),
-    ljjj: (stockCode: string) => fetchJson(`/hscp/ljjj/${normalizeStockCode(stockCode)}`),
-    jnfh: (stockCode: string) => fetchJson(`/hscp/jnfh/${normalizeStockCode(stockCode)}`),
-    jnzf: (stockCode: string) => fetchJson(`/hscp/jnzf/${normalizeStockCode(stockCode)}`),
-    jjxs: (stockCode: string) => fetchJson(`/hscp/jjxs/${normalizeStockCode(stockCode)}`),
-    jdlr: (stockCode: string) => fetchJson(`/hscp/jdlr/${normalizeStockCode(stockCode)}`),
-    jdxj: (stockCode: string) => fetchJson(`/hscp/jdxj/${normalizeStockCode(stockCode)}`),
-    yjyg: (stockCode: string) => fetchJson(`/hscp/yjyg/${normalizeStockCode(stockCode)}`),
-    cwzb: (stockCode: string) => fetchJson(`/hscp/cwzb/${normalizeStockCode(stockCode)}`),
-    sdgd: (stockCode: string) => fetchJson(`/hscp/sdgd/${normalizeStockCode(stockCode)}`),
-    ltgd: (stockCode: string) => fetchJson(`/hscp/ltgd/${normalizeStockCode(stockCode)}`),
-    gdbh: (stockCode: string) => fetchJson(`/hscp/gdbh/${normalizeStockCode(stockCode)}`),
-    jjcg: (stockCode: string) => fetchJson(`/hscp/jjcg/${normalizeStockCode(stockCode)}`)
-  },
-  hsrl: {
-    ssjy: (stockCode: string) => fetchJson(`/hsrl/ssjy/${normalizeStockCode(stockCode)}`),
-    zbjy: (stockCode: string) => fetchJson(`/hsrl/zbjy/${normalizeStockCode(stockCode)}`),
-    ssjyMore: (stockCodes: string[]) => fetchJson('/hsrl/ssjy_more', {
-      params: { stock_codes: stockCodes.map((x) => normalizeStockCode(x)).join(',') }
-    }),
-    ssjyAll: () => fetchJson('/hsrl/ssjy/all', { useBulkHost: true }),
-    realAll: () => fetchJson('/hsrl/real/all', { useBulkHost: true })
-  },
-  hsstock: {
-    realTime: (stockCode: string) => fetchJson(`/hsstock/real/time/${normalizeStockCode(stockCode)}`),
-    realFive: (stockCode: string) => fetchJson(`/hsstock/real/five/${normalizeStockCode(stockCode)}`),
-    latest: (codeWithMarket: string, period = 'd', adjust = 'n', params?: Record<string, QueryValue>) =>
-      fetchJson(`/hsstock/latest/${ensureCodeWithMarket(codeWithMarket)}/${period}/${adjust}`, { params }),
-    history: (codeWithMarket: string, period = 'd', adjust = 'n', params?: Record<string, QueryValue>) =>
-      fetchJson(`/hsstock/history/${ensureCodeWithMarket(codeWithMarket)}/${period}/${adjust}`, { params }),
-    stopPriceHistory: (codeWithMarket: string, params?: Record<string, QueryValue>) =>
-      fetchJson(`/hsstock/stopprice/history/${ensureCodeWithMarket(codeWithMarket)}`, { params }),
-    indicators: (codeWithMarket: string, params?: Record<string, QueryValue>) =>
-      fetchJson(`/hsstock/indicators/${ensureCodeWithMarket(codeWithMarket)}`, { params }),
-    instrument: (codeWithMarket: string) => fetchJson(`/hsstock/instrument/${ensureCodeWithMarket(codeWithMarket)}`),
-    historyTransaction: (stockCode: string, params?: Record<string, QueryValue>) =>
-      fetchJson(`/hsstock/history/transaction/${normalizeStockCode(stockCode)}`, { params }),
-    financial: {
-      balance: (codeWithMarket: string, params?: Record<string, QueryValue>) =>
-        fetchJson(`/hsstock/financial/balance/${ensureCodeWithMarket(codeWithMarket)}`, { params }),
-      income: (codeWithMarket: string, params?: Record<string, QueryValue>) =>
-        fetchJson(`/hsstock/financial/income/${ensureCodeWithMarket(codeWithMarket)}`, { params }),
-      cashflow: (codeWithMarket: string, params?: Record<string, QueryValue>) =>
-        fetchJson(`/hsstock/financial/cashflow/${ensureCodeWithMarket(codeWithMarket)}`, { params }),
-      pershareindex: (codeWithMarket: string, params?: Record<string, QueryValue>) =>
-        fetchJson(`/hsstock/financial/pershareindex/${ensureCodeWithMarket(codeWithMarket)}`, { params }),
-      capital: (codeWithMarket: string, params?: Record<string, QueryValue>) =>
-        fetchJson(`/hsstock/financial/capital/${ensureCodeWithMarket(codeWithMarket)}`, { params }),
-      topholder: (codeWithMarket: string, params?: Record<string, QueryValue>) =>
-        fetchJson(`/hsstock/financial/topholder/${ensureCodeWithMarket(codeWithMarket)}`, { params }),
-      flowholder: (codeWithMarket: string, params?: Record<string, QueryValue>) =>
-        fetchJson(`/hsstock/financial/flowholder/${ensureCodeWithMarket(codeWithMarket)}`, { params }),
-      hm: (codeWithMarket: string, params?: Record<string, QueryValue>) =>
-        fetchJson(`/hsstock/financial/hm/${ensureCodeWithMarket(codeWithMarket)}`, { params })
-    },
-    technical: {
-      macd: (codeWithMarket: string, period = 'd', adjust = 'n', params?: Record<string, QueryValue>) =>
-        fetchJson(`/hsstock/history/macd/${ensureCodeWithMarket(codeWithMarket)}/${period}/${adjust}`, { params }),
-      ma: (codeWithMarket: string, period = 'd', adjust = 'n', params?: Record<string, QueryValue>) =>
-        fetchJson(`/hsstock/history/ma/${ensureCodeWithMarket(codeWithMarket)}/${period}/${adjust}`, { params }),
-      boll: (codeWithMarket: string, period = 'd', adjust = 'n', params?: Record<string, QueryValue>) =>
-        fetchJson(`/hsstock/history/boll/${ensureCodeWithMarket(codeWithMarket)}/${period}/${adjust}`, { params }),
-      kdj: (codeWithMarket: string, period = 'd', adjust = 'n', params?: Record<string, QueryValue>) =>
-        fetchJson(`/hsstock/history/kdj/${ensureCodeWithMarket(codeWithMarket)}/${period}/${adjust}`, { params })
-    }
-  },
-  hsindex: {
-    list: () => fetchJson('/hsindex/list'),
-    realTime: (indexCode: string) => fetchJson(`/hsindex/real/time/${normalizeStockCode(indexCode)}`),
-    latest: (indexCodeWithMarket: string, period = 'd', params?: Record<string, QueryValue>) =>
-      fetchJson(`/hsindex/latest/${ensureCodeWithMarket(indexCodeWithMarket)}/${period}`, { params }),
-    history: (indexCodeWithMarket: string, period = 'd', params?: Record<string, QueryValue>) =>
-      fetchJson(`/hsindex/history/${ensureCodeWithMarket(indexCodeWithMarket)}/${period}`, { params }),
-    technical: {
-      macd: (indexCodeWithMarket: string, period = 'd', params?: Record<string, QueryValue>) =>
-        fetchJson(`/hsindex/history/macd/${ensureCodeWithMarket(indexCodeWithMarket)}/${period}`, { params }),
-      ma: (indexCodeWithMarket: string, period = 'd', params?: Record<string, QueryValue>) =>
-        fetchJson(`/hsindex/history/ma/${ensureCodeWithMarket(indexCodeWithMarket)}/${period}`, { params }),
-      boll: (indexCodeWithMarket: string, period = 'd', params?: Record<string, QueryValue>) =>
-        fetchJson(`/hsindex/history/boll/${ensureCodeWithMarket(indexCodeWithMarket)}/${period}`, { params }),
-      kdj: (indexCodeWithMarket: string, period = 'd', params?: Record<string, QueryValue>) =>
-        fetchJson(`/hsindex/history/kdj/${ensureCodeWithMarket(indexCodeWithMarket)}/${period}`, { params })
-    }
-  },
-  bj: {
-    listAll: () => fetchJson('/bj/list/all'),
-    listIndex: () => fetchJson('/bj/list/index'),
-    stockRealTime: (stockCode: string) => fetchJson(`/bj/stock/real/time/${normalizeStockCode(stockCode)}`),
-    stockRealFive: (stockCode: string) => fetchJson(`/bj/stock/real/five/${normalizeStockCode(stockCode)}`),
-    indexRealTime: (indexCode: string) => fetchJson(`/bj/index/real/time/${normalizeStockCode(indexCode)}`)
-  },
-  kc: {
-    listAll: () => fetchJson('/kc/list/all'),
-    realTime: (stockCode: string) => fetchJson(`/kc/real/time/${normalizeStockCode(stockCode)}`),
-    realFive: (stockCode: string) => fetchJson(`/kc/real/five/${normalizeStockCode(stockCode)}`)
-  },
-  fd: {
-    listAll: () => fetchJson('/fd/list/all'),
-    listEtf: () => fetchJson('/fd/list/etf'),
-    realTime: (fundCode: string) => fetchJson(`/fd/real/time/${normalizeStockCode(fundCode)}`)
-  }
-}
+// ─── 工具：写入单一列表集合 ───────────────────────────────────────────────────
 
-async function upsertSimpleList(collection: string, rows: Array<Record<string, unknown>>, market: string) {
+async function upsertSimpleList(
+  collection: string,
+  rows: Array<{ symbol: string; name: string; market: string }>
+): Promise<number> {
   if (rows.length === 0) return 0
   const db = await getDb()
   const now = new Date()
-  const ops = rows.map((row) => {
-    const dm = String(row.dm || '').trim().toUpperCase()
-    const symbol = normalizeStockCode(dm)
-    const name = String(row.mc || row.name || symbol)
-    return {
-      updateOne: {
-        filter: { symbol },
-        update: {
-          $set: {
-            symbol,
-            code: symbol,
-            name,
-            jys: row.jys ? String(row.jys) : undefined,
-            market,
-            source: 'mairui',
-            updated_at: now
-          },
-          $setOnInsert: { created_at: now }
-        },
-        upsert: true
-      }
+  const ops = rows.map((r) => ({
+    updateOne: {
+      filter: { symbol: r.symbol },
+      update: {
+        $set: { symbol: r.symbol, code: r.symbol, name: r.name, market: r.market, source: 'tushare', updated_at: now },
+        $setOnInsert: { created_at: now }
+      },
+      upsert: true
     }
-  })
+  }))
   const result = await db.collection(collection).bulkWrite(ops, { ordered: false })
   return result.upsertedCount + result.modifiedCount
 }
 
-function pickFirstRecord<T>(input: unknown): T | null {
-  const rows = asArray<T>(input)
-  return rows.length > 0 ? rows[0] : null
-}
+// ═══════════════════════════════════════════════════════════════════════════════
+// A 股
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export async function fetchAStockList(): Promise<{
   success: boolean
   message: string
   data?: Array<{ dm: string; mc: string; jys: string }>
 }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 MAIRUI_LICENCE' }
+  if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
   try {
-    const rows = asArray<{ dm: string; mc: string; jys: string }>(await mairuiApi.hslt.list())
-    await upsertSimpleList('stock_basic_info', rows as unknown as Array<Record<string, unknown>>, 'A股')
-    return { success: true, message: `已获取 ${rows.length} 只A股`, data: rows }
+    const rows = await tusharePost(
+      'stock_basic',
+      { list_status: 'L', exchange: '' },
+      ['ts_code', 'symbol', 'name', 'area', 'industry', 'list_date']
+    )
+    const mapped = rows.map((r) => ({
+      dm: fromTsCode(String(r.ts_code || '')),
+      mc: String(r.name || ''),
+      jys: String(r.ts_code || '').includes('.SH') ? 'SSE' : 'SZSE'
+    }))
+    await upsertSimpleList(
+      'stock_basic_info',
+      rows.map((r) => ({
+        symbol: fromTsCode(String(r.ts_code || '')),
+        name: String(r.name || ''),
+        market: 'A股'
+      }))
+    )
+    return { success: true, message: `已获取 ${mapped.length} 只A股`, data: mapped }
   } catch (err) {
     return { success: false, message: err instanceof Error ? err.message : '未知错误' }
   }
@@ -276,74 +174,61 @@ export async function fetchAStockQuote(code: string): Promise<{
   message: string
   data?: Record<string, unknown>
 }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 MAIRUI_LICENCE' }
+  if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
   const symbol = normalizeStockCode(code)
+  const tsCode = toTsCode(symbol)
   try {
-    const d = pickFirstRecord<Record<string, unknown>>(await mairuiApi.hsstock.realTime(symbol))
-    if (d) {
-      const now = new Date()
-      const tradeDate = toYmd(d.t) || toYmd(now)
-      const doc = {
-        symbol,
-        name: String(d.mc || d.name || symbol),
-        close: toNumber(d.p),
-        open: toNumber(d.o),
-        high: toNumber(d.h),
-        low: toNumber(d.l),
-        pre_close: toNumber(d.yc),
-        pct_chg: toNumber(d.pc),
-        change: toNumber(d.ud),
-        amplitude: toNumber(d.zf),
-        amount: toNumber(d.cje),
-        volume: toNumber(d.v),
-        pe: toNumber(d.pe),
-        turnover_rate: toNumber(d.tr),
-        pb: toNumber(d.pb_ratio),
-        trade_date: tradeDate,
-        data_source: 'mairui_a_stock',
-        updated_at: now,
-        created_at: now
-      }
-      const db = await getDb()
-      await db.collection('stock_quotes').updateOne(
-        { symbol, trade_date: tradeDate, data_source: 'mairui_a_stock' },
-        { $set: doc, $setOnInsert: { created_at: now } },
-        { upsert: true }
-      )
-      return { success: true, message: `已获取 ${doc.name}(${symbol}) 行情`, data: doc }
-    }
+    const today = todayYmd()
+    // 先查当日日线，若无数据则找最近5天
+    let dailyRows = await tusharePost(
+      'daily',
+      { ts_code: tsCode, start_date: daysAgoYmd(7), end_date: today },
+      ['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'pre_close', 'change', 'pct_chg', 'vol', 'amount']
+    )
+    // 按日期倒序排，取最新一条
+    dailyRows = dailyRows.sort((a, b) => String(b.trade_date).localeCompare(String(a.trade_date)))
+    const row = dailyRows[0]
+    if (!row) return { success: false, message: '无行情数据' }
 
-    // 停盘时实时接口无数据，用最近的历史 K 线替代
-    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsstock.latest(ensureCodeWithMarket(symbol), 'd', 'n', { lt: 10 }))
-    const row = rows.length > 0 ? rows[rows.length - 1] : null
-    if (!row) return { success: false, message: '无数据（停盘且无历史）' }
-    const now = new Date()
-    const tradeDate = toYmd(row.t) || toYmd(now)
+    // 再查 daily_basic 获取 PE/PB/换手率等（当日或最近）
+    let basicRows = await tusharePost(
+      'daily_basic',
+      { ts_code: tsCode, trade_date: String(row.trade_date) },
+      ['ts_code', 'trade_date', 'pe', 'pb', 'turnover_rate', 'total_mv', 'circ_mv']
+    )
+    const basic = basicRows[0] || {}
+
+    const tradeDate = toYmd(row.trade_date) || today
     const doc = {
       symbol,
-      name: String(row.mc || symbol),
-      close: toNumber(row.c),
-      open: toNumber(row.o),
-      high: toNumber(row.h),
-      low: toNumber(row.l),
-      pre_close: toNumber(row.pc),
-      pct_chg: 0,
-      change: 0,
+      name: symbol,
+      close: toNumber(row.close),
+      open: toNumber(row.open),
+      high: toNumber(row.high),
+      low: toNumber(row.low),
+      pre_close: toNumber(row.pre_close),
+      pct_chg: toNumber(row.pct_chg),
+      change: toNumber(row.change),
       amplitude: 0,
-      amount: toNumber(row.a),
-      volume: toNumber(row.v),
+      amount: toNumber(row.amount),
+      volume: toNumber(row.vol),
+      pe: toNumber(basic.pe),
+      turnover_rate: toNumber(basic.turnover_rate),
+      pb: toNumber(basic.pb),
+      total_mv: toNumber(basic.total_mv),
       trade_date: tradeDate,
-      data_source: 'mairui_a_stock',
-      updated_at: now,
-      created_at: now
+      data_source: 'tushare_a_stock',
+      updated_at: new Date(),
+      created_at: new Date()
     }
+
     const db = await getDb()
     await db.collection('stock_quotes').updateOne(
-      { symbol, trade_date: tradeDate, data_source: 'mairui_a_stock' },
-      { $set: doc, $setOnInsert: { created_at: now } },
+      { symbol, trade_date: tradeDate, data_source: 'tushare_a_stock' },
+      { $set: doc, $setOnInsert: { created_at: new Date() } },
       { upsert: true }
     )
-    return { success: true, message: `已获取 ${symbol} 停盘前行情`, data: doc }
+    return { success: true, message: `已获取 ${symbol} 行情`, data: doc }
   } catch (err) {
     return { success: false, message: err instanceof Error ? err.message : '未知错误' }
   }
@@ -355,41 +240,47 @@ export async function fetchAStockDaily(code: string, days = 60): Promise<{
   count: number
   stockName?: string
 }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 MAIRUI_LICENCE', count: 0 }
+  if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN', count: 0 }
   const symbol = normalizeStockCode(code)
+  const tsCode = toTsCode(symbol)
   try {
-    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsstock.history(ensureCodeWithMarket(symbol), 'd', 'n', { lt: days }))
+    const rows = await tusharePost(
+      'daily',
+      { ts_code: tsCode, start_date: daysAgoYmd(days + 10), end_date: todayYmd() },
+      ['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'pre_close', 'change', 'pct_chg', 'vol', 'amount']
+    )
     if (rows.length === 0) return { success: false, message: '无K线数据', count: 0 }
+
     const db = await getDb()
     const now = new Date()
     let upserted = 0
-    let stockName = ''
     for (const row of rows) {
-      const tradeDate = toYmd(row.t)
+      const tradeDate = toYmd(row.trade_date)
       if (!tradeDate) continue
       const doc = {
         symbol,
-        name: String(row.mc || stockName || symbol),
+        name: symbol,
         trade_date: tradeDate,
-        open: toNumber(row.o),
-        close: toNumber(row.c),
-        high: toNumber(row.h),
-        low: toNumber(row.l),
-        volume: toNumber(row.v),
-        amount: toNumber(row.a),
-        pre_close: toNumber(row.pc),
-        data_source: 'mairui_a_stock_daily',
+        open: toNumber(row.open),
+        close: toNumber(row.close),
+        high: toNumber(row.high),
+        low: toNumber(row.low),
+        volume: toNumber(row.vol),
+        amount: toNumber(row.amount),
+        pre_close: toNumber(row.pre_close),
+        pct_chg: toNumber(row.pct_chg),
+        change: toNumber(row.change),
+        data_source: 'tushare_a_stock_daily',
         updated_at: now
       }
-      if (!stockName && row.mc) stockName = String(row.mc)
       await db.collection('stock_quotes').updateOne(
-        { symbol, trade_date: tradeDate, data_source: 'mairui_a_stock_daily' },
+        { symbol, trade_date: tradeDate, data_source: 'tushare_a_stock_daily' },
         { $set: doc, $setOnInsert: { created_at: now } },
         { upsert: true }
       )
       upserted += 1
     }
-    return { success: true, message: `已获取 ${stockName || symbol} ${upserted} 天K线`, count: upserted, stockName }
+    return { success: true, message: `已获取 ${symbol} ${upserted} 天K线`, count: upserted, stockName: symbol }
   } catch (err) {
     return { success: false, message: err instanceof Error ? err.message : '未知错误', count: 0 }
   }
@@ -400,37 +291,48 @@ export async function fetchAStockFinancialSummary(code: string): Promise<{
   message: string
   data?: { roe: number; revenueGrowth: number; pe: number; pb: number; reportDate: string }
 }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 MAIRUI_LICENCE' }
+  if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
   const symbol = normalizeStockCode(code)
+  const tsCode = toTsCode(symbol)
   try {
-    const [cwzbRaw, quoteRaw] = await Promise.all([
-      mairuiApi.hscp.cwzb(symbol),
-      mairuiApi.hsstock.realTime(symbol)
+    const [finaRows, basicRows] = await Promise.all([
+      tusharePost(
+        'fina_indicator',
+        { ts_code: tsCode },
+        ['ts_code', 'end_date', 'roe', 'grossprofit_margin', 'debt_to_assets', 'revenue_yoy', 'netprofit_yoy']
+      ),
+      tusharePost(
+        'daily_basic',
+        { ts_code: tsCode, trade_date: todayYmd() },
+        ['ts_code', 'trade_date', 'pe', 'pb']
+      )
     ])
-    const cwzb = pickFirstRecord<Record<string, unknown>>(cwzbRaw)
-    const quote = pickFirstRecord<Record<string, unknown>>(quoteRaw)
-    if (!cwzb && !quote) return { success: false, message: '无财务数据' }
 
-    const roe = toNumber(cwzb?.jzsy ?? cwzb?.jqjz ?? cwzb?.jzbc)
-    const revenueGrowth = toNumber(cwzb?.zysr ?? cwzb?.jlzz)
-    const pe = toNumber(quote?.pe)
-    const pb = toNumber(quote?.pb_ratio)
-    const reportDate = String(cwzb?.date || '')
-    const now = new Date()
+    const fina = finaRows[0] || {}
+    const basic = basicRows[0] || {}
+
+    const roe = toNumber(fina.roe)
+    const revenueGrowth = toNumber(fina.revenue_yoy ?? fina.netprofit_yoy)
+    const pe = toNumber(basic.pe)
+    const pb = toNumber(basic.pb)
+    const reportDate = String(fina.end_date || '')
 
     const db = await getDb()
+    const now = new Date()
     await db.collection('financial_data').updateOne(
       { symbol, report_date: reportDate || 'latest' },
       {
         $set: {
           symbol,
-          name: String(quote?.mc || symbol),
+          name: symbol,
           roe,
           pe,
           pb,
           revenue_yoy: revenueGrowth,
+          gross_margin: toNumber(fina.grossprofit_margin),
+          debt_to_assets: toNumber(fina.debt_to_assets),
           report_date: reportDate,
-          data_source: 'mairui_hscp_cwzb',
+          data_source: 'tushare_fina_indicator',
           updated_at: now
         },
         $setOnInsert: { created_at: now }
@@ -453,40 +355,49 @@ export async function fetchAStockProfileSummary(code: string): Promise<{
   message: string
   data?: { industry: string; industryDetail: string }
 }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 MAIRUI_LICENCE' }
+  if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
   const symbol = normalizeStockCode(code)
+  const tsCode = toTsCode(symbol)
   try {
-    const [profileRaw, conceptRaw] = await Promise.all([
-      mairuiApi.hscp.gsjj(symbol),
-      mairuiApi.hszg.zg(symbol)
+    const [basicRows, companyRows] = await Promise.all([
+      tusharePost(
+        'stock_basic',
+        { ts_code: tsCode, list_status: 'L' },
+        ['ts_code', 'name', 'area', 'industry', 'list_date', 'market']
+      ),
+      tusharePost(
+        'stock_company',
+        { ts_code: tsCode },
+        ['ts_code', 'chairman', 'manager', 'reg_capital', 'setup_date', 'province', 'city', 'introduction', 'website', 'employees', 'main_business', 'business_scope']
+      )
     ])
-    const profile = pickFirstRecord<Record<string, unknown>>(profileRaw)
-    const concepts = asArray<Record<string, unknown>>(conceptRaw)
 
-    const relatedNames = concepts.map((item) => String(item.name || '')).filter(Boolean)
-    const industryByConcept = relatedNames.find((name) => name.includes('行业')) || relatedNames[0] || ''
-    const idea = String(profile?.idea || '')
-    const industry = industryByConcept || idea.split(',')[0] || '未知行业'
-    const industryDetail = idea || industry
+    const basic = basicRows[0] || {}
+    const company = companyRows[0] || {}
 
-    const now = new Date()
+    const industry = String(basic.industry || '未知行业')
+    const industryDetail = String(company.main_business || company.introduction || basic.industry || industry)
+    const name = String(basic.name || symbol)
+
     const db = await getDb()
+    const now = new Date()
     await db.collection('stock_basic_info').updateOne(
       { symbol },
       {
         $set: {
           symbol,
           code: symbol,
-          name: String(profile?.name || symbol),
-          market: String(profile?.market || 'A股'),
+          name,
+          market: 'A股',
           industry,
+          area: String(basic.area || ''),
           industry_detail: industryDetail,
-          concepts: relatedNames,
-          list_date: profile?.ldate ? String(profile.ldate) : undefined,
-          website: profile?.site ? String(profile.site) : undefined,
-          company_profile: profile?.desc ? String(profile.desc) : undefined,
-          business_scope: profile?.bscope ? String(profile.bscope) : undefined,
-          source: 'mairui',
+          list_date: String(basic.list_date || ''),
+          website: company.website ? String(company.website) : undefined,
+          company_profile: company.introduction ? String(company.introduction) : undefined,
+          business_scope: company.business_scope ? String(company.business_scope) : undefined,
+          reg_capital: company.reg_capital ? toNumber(company.reg_capital) : undefined,
+          source: 'tushare',
           updated_at: now
         },
         $setOnInsert: { created_at: now }
@@ -506,59 +417,37 @@ export async function fetchAStockExtendedSnapshot(code: string): Promise<{
   results: Record<string, { success: boolean; count?: number; message: string }>
 }> {
   const symbol = normalizeStockCode(code)
+  const tsCode = toTsCode(symbol)
   if (!hasMairuiLicence()) {
-    return {
-      success: false,
-      message: '未配置 MAIRUI_LICENCE',
-      results: {}
-    }
+    return { success: false, message: '未配置 TUSHARE_TOKEN', results: {} }
   }
 
   const results: Record<string, { success: boolean; count?: number; message: string }> = {}
   const db = await getDb()
   const now = new Date()
 
+  // 1. 分红送股
   try {
-    const rows = asArray<Record<string, unknown>>(await mairuiApi.hscp.sszs(symbol))
+    const rows = await tusharePost(
+      'dividend',
+      { ts_code: tsCode },
+      ['ts_code', 'end_date', 'ann_date', 'div_proc', 'stk_div', 'stk_bo_rate', 'stk_co_rate', 'cash_div', 'cash_div_tax', 'record_date', 'ex_date', 'pay_date', 'div_listdate']
+    )
     const ops = rows.map((row) => ({
       updateOne: {
-        filter: { symbol, index_code: String(row.dm || ''), in_date: String(row.ind || '') },
+        filter: { symbol, announce_date: String(row.ann_date || row.end_date || '') },
         update: {
           $set: {
             symbol,
-            index_code: String(row.dm || ''),
-            index_name: String(row.mc || ''),
-            in_date: String(row.ind || ''),
-            out_date: String(row.outd || ''),
-            updated_at: now
-          },
-          $setOnInsert: { created_at: now }
-        },
-        upsert: true
-      }
-    }))
-    if (ops.length > 0) await db.collection('stock_index_membership').bulkWrite(ops, { ordered: false })
-    results.index_membership = { success: true, count: ops.length, message: `写入 ${ops.length} 条` }
-  } catch (err) {
-    results.index_membership = { success: false, message: err instanceof Error ? err.message : '未知错误' }
-  }
-
-  try {
-    const rows = asArray<Record<string, unknown>>(await mairuiApi.hscp.jnfh(symbol))
-    const ops = rows.map((row) => ({
-      updateOne: {
-        filter: { symbol, announce_date: String(row.sdate || '') },
-        update: {
-          $set: {
-            symbol,
-            announce_date: String(row.sdate || ''),
-            give: toNumber(row.give),
-            change: toNumber(row.change),
-            send: toNumber(row.send),
-            progress: String(row.line || ''),
-            ex_date: String(row.cdate || ''),
-            record_date: String(row.edate || ''),
-            listed_date: String(row.hdate || ''),
+            announce_date: String(row.ann_date || ''),
+            ex_date: String(row.ex_date || ''),
+            record_date: String(row.record_date || ''),
+            pay_date: String(row.pay_date || ''),
+            progress: String(row.div_proc || ''),
+            cash_div: toNumber(row.cash_div),
+            stk_div: toNumber(row.stk_div),
+            stk_bo_rate: toNumber(row.stk_bo_rate),
+            stk_co_rate: toNumber(row.stk_co_rate),
             updated_at: now
           },
           $setOnInsert: { created_at: now }
@@ -572,19 +461,25 @@ export async function fetchAStockExtendedSnapshot(code: string): Promise<{
     results.dividends = { success: false, message: err instanceof Error ? err.message : '未知错误' }
   }
 
+  // 2. 限售解禁
   try {
-    const rows = asArray<Record<string, unknown>>(await mairuiApi.hscp.jjxs(symbol))
+    const rows = await tusharePost(
+      'share_float',
+      { ts_code: tsCode },
+      ['ts_code', 'ann_date', 'float_date', 'float_share', 'float_ratio', 'holder_name', 'share_type']
+    )
     const ops = rows.map((row) => ({
       updateOne: {
-        filter: { symbol, unlock_date: String(row.rdate || '') },
+        filter: { symbol, unlock_date: String(row.float_date || ''), holder_name: String(row.holder_name || '') },
         update: {
           $set: {
             symbol,
-            unlock_date: String(row.rdate || ''),
-            unlock_amount_wan: toNumber(row.ramount),
-            unlock_value_yi: toNumber(row.rprice),
-            batch: toNumber(row.batch),
-            announce_date: String(row.pdate || ''),
+            unlock_date: String(row.float_date || ''),
+            announce_date: String(row.ann_date || ''),
+            unlock_amount_wan: toNumber(row.float_share) / 10000,
+            unlock_ratio: toNumber(row.float_ratio),
+            holder_name: String(row.holder_name || ''),
+            share_type: String(row.share_type || ''),
             updated_at: now
           },
           $setOnInsert: { created_at: now }
@@ -598,19 +493,27 @@ export async function fetchAStockExtendedSnapshot(code: string): Promise<{
     results.unlocks = { success: false, message: err instanceof Error ? err.message : '未知错误' }
   }
 
+  // 3. 业绩预告
   try {
-    const rows = asArray<Record<string, unknown>>(await mairuiApi.hscp.yjyg(symbol))
+    const rows = await tusharePost(
+      'forecast',
+      { ts_code: tsCode },
+      ['ts_code', 'ann_date', 'end_date', 'type', 'p_change_min', 'p_change_max', 'net_profit_min', 'net_profit_max', 'last_parent_net', 'first_ann_date', 'summary', 'change_reason']
+    )
     const ops = rows.map((row) => ({
       updateOne: {
-        filter: { symbol, announce_date: String(row.pdate || ''), report_date: String(row.rdate || '') },
+        filter: { symbol, announce_date: String(row.ann_date || ''), report_date: String(row.end_date || '') },
         update: {
           $set: {
             symbol,
-            announce_date: String(row.pdate || ''),
-            report_date: String(row.rdate || ''),
+            announce_date: String(row.ann_date || ''),
+            report_date: String(row.end_date || ''),
             forecast_type: String(row.type || ''),
-            summary: String(row.abs || ''),
-            eps_last_year: toNumber(row.old),
+            p_change_min: toNumber(row.p_change_min),
+            p_change_max: toNumber(row.p_change_max),
+            net_profit_min: toNumber(row.net_profit_min),
+            net_profit_max: toNumber(row.net_profit_max),
+            summary: String(row.summary || row.change_reason || ''),
             updated_at: now
           },
           $setOnInsert: { created_at: now }
@@ -624,37 +527,39 @@ export async function fetchAStockExtendedSnapshot(code: string): Promise<{
     results.earnings_forecast = { success: false, message: err instanceof Error ? err.message : '未知错误' }
   }
 
+  // 4. 前十大流通股东
   try {
-    const instrument = pickFirstRecord<Record<string, unknown>>(await mairuiApi.hsstock.instrument(ensureCodeWithMarket(symbol)))
-    if (!instrument) {
-      results.instrument = { success: false, message: '无基础信息' }
-    } else {
-      await db.collection('stock_instrument').updateOne(
-        { symbol },
-        {
+    const rows = await tusharePost(
+      'top10_floatholders',
+      { ts_code: tsCode },
+      ['ts_code', 'ann_date', 'end_date', 'holder_name', 'hold_amount', 'hold_ratio']
+    )
+    const ops = rows.map((row) => ({
+      updateOne: {
+        filter: { symbol, end_date: String(row.end_date || ''), holder_name: String(row.holder_name || '') },
+        update: {
           $set: {
             symbol,
-            market_code: String(instrument.ei || ''),
-            stock_code: String(instrument.ii || symbol),
-            name: String(instrument.name || symbol),
-            ipo_date: String(instrument.od || ''),
-            pre_close: toNumber(instrument.pc),
-            limit_up: toNumber(instrument.up),
-            limit_down: toNumber(instrument.dp),
-            float_shares: toNumber(instrument.fv),
-            total_shares: toNumber(instrument.tv),
-            suspend_flag: toNumber(instrument.is),
+            end_date: String(row.end_date || ''),
+            ann_date: String(row.ann_date || ''),
+            holder_name: String(row.holder_name || ''),
+            hold_amount: toNumber(row.hold_amount),
+            hold_ratio: toNumber(row.hold_ratio),
             updated_at: now
           },
           $setOnInsert: { created_at: now }
         },
-        { upsert: true }
-      )
-      results.instrument = { success: true, count: 1, message: '写入 1 条' }
-    }
+        upsert: true
+      }
+    }))
+    if (ops.length > 0) await db.collection('stock_top_holders').bulkWrite(ops, { ordered: false })
+    results.instrument = { success: true, count: ops.length, message: `写入 ${ops.length} 条前十大股东` }
   } catch (err) {
     results.instrument = { success: false, message: err instanceof Error ? err.message : '未知错误' }
   }
+
+  // index_membership 无对应接口，跳过
+  results.index_membership = { success: true, count: 0, message: '跳过（Tushare 2000积分不提供指数成份）' }
 
   const allOk = Object.values(results).every((item) => item.success)
   return {
@@ -664,389 +569,250 @@ export async function fetchAStockExtendedSnapshot(code: string): Promise<{
   }
 }
 
-export async function fetchIndexList(): Promise<{ success: boolean; message: string; data?: Array<{ dm: string; mc: string; jys: string }> }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 MAIRUI_LICENCE' }
+// ═══════════════════════════════════════════════════════════════════════════════
+// 指数
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function fetchIndexList(): Promise<{
+  success: boolean
+  message: string
+  data?: Array<{ dm: string; mc: string; jys: string }>
+}> {
+  if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
   try {
-    const rows = asArray<{ dm: string; mc: string; jys: string }>(await mairuiApi.hsindex.list())
-    await upsertSimpleList('index_list', rows as unknown as Array<Record<string, unknown>>, '指数')
-    return { success: true, message: `已获取 ${rows.length} 个指数`, data: rows }
+    const rows = await tusharePost(
+      'index_basic',
+      { market: 'SSE' },
+      ['ts_code', 'name', 'market', 'publisher', 'category', 'list_date']
+    )
+    const mapped = rows.map((r) => ({
+      dm: fromTsCode(String(r.ts_code || '')),
+      mc: String(r.name || ''),
+      jys: String(r.market || 'SSE')
+    }))
+    await upsertSimpleList(
+      'index_list',
+      rows.map((r) => ({
+        symbol: fromTsCode(String(r.ts_code || '')),
+        name: String(r.name || ''),
+        market: '指数'
+      }))
+    )
+    return { success: true, message: `已获取 ${mapped.length} 个指数`, data: mapped }
   } catch (err) {
     return { success: false, message: err instanceof Error ? err.message : '未知错误' }
   }
 }
 
-export async function fetchIndexQuote(code: string): Promise<{ success: boolean; message: string; data?: Record<string, unknown> }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 MAIRUI_LICENCE' }
-  const indexCode = normalizeStockCode(code)
+export async function fetchIndexQuote(code: string): Promise<{
+  success: boolean
+  message: string
+  data?: Record<string, unknown>
+}> {
+  if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
+  const symbol = normalizeStockCode(code)
+  const tsCode = toTsCode(symbol)
   try {
-    const d = pickFirstRecord<Record<string, unknown>>(await mairuiApi.hsindex.realTime(indexCode))
-    if (d) {
-      const now = new Date()
-      const tradeDate = toYmd(d.t) || toYmd(now)
-      const doc = {
-        symbol: indexCode,
-        name: String(d.mc || indexCode),
-        close: toNumber(d.p),
-        open: toNumber(d.o),
-        high: toNumber(d.h),
-        low: toNumber(d.l),
-        pre_close: toNumber(d.yc),
-        pct_chg: toNumber(d.pc),
-        change: toNumber(d.ud),
-        amplitude: toNumber(d.zf),
-        amount: toNumber(d.cje),
-        volume: toNumber(d.v),
-        trade_date: tradeDate,
-        data_source: 'mairui_index',
-        updated_at: now,
-        created_at: now
-      }
-      const db = await getDb()
-      await db.collection('stock_quotes').updateOne(
-        { symbol: indexCode, trade_date: tradeDate, data_source: 'mairui_index' },
-        { $set: doc, $setOnInsert: { created_at: now } },
-        { upsert: true }
-      )
-      return { success: true, message: `已获取 ${doc.name}(${indexCode}) 指数行情`, data: doc }
-    }
+    const rows = await tusharePost(
+      'index_daily',
+      { ts_code: tsCode, start_date: daysAgoYmd(7), end_date: todayYmd() },
+      ['ts_code', 'trade_date', 'close', 'open', 'high', 'low', 'pre_close', 'change', 'pct_chg', 'vol', 'amount']
+    )
+    const sorted = rows.sort((a, b) => String(b.trade_date).localeCompare(String(a.trade_date)))
+    const row = sorted[0]
+    if (!row) return { success: false, message: '无指数行情数据' }
 
-    // 停盘时用最近的历史数据替代
-    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsindex.latest(ensureCodeWithMarket(indexCode), 'd', { lt: 10 }))
-    const row = rows.length > 0 ? rows[rows.length - 1] : null
-    if (!row) return { success: false, message: '无数据（停盘且无历史）' }
-    const now = new Date()
-    const tradeDate = toYmd(row.t) || toYmd(now)
+    const tradeDate = toYmd(row.trade_date) || todayYmd()
     const doc = {
-      symbol: indexCode,
-      name: String(row.mc || indexCode),
-      close: toNumber(row.c),
-      open: toNumber(row.o),
-      high: toNumber(row.h),
-      low: toNumber(row.l),
-      pre_close: toNumber(row.pc),
-      pct_chg: 0,
-      change: 0,
+      symbol,
+      name: symbol,
+      close: toNumber(row.close),
+      open: toNumber(row.open),
+      high: toNumber(row.high),
+      low: toNumber(row.low),
+      pre_close: toNumber(row.pre_close),
+      pct_chg: toNumber(row.pct_chg),
+      change: toNumber(row.change),
       amplitude: 0,
-      amount: toNumber(row.a),
-      volume: toNumber(row.v),
+      amount: toNumber(row.amount),
+      volume: toNumber(row.vol),
       trade_date: tradeDate,
-      data_source: 'mairui_index',
-      updated_at: now,
-      created_at: now
+      data_source: 'tushare_index',
+      updated_at: new Date(),
+      created_at: new Date()
     }
+
     const db = await getDb()
     await db.collection('stock_quotes').updateOne(
-      { symbol: indexCode, trade_date: tradeDate, data_source: 'mairui_index' },
-      { $set: doc, $setOnInsert: { created_at: now } },
+      { symbol, trade_date: tradeDate, data_source: 'tushare_index' },
+      { $set: doc, $setOnInsert: { created_at: new Date() } },
       { upsert: true }
     )
-    return { success: true, message: `已获取 ${indexCode} 停盘前指数行情`, data: doc }
+    return { success: true, message: `已获取 ${symbol} 指数行情`, data: doc }
   } catch (err) {
     return { success: false, message: err instanceof Error ? err.message : '未知错误' }
   }
 }
 
-export async function fetchKcStockList(): Promise<{ success: boolean; message: string; data?: Array<{ dm: string; mc: string; jys: string }> }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 MAIRUI_LICENCE' }
-  try {
-    const rows = asArray<{ dm: string; mc: string; jys: string }>(await mairuiApi.kc.listAll())
-    await upsertSimpleList('kc_stock_list', rows as unknown as Array<Record<string, unknown>>, '科创板')
-    return { success: true, message: `已获取 ${rows.length} 只科创股票`, data: rows }
-  } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : '未知错误' }
-  }
-}
+// ═══════════════════════════════════════════════════════════════════════════════
+// 科创板（统一用 A 股 daily 接口）
+// ═══════════════════════════════════════════════════════════════════════════════
 
-export async function fetchKcQuote(code: string): Promise<{ success: boolean; message: string; data?: Record<string, unknown> }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 MAIRUI_LICENCE' }
-  const symbol = normalizeStockCode(code)
+export async function fetchKcStockList(): Promise<{
+  success: boolean
+  message: string
+  data?: Array<{ dm: string; mc: string; jys: string }>
+}> {
+  if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
   try {
-    const d = pickFirstRecord<Record<string, unknown>>(await mairuiApi.kc.realTime(symbol))
-    if (d) {
-      const now = new Date()
-      const tradeDate = toYmd(d.t) || toYmd(now)
-      const doc = {
-        symbol,
-        name: String(d.mc || symbol),
-        close: toNumber(d.p),
-        open: toNumber(d.o),
-        high: toNumber(d.h),
-        low: toNumber(d.l),
-        pre_close: toNumber(d.yc),
-        pct_chg: toNumber(d.pc),
-        change: toNumber(d.ud),
-        amplitude: toNumber(d.zf),
-        amount: toNumber(d.cje),
-        volume: toNumber(d.v),
-        pe: toNumber(d.pe),
-        turnover_rate: toNumber(d.tr),
-        pb: toNumber(d.pb_ratio),
-        trade_date: tradeDate,
-        data_source: 'mairui_kc',
-        updated_at: now,
-        created_at: now
-      }
-      const db = await getDb()
-      await db.collection('stock_quotes').updateOne(
-        { symbol, trade_date: tradeDate, data_source: 'mairui_kc' },
-        { $set: doc, $setOnInsert: { created_at: now } },
-        { upsert: true }
-      )
-      return { success: true, message: `已获取 ${doc.name}(${symbol}) 科创行情`, data: doc }
-    }
-
-    // 停盘时用最近的历史数据替代
-    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsstock.latest(ensureCodeWithMarket(symbol), 'd', 'n', { lt: 10 }))
-    const row = rows.length > 0 ? rows[rows.length - 1] : null
-    if (!row) return { success: false, message: '无数据（停盘且无历史）' }
-    const now = new Date()
-    const tradeDate = toYmd(row.t) || toYmd(now)
-    const doc = {
-      symbol,
-      name: String(row.mc || symbol),
-      close: toNumber(row.c),
-      open: toNumber(row.o),
-      high: toNumber(row.h),
-      low: toNumber(row.l),
-      pre_close: toNumber(row.pc),
-      pct_chg: 0,
-      change: 0,
-      amplitude: 0,
-      amount: toNumber(row.a),
-      volume: toNumber(row.v),
-      trade_date: tradeDate,
-      data_source: 'mairui_kc',
-      updated_at: now,
-      created_at: now
-    }
-    const db = await getDb()
-    await db.collection('stock_quotes').updateOne(
-      { symbol, trade_date: tradeDate, data_source: 'mairui_kc' },
-      { $set: doc, $setOnInsert: { created_at: now } },
-      { upsert: true }
+    const rows = await tusharePost(
+      'stock_basic',
+      { list_status: 'L', exchange: 'SSE', market: 'STAR' },
+      ['ts_code', 'name', 'area', 'industry', 'list_date']
     )
-    return { success: true, message: `已获取 ${symbol} 停盘前科创行情`, data: doc }
-  } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : '未知错误' }
-  }
-}
-
-export async function fetchKcOrderBook(code: string): Promise<{ success: boolean; message: string; data?: Record<string, unknown> }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 MAIRUI_LICENCE' }
-  try {
-    const data = await mairuiApi.kc.realFive(code)
-    return { success: true, message: `已获取 ${normalizeStockCode(code)} 五档盘口`, data }
-  } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : '未知错误' }
-  }
-}
-
-export async function fetchBjStockList(): Promise<{ success: boolean; message: string; data?: Array<{ dm: string; mc: string; jys: string }> }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 MAIRUI_LICENCE' }
-  try {
-    const rows = asArray<{ dm: string; mc: string; jys: string }>(await mairuiApi.bj.listAll())
-    await upsertSimpleList('bj_stock_list', rows as unknown as Array<Record<string, unknown>>, '京市A股')
-    return { success: true, message: `已获取 ${rows.length} 只京市股票`, data: rows }
-  } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : '未知错误' }
-  }
-}
-
-export async function fetchBjIndexList(): Promise<{ success: boolean; message: string; data?: Array<{ dm: string; mc: string; jys: string }> }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 MAIRUI_LICENCE' }
-  try {
-    const rows = asArray<{ dm: string; mc: string; jys: string }>(await mairuiApi.bj.listIndex())
-    await upsertSimpleList('bj_index_list', rows as unknown as Array<Record<string, unknown>>, '京市指数')
-    return { success: true, message: `已获取 ${rows.length} 个京市指数`, data: rows }
-  } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : '未知错误' }
-  }
-}
-
-export async function fetchBjQuote(code: string): Promise<{ success: boolean; message: string; data?: Record<string, unknown> }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 MAIRUI_LICENCE' }
-  const symbol = normalizeStockCode(code)
-  try {
-    const d = pickFirstRecord<Record<string, unknown>>(await mairuiApi.bj.stockRealTime(symbol))
-    if (d) {
-      const now = new Date()
-      const tradeDate = toYmd(d.t) || toYmd(now)
-      const doc = {
-        symbol,
-        name: String(d.mc || symbol),
-        close: toNumber(d.p),
-        open: toNumber(d.o),
-        high: toNumber(d.h),
-        low: toNumber(d.l),
-        pre_close: toNumber(d.yc),
-        pct_chg: toNumber(d.pc),
-        change: toNumber(d.ud),
-        amplitude: toNumber(d.zf),
-        amount: toNumber(d.cje),
-        volume: toNumber(d.v),
-        pe: toNumber(d.pe),
-        turnover_rate: toNumber(d.tr),
-        pb: toNumber(d.pb_ratio),
-        trade_date: tradeDate,
-        data_source: 'mairui_bj',
-        updated_at: now,
-        created_at: now
-      }
-      const db = await getDb()
-      await db.collection('stock_quotes').updateOne(
-        { symbol, trade_date: tradeDate, data_source: 'mairui_bj' },
-        { $set: doc, $setOnInsert: { created_at: now } },
-        { upsert: true }
-      )
-      return { success: true, message: `已获取 ${doc.name}(${symbol}) 京市行情`, data: doc }
-    }
-
-    // 停盘时用最近的历史数据替代
-    const rows = asArray<Record<string, unknown>>(await mairuiApi.hsstock.latest(ensureCodeWithMarket(symbol), 'd', 'n', { lt: 10 }))
-    const row = rows.length > 0 ? rows[rows.length - 1] : null
-    if (!row) return { success: false, message: '无数据（停盘且无历史）' }
-    const now = new Date()
-    const tradeDate = toYmd(row.t) || toYmd(now)
-    const doc = {
-      symbol,
-      name: String(row.mc || symbol),
-      close: toNumber(row.c),
-      open: toNumber(row.o),
-      high: toNumber(row.h),
-      low: toNumber(row.l),
-      pre_close: toNumber(row.pc),
-      pct_chg: 0,
-      change: 0,
-      amplitude: 0,
-      amount: toNumber(row.a),
-      volume: toNumber(row.v),
-      trade_date: tradeDate,
-      data_source: 'mairui_bj',
-      updated_at: now,
-      created_at: now
-    }
-    const db = await getDb()
-    await db.collection('stock_quotes').updateOne(
-      { symbol, trade_date: tradeDate, data_source: 'mairui_bj' },
-      { $set: doc, $setOnInsert: { created_at: now } },
-      { upsert: true }
+    const mapped = rows.map((r) => ({
+      dm: fromTsCode(String(r.ts_code || '')),
+      mc: String(r.name || ''),
+      jys: 'SSE'
+    }))
+    await upsertSimpleList(
+      'kc_stock_list',
+      rows.map((r) => ({ symbol: fromTsCode(String(r.ts_code || '')), name: String(r.name || ''), market: '科创板' }))
     )
-    return { success: true, message: `已获取 ${symbol} 停盘前京市行情`, data: doc }
+    return { success: true, message: `已获取 ${mapped.length} 只科创股票`, data: mapped }
   } catch (err) {
     return { success: false, message: err instanceof Error ? err.message : '未知错误' }
   }
 }
 
-export async function fetchBjOrderBook(code: string): Promise<{ success: boolean; message: string; data?: Record<string, unknown> }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 MAIRUI_LICENCE' }
-  try {
-    const data = await mairuiApi.bj.stockRealFive(code)
-    return { success: true, message: `已获取 ${normalizeStockCode(code)} 五档盘口`, data }
-  } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : '未知错误' }
-  }
+export async function fetchKcQuote(code: string): Promise<{
+  success: boolean
+  message: string
+  data?: Record<string, unknown>
+}> {
+  return fetchAStockQuote(code)
 }
 
-export async function fetchBjIndexQuote(code: string): Promise<{ success: boolean; message: string; data?: Record<string, unknown> }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 MAIRUI_LICENCE' }
-  const symbol = normalizeStockCode(code)
+export async function fetchKcOrderBook(_code: string): Promise<{
+  success: boolean
+  message: string
+  data?: Record<string, unknown>
+}> {
+  return { success: false, message: 'Tushare 2000积分档不提供实时五档盘口' }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 北交所
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function fetchBjStockList(): Promise<{
+  success: boolean
+  message: string
+  data?: Array<{ dm: string; mc: string; jys: string }>
+}> {
+  if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
   try {
-    const d = pickFirstRecord<Record<string, unknown>>(await mairuiApi.bj.indexRealTime(symbol))
-    if (!d) return { success: false, message: '无数据' }
-    const now = new Date()
-    const tradeDate = toYmd(d.t) || toYmd(now)
-    const doc = {
-      symbol,
-      name: String(d.mc || symbol),
-      close: toNumber(d.p),
-      open: toNumber(d.o),
-      high: toNumber(d.h),
-      low: toNumber(d.l),
-      pre_close: toNumber(d.yc),
-      pct_chg: toNumber(d.pc),
-      change: toNumber(d.ud),
-      amplitude: toNumber(d.zf),
-      amount: toNumber(d.cje),
-      volume: toNumber(d.v),
-      pe: toNumber(d.pe),
-      turnover_rate: toNumber(d.tr),
-      pb: toNumber(d.pb_ratio),
-      trade_date: tradeDate,
-      data_source: 'mairui_bj_index',
-      updated_at: now,
-      created_at: now
-    }
-    const db = await getDb()
-    await db.collection('stock_quotes').updateOne(
-      { symbol, trade_date: tradeDate, data_source: 'mairui_bj_index' },
-      { $set: doc, $setOnInsert: { created_at: now } },
-      { upsert: true }
+    const rows = await tusharePost(
+      'stock_basic',
+      { list_status: 'L', exchange: 'BSE' },
+      ['ts_code', 'name', 'area', 'industry', 'list_date']
     )
-    return { success: true, message: `已获取 ${doc.name}(${symbol}) 京市指数行情`, data: doc }
-  } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : '未知错误' }
-  }
-}
-
-export async function fetchFundList(): Promise<{ success: boolean; message: string; data?: Array<{ dm: string; mc: string; jys: string }> }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 MAIRUI_LICENCE' }
-  try {
-    const rows = asArray<{ dm: string; mc: string; jys: string }>(await mairuiApi.fd.listAll())
-    await upsertSimpleList('fund_list', rows as unknown as Array<Record<string, unknown>>, '基金')
-    return { success: true, message: `已获取 ${rows.length} 只基金`, data: rows }
-  } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : '未知错误' }
-  }
-}
-
-export async function fetchFundQuote(code: string): Promise<{ success: boolean; message: string; data?: Record<string, unknown> }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 MAIRUI_LICENCE' }
-  const symbol = normalizeStockCode(code)
-  try {
-    const d = pickFirstRecord<Record<string, unknown>>(await mairuiApi.fd.realTime(symbol))
-    if (!d) return { success: false, message: '无数据' }
-    const now = new Date()
-    const tradeDate = toYmd(d.t) || toYmd(now)
-    const doc = {
-      symbol,
-      name: String(d.mc || symbol),
-      close: toNumber(d.p),
-      open: toNumber(d.o),
-      high: toNumber(d.h),
-      low: toNumber(d.l),
-      pre_close: toNumber(d.yc),
-      pct_chg: toNumber(d.pc),
-      change: toNumber(d.ud),
-      amplitude: toNumber(d.zf),
-      amount: toNumber(d.cje),
-      volume: toNumber(d.v),
-      pe: toNumber(d.pe),
-      turnover_rate: toNumber(d.tr),
-      pb: toNumber(d.pb_ratio),
-      trade_date: tradeDate,
-      data_source: 'mairui_fund',
-      updated_at: now,
-      created_at: now
-    }
-    const db = await getDb()
-    await db.collection('stock_quotes').updateOne(
-      { symbol, trade_date: tradeDate, data_source: 'mairui_fund' },
-      { $set: doc, $setOnInsert: { created_at: now } },
-      { upsert: true }
+    const mapped = rows.map((r) => ({
+      dm: fromTsCode(String(r.ts_code || '')),
+      mc: String(r.name || ''),
+      jys: 'BSE'
+    }))
+    await upsertSimpleList(
+      'bj_stock_list',
+      rows.map((r) => ({ symbol: fromTsCode(String(r.ts_code || '')), name: String(r.name || ''), market: '京市A股' }))
     )
-    return { success: true, message: `已获取 ${doc.name}(${symbol}) 基金行情`, data: doc }
+    return { success: true, message: `已获取 ${mapped.length} 只京市股票`, data: mapped }
   } catch (err) {
     return { success: false, message: err instanceof Error ? err.message : '未知错误' }
   }
 }
 
-export async function fetchEtfFundList(): Promise<{ success: boolean; message: string; data?: Array<{ dm: string; mc: string; jys: string }> }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 MAIRUI_LICENCE' }
+export async function fetchBjIndexList(): Promise<{
+  success: boolean
+  message: string
+  data?: Array<{ dm: string; mc: string; jys: string }>
+}> {
+  if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
   try {
-    const rows = asArray<{ dm: string; mc: string; jys: string }>(await mairuiApi.fd.listEtf())
-    await upsertSimpleList('etf_fund_list', rows as unknown as Array<Record<string, unknown>>, 'ETF基金')
-    return { success: true, message: `已获取 ${rows.length} 只ETF基金`, data: rows }
+    const rows = await tusharePost(
+      'index_basic',
+      { market: 'BSE' },
+      ['ts_code', 'name', 'market']
+    )
+    const mapped = rows.map((r) => ({
+      dm: fromTsCode(String(r.ts_code || '')),
+      mc: String(r.name || ''),
+      jys: 'BSE'
+    }))
+    await upsertSimpleList(
+      'bj_index_list',
+      rows.map((r) => ({ symbol: fromTsCode(String(r.ts_code || '')), name: String(r.name || ''), market: '京市指数' }))
+    )
+    return { success: true, message: `已获取 ${mapped.length} 个京市指数`, data: mapped }
   } catch (err) {
     return { success: false, message: err instanceof Error ? err.message : '未知错误' }
   }
 }
+
+export async function fetchBjQuote(code: string): Promise<{
+  success: boolean
+  message: string
+  data?: Record<string, unknown>
+}> {
+  return fetchAStockQuote(code)
+}
+
+export async function fetchBjOrderBook(_code: string): Promise<{
+  success: boolean
+  message: string
+  data?: Record<string, unknown>
+}> {
+  return { success: false, message: 'Tushare 2000积分档不提供实时五档盘口' }
+}
+
+export async function fetchBjIndexQuote(code: string): Promise<{
+  success: boolean
+  message: string
+  data?: Record<string, unknown>
+}> {
+  return fetchIndexQuote(code)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 基金（5000积分才有 fund_daily，暂时返回不支持）
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function fetchFundList(): Promise<{
+  success: boolean
+  message: string
+  data?: Array<{ dm: string; mc: string; jys: string }>
+}> {
+  return { success: false, message: 'Tushare fund_daily 需5000积分，暂不支持' }
+}
+
+export async function fetchFundQuote(_code: string): Promise<{
+  success: boolean
+  message: string
+  data?: Record<string, unknown>
+}> {
+  return { success: false, message: 'Tushare fund_daily 需5000积分，暂不支持' }
+}
+
+export async function fetchEtfFundList(): Promise<{
+  success: boolean
+  message: string
+  data?: Array<{ dm: string; mc: string; jys: string }>
+}> {
+  return { success: false, message: 'Tushare fund_daily 需5000积分，暂不支持' }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 对外暴露 tusharePost 供 fetch-quant-data.ts 使用
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export { tusharePost, toTsCode, fromTsCode, todayYmd, daysAgoYmd }

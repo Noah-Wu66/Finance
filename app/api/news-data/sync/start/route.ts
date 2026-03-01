@@ -16,12 +16,12 @@ export async function POST(request: NextRequest) {
 
   const body = (await request.json().catch(() => ({}))) as Payload
   const requested = (body.data_sources || []).map((item) => String(item).trim().toLowerCase())
-  const dataSources = requested.filter((item) => item === 'mairui')
+  const dataSources = requested.filter((item) => item === 'tushare')
   return ok(
     {
       sync_type: body.symbol ? 'single_stock' : 'market',
       symbol: body.symbol || undefined,
-      data_sources: dataSources.length > 0 ? dataSources : ['mairui'],
+      data_sources: dataSources.length > 0 ? dataSources : ['tushare'],
       hours_back: body.hours_back || 24,
       max_news_per_source: body.max_news_per_source || 50
     },
