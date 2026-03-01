@@ -1590,7 +1590,13 @@ async function runAIAnalysis(
     ? institutionHolding.slice(0, 6).map((item, i) => `${i + 1}. ${item.report_date} 持仓户数:${item.holder_num} 变动:${item.holder_change}`).join('\n')
     : '暂无机构持仓数据'
 
+  const nowBJ = new Date(Date.now() + 8 * 60 * 60 * 1000)
+  const todayStr = `${nowBJ.getUTCFullYear()}年${String(nowBJ.getUTCMonth() + 1).padStart(2, '0')}月${String(nowBJ.getUTCDate()).padStart(2, '0')}日`
+  const todayYmd8 = `${nowBJ.getUTCFullYear()}${String(nowBJ.getUTCMonth() + 1).padStart(2, '0')}${String(nowBJ.getUTCDate()).padStart(2, '0')}`
+
   const systemPrompt = `你是一位顶级量化分析师和技术分析专家。你需要基于提供的股票数据、最新新闻资讯和深度阅读的网页内容进行深度分析，并预测未来10个交易日的K线走势。
+
+当前日期：${todayStr}（${todayYmd8}）。所有分析和预测必须以此为基准，未来10个交易日的预测日期必须从当前日期之后开始计算。
 
 你的分析必须严格基于数据，包括：
 1. 技术面分析：K线形态、趋势、支撑位/压力位、成交量变化
@@ -1612,6 +1618,7 @@ async function runAIAnalysis(
   const userMessage = `请分析以下股票并预测未来K线：
 
 【基本信息】
+当前日期：${todayStr}（${todayYmd8}）
 股票：${basic.name}（${execution.symbol}）
 行业：${basic.industry}
 市场：${execution.market}
