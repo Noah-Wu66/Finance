@@ -1,5 +1,6 @@
 import { getDb } from '@/lib/db'
-import { hasMairuiLicence, tusharePost, toTsCode, fromTsCode, todayYmd, daysAgoYmd } from '@/lib/mairui-data'
+import { hasMairuiLicence, tusharePost, toTsCode, todayYmd, daysAgoYmd } from '@/lib/mairui-data'
+import { TUSHARE_CASHFLOW_FIELDS, TUSHARE_FINA_INDICATOR_FIELDS } from '@/lib/tushare-field-sets'
 
 const FRESHNESS_MS = 30 * 60 * 1000
 
@@ -31,6 +32,17 @@ function firstString(row: Record<string, unknown>, keys: string[]): string {
     if (value) return value
   }
   return ''
+}
+
+function hasValue(v: unknown): boolean {
+  if (v === null || v === undefined) return false
+  if (typeof v === 'string') return v.trim().length > 0
+  return true
+}
+
+function averageDefined(a: number | undefined, b: number | undefined): number | undefined {
+  if (a !== undefined && b !== undefined) return Number(((a + b) / 2).toFixed(4))
+  return a ?? b
 }
 
 async function isFresh(collection: string, query: Record<string, unknown>): Promise<boolean> {
@@ -153,20 +165,23 @@ export async function fetchIndexDaily(indexCode = '000300', days = 120): Promise
 // ─── 个股资金流 ───────────────────────────────────────────────────────────────
 
 export async function fetchFundFlow(code: string): Promise<{ success: boolean; message: string; count: number }> {
-  if (await isFresh('stock_fund_flow', { symbol: code })) {
-    return { success: true, message: `${code} 资金流缓存有效`, count: 0 }
+  const symbol = normalizeCode(code)
+  if (await isFresh('stock_fund_flow', { symbol })) {
+    return { success: true, message: `${symbol} 资金流缓存有效`, count: 0 }
   }
   const tok = ensureTushare()
   if (!tok.ok) return { success: false, message: tok.message, count: 0 }
 
   try {
-    const symbol = normalizeCode(code)
     const tsCode = toTsCode(symbol)
     const rows = await tusharePost(
       'moneyflow',
       { ts_code: tsCode, start_date: daysAgoYmd(30), end_date: todayYmd() },
-      ['ts_code', 'trade_date', 'buy_sm_amount', 'sell_sm_amount', 'buy_md_amount', 'sell_md_amount',
-        'buy_lg_amount', 'sell_lg_amount', 'buy_elg_amount', 'sell_elg_amount', 'net_mf_amount']
+      ['ts_code', 'trade_date', 'buy_sm_vol', 'sell_sm_vol', 'buy_md_vol', 'sell_md_vol',
+        'buy_lg_vol', 'sell_lg_vol', 'buy_elg_vol', 'sell_elg_vol',
+        'buy_sm_amount', 'sell_sm_amount', 'buy_md_amount', 'sell_md_amount',
+        'buy_lg_amount', 'sell_lg_amount', 'buy_elg_amount', 'sell_elg_amount',
+        'net_mf_vol', 'net_mf_amount']
     )
     if (rows.length === 0) return { success: false, message: '资金流无数据', count: 0 }
 
@@ -190,6 +205,19 @@ export async function fetchFundFlow(code: string): Promise<{ success: boolean; m
                 sell_elg_amount: toNum(row.sell_elg_amount),
                 buy_lg_amount: toNum(row.buy_lg_amount),
                 sell_lg_amount: toNum(row.sell_lg_amount),
+                buy_md_amount: toNum(row.buy_md_amount),
+                sell_md_amount: toNum(row.sell_md_amount),
+                buy_sm_amount: toNum(row.buy_sm_amount),
+                sell_sm_amount: toNum(row.sell_sm_amount),
+                buy_elg_vol: toNum(row.buy_elg_vol),
+                sell_elg_vol: toNum(row.sell_elg_vol),
+                buy_lg_vol: toNum(row.buy_lg_vol),
+                sell_lg_vol: toNum(row.sell_lg_vol),
+                buy_md_vol: toNum(row.buy_md_vol),
+                sell_md_vol: toNum(row.sell_md_vol),
+                buy_sm_vol: toNum(row.buy_sm_vol),
+                sell_sm_vol: toNum(row.sell_sm_vol),
+                net_mf_vol: toNum(row.net_mf_vol),
                 net_mf_amount: toNum(row.net_mf_amount),
                 source: 'tushare',
                 updated_at: now
@@ -222,34 +250,40 @@ export async function fetchIndustryAggregation(industry: string): Promise<{ succ
   if (!tok.ok) return { success: false, message: tok.message, count: 0 }
 
   try {
-    // 先拉概念列表找到匹配板块
-    const concepts = await tusharePost('concept', {}, ['code', 'name', 'src'])
-    const hit = concepts.find((row) => {
-      const name = firstString(row, ['name'])
-      return name === industry || name.includes(industry) || industry.includes(name)
-    })
-    if (!hit) return { success: false, message: `未找到行业概念 ${industry}`, count: 0 }
-
-    const conceptCode = firstString(hit, ['code'])
-    if (!conceptCode) return { success: false, message: `行业 ${industry} 缺少概念代码`, count: 0 }
-
-    // 拉该板块成分股
-    const members = await tusharePost(
-      'concept_detail',
-      { concept_code: conceptCode },
-      ['ts_code', 'name']
+    // 按官方文档改为 stock_basic 的行业字段聚合，避免使用已下线的 concept/concept_detail
+    const keyword = industry.trim()
+    const basicRows = await tusharePost(
+      'stock_basic',
+      { list_status: 'L', exchange: '' },
+      ['ts_code', 'industry']
     )
-    if (members.length === 0) return { success: false, message: `行业 ${industry} 无成分股`, count: 0 }
 
-    // 拉每日指标
-    const stockCodes = members.slice(0, 50).map((r) => String(r.ts_code))
+    const matchedCodes = basicRows
+      .filter((row) => {
+        const rowIndustry = firstString(row, ['industry'])
+        if (!rowIndustry) return false
+        return rowIndustry === keyword || rowIndustry.includes(keyword) || keyword.includes(rowIndustry)
+      })
+      .map((row) => String(row.ts_code || '').trim().toUpperCase())
+      .filter((code) => code.length > 0)
+
+    if (matchedCodes.length === 0) {
+      return { success: false, message: `未找到行业 ${industry} 的股票列表`, count: 0 }
+    }
+
+    // 按交易日拉全市场日线，再按行业成分过滤
     const dailyRows = await tusharePost(
       'daily',
-      { ts_code: stockCodes.join(','), trade_date: todayYmd() },
+      { trade_date: todayYmd() },
       ['ts_code', 'trade_date', 'pct_chg', 'amount']
     )
 
-    const validQuotes = dailyRows.filter((r) => r.ts_code)
+    const codeSet = new Set(matchedCodes)
+    const validQuotes = dailyRows.filter((row) => codeSet.has(String(row.ts_code || '').trim().toUpperCase()))
+    if (validQuotes.length === 0) {
+      return { success: false, message: `行业 ${industry} 当日无行情数据`, count: 0 }
+    }
+
     const totalPct = validQuotes.reduce((sum, row) => sum + toNum(row.pct_chg), 0)
     const totalAmount = validQuotes.reduce((sum, row) => sum + toNum(row.amount), 0)
     const sentiment = validQuotes.length > 0 ? Number((totalPct / validQuotes.length).toFixed(4)) : 0
@@ -267,6 +301,7 @@ export async function fetchIndustryAggregation(industry: string): Promise<{ succ
           industry_sentiment: sentiment,
           industry_heat: totalAmount,
           sample_count: validQuotes.length,
+          universe_count: matchedCodes.length,
           source: 'tushare',
           updated_at: now
         },
@@ -274,23 +309,27 @@ export async function fetchIndustryAggregation(industry: string): Promise<{ succ
       },
       { upsert: true }
     )
-    return { success: true, message: `行业 ${industry} 聚合已更新`, count: validQuotes.length }
+    return {
+      success: true,
+      message: `行业 ${industry} 聚合已更新（样本 ${validQuotes.length}/${matchedCodes.length}）`,
+      count: validQuotes.length
+    }
   } catch (err) {
-    return { success: false, message: `板块资金流拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
+    return { success: false, message: `行业聚合拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
   }
 }
 
 // ─── 业绩预告 ─────────────────────────────────────────────────────────────────
 
 export async function fetchEarningsExpectation(code: string): Promise<{ success: boolean; message: string; count: number }> {
-  if (await isFresh('earnings_expectation', { symbol: code })) {
-    return { success: true, message: `${code} 业绩预期缓存有效`, count: 0 }
+  const symbol = normalizeCode(code)
+  if (await isFresh('earnings_expectation', { symbol })) {
+    return { success: true, message: `${symbol} 业绩预期缓存有效`, count: 0 }
   }
   const tok = ensureTushare()
   if (!tok.ok) return { success: false, message: tok.message, count: 0 }
 
   try {
-    const symbol = normalizeCode(code)
     const tsCode = toTsCode(symbol)
     const rows = await tusharePost(
       'forecast',
@@ -304,6 +343,13 @@ export async function fetchEarningsExpectation(code: string): Promise<{ success:
     const ops = rows.map((row) => {
       const announceDate = toYmd(row.ann_date) || 'latest'
       const sourceType = firstString(row, ['type']) || 'forecast'
+      const pMin = hasValue(row.p_change_min) ? toNum(row.p_change_min) : undefined
+      const pMax = hasValue(row.p_change_max) ? toNum(row.p_change_max) : undefined
+      const netMin = hasValue(row.net_profit_min) ? toNum(row.net_profit_min) : undefined
+      const netMax = hasValue(row.net_profit_max) ? toNum(row.net_profit_max) : undefined
+      const lastParentNet = hasValue(row.last_parent_net) ? toNum(row.last_parent_net) : undefined
+      const profitChangePct = averageDefined(pMin, pMax)
+      const netProfit = averageDefined(netMin, netMax) ?? lastParentNet
       return {
         updateOne: {
           filter: { symbol, announce_date: announceDate, source_type: sourceType },
@@ -311,12 +357,15 @@ export async function fetchEarningsExpectation(code: string): Promise<{ success:
             $set: {
               symbol,
               announce_date: announceDate,
+              report_date: toYmd(row.end_date) || undefined,
               source_type: sourceType,
               forecast_type: firstString(row, ['type', 'forecast_type']) || undefined,
-              p_change_min: toNum(row.p_change_min),
-              p_change_max: toNum(row.p_change_max),
-              net_profit_min: toNum(row.net_profit_min),
-              net_profit_max: toNum(row.net_profit_max),
+              p_change_min: pMin,
+              p_change_max: pMax,
+              profit_change_pct: profitChangePct,
+              net_profit_min: netMin,
+              net_profit_max: netMax,
+              net_profit: netProfit,
               summary: firstString(row, ['summary', 'change_reason']) || undefined,
               source: 'tushare',
               updated_at: now
@@ -339,25 +388,25 @@ export async function fetchEarningsExpectation(code: string): Promise<{ success:
 // ─── 增强财务 ─────────────────────────────────────────────────────────────────
 
 export async function fetchFinancialEnhanced(code: string): Promise<{ success: boolean; message: string }> {
-  if (await isFresh('financial_enhanced', { symbol: code })) {
-    return { success: true, message: `${code} 增强财务缓存有效` }
+  const symbol = normalizeCode(code)
+  if (await isFresh('financial_enhanced', { symbol })) {
+    return { success: true, message: `${symbol} 增强财务缓存有效` }
   }
   const tok = ensureTushare()
   if (!tok.ok) return { success: false, message: tok.message }
 
   try {
-    const symbol = normalizeCode(code)
     const tsCode = toTsCode(symbol)
     const [finaRows, cashflowRows] = await Promise.all([
       tusharePost(
         'fina_indicator',
         { ts_code: tsCode },
-        ['ts_code', 'end_date', 'grossprofit_margin', 'debt_to_assets', 'netprofit_yoy', 'revenue_yoy', 'roe', 'current_ratio']
+        [...TUSHARE_FINA_INDICATOR_FIELDS]
       ),
       tusharePost(
         'cashflow',
         { ts_code: tsCode, report_type: '1' },
-        ['ts_code', 'end_date', 'n_cashflow_act', 'net_profit']
+        [...TUSHARE_CASHFLOW_FIELDS]
       )
     ])
 
@@ -396,10 +445,10 @@ export async function fetchFinancialEnhanced(code: string): Promise<{ success: b
   }
 }
 
-// ─── 公告（Tushare 5000积分才有，暂不支持）──────────────────────────────────
+// ─── 公告（anns_d：需单独权限）───────────────────────────────────────────────
 
 export async function fetchStockEvents(_code: string): Promise<{ success: boolean; message: string; count: number }> {
-  return { success: false, message: 'Tushare 公告接口需5000积分，暂不支持', count: 0 }
+  return { success: false, message: 'Tushare 公告接口（anns_d）需单独开通权限，当前已跳过', count: 0 }
 }
 
 // ─── 宏观日历 ─────────────────────────────────────────────────────────────────
@@ -408,10 +457,10 @@ export async function fetchMacroCalendar(): Promise<{ success: boolean; message:
   return { success: false, message: 'Tushare 不提供宏观日历，此项已跳过', count: 0 }
 }
 
-// ─── 分钟线（5000积分，暂不支持）────────────────────────────────────────────
+// ─── 分钟线（stk_mins：需单独权限）──────────────────────────────────────────
 
 export async function fetchIntraday(_code: string, _period = '1'): Promise<{ success: boolean; message: string; count: number }> {
-  return { success: false, message: 'Tushare 分钟线需5000积分，暂不支持', count: 0 }
+  return { success: false, message: 'Tushare 分钟线（stk_mins）需单独开通分钟权限，当前已跳过', count: 0 }
 }
 
 // ─── 北向资金（moneyflow_hsgt）────────────────────────────────────────────────
@@ -440,6 +489,9 @@ export async function fetchNorthboundFlow(): Promise<{ success: boolean; message
           $set: {
             type: 'daily',
             trade_date: String(row.trade_date),
+            net_buy: toNum(row.north_money),
+            sh_net_buy: toNum(row.hgt),
+            sz_net_buy: toNum(row.sgt),
             north_money: toNum(row.north_money),
             south_money: toNum(row.south_money),
             hgt: toNum(row.hgt),
@@ -463,96 +515,48 @@ export async function fetchNorthboundFlow(): Promise<{ success: boolean; message
   }
 }
 
-// ─── 融资融券汇总（市场级别，非单股）────────────────────────────────────────
+// ─── 融资融券明细（margin_detail，2000积分可用）──────────────────────────────
 
-export async function fetchMarginTrading(_code: string): Promise<{ success: boolean; message: string; count: number }> {
-  if (await isFresh('margin_trading', { type: 'market_summary' })) {
-    return { success: true, message: '融资融券汇总缓存有效', count: 0 }
+export async function fetchMarginTrading(code: string): Promise<{ success: boolean; message: string; count: number }> {
+  const symbol = normalizeCode(code)
+  if (!symbol) return { success: false, message: '股票代码为空', count: 0 }
+
+  if (await isFresh('margin_trading', { symbol })) {
+    return { success: true, message: `${symbol} 融资融券缓存有效`, count: 0 }
   }
   const tok = ensureTushare()
   if (!tok.ok) return { success: false, message: tok.message, count: 0 }
 
   try {
-    const rows = await tusharePost(
-      'margin',
-      { trade_date: todayYmd() },
-      ['trade_date', 'exchange_id', 'rzye', 'rzmre', 'rzche', 'rqye', 'rqmcl', 'rzrqye']
-    )
-    if (rows.length === 0) return { success: false, message: '融资融券无数据', count: 0 }
-
-    const db = await getDb()
-    const now = new Date()
-    const ops = rows.map((row) => ({
-      updateOne: {
-        filter: { trade_date: String(row.trade_date), exchange_id: String(row.exchange_id) },
-        update: {
-          $set: {
-            type: 'market_summary',
-            trade_date: String(row.trade_date),
-            exchange_id: String(row.exchange_id),
-            margin_balance: toNum(row.rzye),
-            margin_buy: toNum(row.rzmre),
-            short_balance: toNum(row.rqye),
-            short_sell: toNum(row.rqmcl),
-            total_balance: toNum(row.rzrqye),
-            source: 'tushare',
-            updated_at: now
-          },
-          $setOnInsert: { created_at: now }
-        },
-        upsert: true
-      }
-    }))
-    if (ops.length > 0) {
-      await db.collection('margin_trading').bulkWrite(ops, { ordered: false }).catch(() => { })
-    }
-    return { success: true, message: `融资融券汇总已更新 ${ops.length} 条`, count: ops.length }
-  } catch (err) {
-    return { success: false, message: `融资融券拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
-  }
-}
-
-// ─── 龙虎榜（5000积分，暂不支持）────────────────────────────────────────────
-
-export async function fetchDragonTiger(_code: string): Promise<{ success: boolean; message: string; count: number }> {
-  return { success: false, message: 'Tushare 龙虎榜需5000积分，暂不支持', count: 0 }
-}
-
-// ─── 机构持仓（前十大流通股东）───────────────────────────────────────────────
-
-export async function fetchInstitutionHolding(code: string): Promise<{ success: boolean; message: string; count: number }> {
-  if (await isFresh('institution_holding', { symbol: code })) {
-    return { success: true, message: `${code} 机构持仓缓存有效`, count: 0 }
-  }
-  const tok = ensureTushare()
-  if (!tok.ok) return { success: false, message: tok.message, count: 0 }
-
-  try {
-    const symbol = normalizeCode(code)
     const tsCode = toTsCode(symbol)
     const rows = await tusharePost(
-      'top10_floatholders',
-      { ts_code: tsCode },
-      ['ts_code', 'ann_date', 'end_date', 'holder_name', 'hold_amount', 'hold_ratio']
+      'margin_detail',
+      { ts_code: tsCode, start_date: daysAgoYmd(30), end_date: todayYmd() },
+      ['trade_date', 'ts_code', 'name', 'rzye', 'rqye', 'rzmre', 'rqyl', 'rzche', 'rqchl', 'rqmcl', 'rzrqye']
     )
-    if (rows.length === 0) return { success: false, message: '前十大流通股东无数据', count: 0 }
+    if (rows.length === 0) return { success: false, message: '融资融券明细无数据', count: 0 }
 
     const db = await getDb()
     const now = new Date()
     const ops = rows
       .map((row) => {
-        const reportDate = toYmd(row.end_date || row.ann_date)
-        if (!reportDate) return null
+        const tradeDate = toYmd(row.trade_date)
+        if (!tradeDate) return null
         return {
           updateOne: {
-            filter: { symbol, report_date: reportDate, holder_name: String(row.holder_name || '') },
+            filter: { symbol, trade_date: tradeDate },
             update: {
               $set: {
                 symbol,
-                report_date: reportDate,
-                holder_name: String(row.holder_name || ''),
-                hold_amount: toNum(row.hold_amount),
-                hold_ratio: toNum(row.hold_ratio),
+                trade_date: tradeDate,
+                margin_balance: toNum(row.rzye),
+                margin_buy: toNum(row.rzmre),
+                margin_repay: toNum(row.rzche),
+                short_balance: toNum(row.rqye),
+                short_volume: toNum(row.rqyl),
+                short_repay: toNum(row.rqchl),
+                short_sell: toNum(row.rqmcl),
+                total_balance: toNum(row.rzrqye),
                 source: 'tushare',
                 updated_at: now
               },
@@ -565,9 +569,164 @@ export async function fetchInstitutionHolding(code: string): Promise<{ success: 
       .filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
 
     if (ops.length > 0) {
+      await db.collection('margin_trading').bulkWrite(ops, { ordered: false }).catch(() => { })
+    }
+    return { success: true, message: `${symbol} 融资融券明细已更新 ${ops.length} 条`, count: ops.length }
+  } catch (err) {
+    return { success: false, message: `融资融券拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
+  }
+}
+
+// ─── 龙虎榜（top_list，2000积分可用）─────────────────────────────────────────
+
+export async function fetchDragonTiger(code: string): Promise<{ success: boolean; message: string; count: number }> {
+  const symbol = normalizeCode(code)
+  if (!symbol) return { success: false, message: '股票代码为空', count: 0 }
+
+  if (await isFresh('dragon_tiger', { symbol })) {
+    return { success: true, message: `${symbol} 龙虎榜缓存有效`, count: 0 }
+  }
+
+  const tok = ensureTushare()
+  if (!tok.ok) return { success: false, message: tok.message, count: 0 }
+
+  try {
+    const tsCode = toTsCode(symbol)
+    const rows = await tusharePost(
+      'top_list',
+      { ts_code: tsCode, start_date: daysAgoYmd(120), end_date: todayYmd() },
+      ['trade_date', 'ts_code', 'name', 'close', 'pct_change', 'turnover_rate', 'amount', 'l_sell', 'l_buy', 'l_amount', 'net_amount',
+        'net_rate', 'amount_rate', 'float_values', 'reason']
+    )
+    if (rows.length === 0) return { success: false, message: '龙虎榜无数据', count: 0 }
+
+    const db = await getDb()
+    const now = new Date()
+    const ops = rows
+      .map((row) => {
+        const tradeDate = toYmd(row.trade_date)
+        if (!tradeDate) return null
+        const reason = firstString(row, ['reason']) || '上榜'
+        return {
+          updateOne: {
+            filter: { symbol, trade_date: tradeDate, reason },
+            update: {
+              $set: {
+                symbol,
+                trade_date: tradeDate,
+                reason,
+                total_amount: toNum(row.amount),
+                buy_amount: toNum(row.l_buy),
+                sell_amount: toNum(row.l_sell),
+                dragon_amount: toNum(row.l_amount),
+                net_amount: toNum(row.net_amount),
+                close: toNum(row.close),
+                pct_change: toNum(row.pct_change),
+                turnover_rate: toNum(row.turnover_rate),
+                net_rate: toNum(row.net_rate),
+                amount_rate: toNum(row.amount_rate),
+                float_values: toNum(row.float_values),
+                source: 'tushare',
+                updated_at: now
+              },
+              $setOnInsert: { created_at: now }
+            },
+            upsert: true
+          }
+        }
+      })
+      .filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
+
+    if (ops.length > 0) {
+      await db.collection('dragon_tiger').bulkWrite(ops, { ordered: false }).catch(() => { })
+    }
+
+    return { success: true, message: `${symbol} 龙虎榜已更新 ${ops.length} 条`, count: ops.length }
+  } catch (err) {
+    return { success: false, message: `龙虎榜拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
+  }
+}
+
+// ─── 机构持仓（前十大流通股东）───────────────────────────────────────────────
+
+export async function fetchInstitutionHolding(code: string): Promise<{ success: boolean; message: string; count: number }> {
+  const symbol = normalizeCode(code)
+  if (!symbol) return { success: false, message: '股票代码为空', count: 0 }
+
+  if (await isFresh('institution_holding', { symbol, holder_num: { $exists: true } })) {
+    return { success: true, message: `${symbol} 机构持仓缓存有效`, count: 0 }
+  }
+  const tok = ensureTushare()
+  if (!tok.ok) return { success: false, message: tok.message, count: 0 }
+
+  try {
+    const tsCode = toTsCode(symbol)
+    const rows = await tusharePost(
+      'top10_floatholders',
+      { ts_code: tsCode },
+      ['ts_code', 'ann_date', 'end_date', 'holder_name', 'hold_amount', 'hold_ratio', 'hold_change', 'hold_float_ratio', 'holder_type']
+    )
+    if (rows.length === 0) return { success: false, message: '前十大流通股东无数据', count: 0 }
+
+    const grouped = new Map<string, { holders: Set<string>; totalHoldAmount: number; totalHoldRatio: number; sumHoldChange: number }>()
+    for (const row of rows) {
+      const reportDate = toYmd(row.end_date || row.ann_date)
+      if (!reportDate) continue
+
+      const holderName = firstString(row, ['holder_name'])
+      const current = grouped.get(reportDate) || {
+        holders: new Set<string>(),
+        totalHoldAmount: 0,
+        totalHoldRatio: 0,
+        sumHoldChange: 0
+      }
+
+      if (holderName) current.holders.add(holderName)
+      current.totalHoldAmount += toNum(row.hold_amount)
+      current.totalHoldRatio += toNum(row.hold_ratio)
+      current.sumHoldChange += toNum(row.hold_change)
+
+      grouped.set(reportDate, current)
+    }
+
+    if (grouped.size === 0) return { success: false, message: '机构持仓无有效报告期', count: 0 }
+
+    const reportDates = [...grouped.keys()].sort((a, b) => a.localeCompare(b))
+    const db = await getDb()
+    const now = new Date()
+    const ops = reportDates.map((reportDate, idx) => {
+      const current = grouped.get(reportDate)!
+      const prev = idx > 0 ? grouped.get(reportDates[idx - 1]) : undefined
+      const holderChange = prev
+        ? Number((current.totalHoldRatio - prev.totalHoldRatio).toFixed(4))
+        : 0
+
+      return {
+        updateOne: {
+          filter: { symbol, report_date: reportDate },
+          update: {
+            $set: {
+              symbol,
+              report_date: reportDate,
+              holder_num: current.holders.size,
+              holder_change: holderChange,
+              total_hold_amount: Number(current.totalHoldAmount.toFixed(2)),
+              total_hold_ratio: Number(current.totalHoldRatio.toFixed(4)),
+              sum_hold_change: Number(current.sumHoldChange.toFixed(4)),
+              source: 'tushare',
+              updated_at: now
+            },
+            $setOnInsert: { created_at: now }
+          },
+          upsert: true
+        }
+      }
+    })
+
+    if (ops.length > 0) {
       await db.collection('institution_holding').bulkWrite(ops, { ordered: false }).catch(() => { })
     }
-    return { success: true, message: `${symbol} 前十大流通股东已更新 ${ops.length} 条`, count: ops.length }
+    return { success: true, message: `${symbol} 机构持仓已更新 ${ops.length} 期`, count: ops.length }
   } catch (err) {
     return { success: false, message: `机构持仓拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
   }

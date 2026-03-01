@@ -1,4 +1,5 @@
 import { getDb } from '@/lib/db'
+import { TUSHARE_FINA_INDICATOR_FIELDS } from '@/lib/tushare-field-sets'
 
 const TUSHARE_TOKEN = (process.env.TUSHARE_TOKEN || '').trim()
 const TUSHARE_API = 'https://api.tushare.pro'
@@ -148,7 +149,8 @@ export async function fetchAStockList(): Promise<{
     const rows = await tusharePost(
       'stock_basic',
       { list_status: 'L', exchange: '' },
-      ['ts_code', 'symbol', 'name', 'area', 'industry', 'list_date']
+      ['ts_code', 'symbol', 'name', 'area', 'industry', 'fullname', 'enname', 'cnspell', 'market', 'exchange', 'curr_type',
+        'list_status', 'list_date', 'delist_date', 'is_hs', 'act_name', 'act_ent_type']
     )
     const mapped = rows.map((r) => ({
       dm: fromTsCode(String(r.ts_code || '')),
@@ -194,7 +196,8 @@ export async function fetchAStockQuote(code: string): Promise<{
     let basicRows = await tusharePost(
       'daily_basic',
       { ts_code: tsCode, trade_date: String(row.trade_date) },
-      ['ts_code', 'trade_date', 'pe', 'pb', 'turnover_rate', 'total_mv', 'circ_mv']
+      ['ts_code', 'trade_date', 'close', 'turnover_rate', 'turnover_rate_f', 'volume_ratio', 'pe', 'pe_ttm', 'pb', 'ps', 'ps_ttm',
+        'dv_ratio', 'dv_ttm', 'total_share', 'float_share', 'free_share', 'total_mv', 'circ_mv']
     )
     const basic = basicRows[0] || {}
 
@@ -213,9 +216,20 @@ export async function fetchAStockQuote(code: string): Promise<{
       amount: toNumber(row.amount),
       volume: toNumber(row.vol),
       pe: toNumber(basic.pe),
+      pe_ttm: toNumber(basic.pe_ttm),
       turnover_rate: toNumber(basic.turnover_rate),
+      turnover_rate_f: toNumber(basic.turnover_rate_f),
+      volume_ratio: toNumber(basic.volume_ratio),
       pb: toNumber(basic.pb),
+      ps: toNumber(basic.ps),
+      ps_ttm: toNumber(basic.ps_ttm),
+      dv_ratio: toNumber(basic.dv_ratio),
+      dv_ttm: toNumber(basic.dv_ttm),
+      total_share: toNumber(basic.total_share),
+      float_share: toNumber(basic.float_share),
+      free_share: toNumber(basic.free_share),
       total_mv: toNumber(basic.total_mv),
+      circ_mv: toNumber(basic.circ_mv),
       trade_date: tradeDate,
       data_source: 'tushare_a_stock',
       updated_at: new Date(),
@@ -299,12 +313,13 @@ export async function fetchAStockFinancialSummary(code: string): Promise<{
       tusharePost(
         'fina_indicator',
         { ts_code: tsCode },
-        ['ts_code', 'end_date', 'roe', 'grossprofit_margin', 'debt_to_assets', 'revenue_yoy', 'netprofit_yoy']
+        [...TUSHARE_FINA_INDICATOR_FIELDS]
       ),
       tusharePost(
         'daily_basic',
         { ts_code: tsCode, trade_date: todayYmd() },
-        ['ts_code', 'trade_date', 'pe', 'pb']
+        ['ts_code', 'trade_date', 'turnover_rate', 'turnover_rate_f', 'volume_ratio', 'pe', 'pe_ttm', 'pb', 'ps', 'ps_ttm',
+          'dv_ratio', 'dv_ttm', 'total_share', 'float_share', 'free_share', 'total_mv', 'circ_mv']
       )
     ])
 
@@ -327,7 +342,20 @@ export async function fetchAStockFinancialSummary(code: string): Promise<{
           name: symbol,
           roe,
           pe,
+          pe_ttm: toNumber(basic.pe_ttm),
           pb,
+          ps: toNumber(basic.ps),
+          ps_ttm: toNumber(basic.ps_ttm),
+          dv_ratio: toNumber(basic.dv_ratio),
+          dv_ttm: toNumber(basic.dv_ttm),
+          turnover_rate: toNumber(basic.turnover_rate),
+          turnover_rate_f: toNumber(basic.turnover_rate_f),
+          volume_ratio: toNumber(basic.volume_ratio),
+          total_share: toNumber(basic.total_share),
+          float_share: toNumber(basic.float_share),
+          free_share: toNumber(basic.free_share),
+          total_mv: toNumber(basic.total_mv),
+          circ_mv: toNumber(basic.circ_mv),
           revenue_yoy: revenueGrowth,
           gross_margin: toNumber(fina.grossprofit_margin),
           debt_to_assets: toNumber(fina.debt_to_assets),
@@ -363,12 +391,14 @@ export async function fetchAStockProfileSummary(code: string): Promise<{
       tusharePost(
         'stock_basic',
         { ts_code: tsCode, list_status: 'L' },
-        ['ts_code', 'name', 'area', 'industry', 'list_date', 'market']
+        ['ts_code', 'symbol', 'name', 'area', 'industry', 'fullname', 'enname', 'cnspell', 'market', 'exchange', 'curr_type',
+          'list_status', 'list_date', 'delist_date', 'is_hs', 'act_name', 'act_ent_type']
       ),
       tusharePost(
         'stock_company',
         { ts_code: tsCode },
-        ['ts_code', 'chairman', 'manager', 'reg_capital', 'setup_date', 'province', 'city', 'introduction', 'website', 'employees', 'main_business', 'business_scope']
+        ['ts_code', 'exchange', 'chairman', 'manager', 'secretary', 'reg_capital', 'setup_date', 'province', 'city', 'introduction',
+          'website', 'email', 'office', 'employees', 'main_business', 'business_scope', 'com_name', 'com_id']
       )
     ])
 
@@ -392,8 +422,30 @@ export async function fetchAStockProfileSummary(code: string): Promise<{
           industry,
           area: String(basic.area || ''),
           industry_detail: industryDetail,
+          fullname: basic.fullname ? String(basic.fullname) : undefined,
+          name_en: basic.enname ? String(basic.enname) : undefined,
+          cnspell: basic.cnspell ? String(basic.cnspell) : undefined,
+          market_type: basic.market ? String(basic.market) : undefined,
+          exchange: basic.exchange ? String(basic.exchange) : undefined,
+          curr_type: basic.curr_type ? String(basic.curr_type) : undefined,
+          list_status: basic.list_status ? String(basic.list_status) : undefined,
           list_date: String(basic.list_date || ''),
+          delist_date: basic.delist_date ? String(basic.delist_date) : undefined,
+          is_hs: basic.is_hs ? String(basic.is_hs) : undefined,
+          act_name: basic.act_name ? String(basic.act_name) : undefined,
+          act_ent_type: basic.act_ent_type ? String(basic.act_ent_type) : undefined,
+          com_name: company.com_name ? String(company.com_name) : undefined,
+          com_id: company.com_id ? String(company.com_id) : undefined,
+          chairman: company.chairman ? String(company.chairman) : undefined,
+          manager: company.manager ? String(company.manager) : undefined,
+          secretary: company.secretary ? String(company.secretary) : undefined,
+          setup_date: company.setup_date ? String(company.setup_date) : undefined,
+          province: company.province ? String(company.province) : undefined,
+          city: company.city ? String(company.city) : undefined,
           website: company.website ? String(company.website) : undefined,
+          email: company.email ? String(company.email) : undefined,
+          office: company.office ? String(company.office) : undefined,
+          employees: company.employees ? toNumber(company.employees) : undefined,
           company_profile: company.introduction ? String(company.introduction) : undefined,
           business_scope: company.business_scope ? String(company.business_scope) : undefined,
           reg_capital: company.reg_capital ? toNumber(company.reg_capital) : undefined,
@@ -431,7 +483,8 @@ export async function fetchAStockExtendedSnapshot(code: string): Promise<{
     const rows = await tusharePost(
       'dividend',
       { ts_code: tsCode },
-      ['ts_code', 'end_date', 'ann_date', 'div_proc', 'stk_div', 'stk_bo_rate', 'stk_co_rate', 'cash_div', 'cash_div_tax', 'record_date', 'ex_date', 'pay_date', 'div_listdate']
+      ['ts_code', 'end_date', 'ann_date', 'imp_ann_date', 'div_proc', 'stk_div', 'stk_bo_rate', 'stk_co_rate', 'cash_div', 'cash_div_tax',
+        'record_date', 'ex_date', 'pay_date', 'div_listdate', 'base_date', 'base_share']
     )
     const ops = rows.map((row) => ({
       updateOne: {
@@ -440,9 +493,12 @@ export async function fetchAStockExtendedSnapshot(code: string): Promise<{
           $set: {
             symbol,
             announce_date: String(row.ann_date || ''),
+            imp_announce_date: String(row.imp_ann_date || ''),
             ex_date: String(row.ex_date || ''),
             record_date: String(row.record_date || ''),
             pay_date: String(row.pay_date || ''),
+            base_date: String(row.base_date || ''),
+            base_share: toNumber(row.base_share),
             progress: String(row.div_proc || ''),
             cash_div: toNumber(row.cash_div),
             stk_div: toNumber(row.stk_div),
@@ -532,7 +588,7 @@ export async function fetchAStockExtendedSnapshot(code: string): Promise<{
     const rows = await tusharePost(
       'top10_floatholders',
       { ts_code: tsCode },
-      ['ts_code', 'ann_date', 'end_date', 'holder_name', 'hold_amount', 'hold_ratio']
+      ['ts_code', 'ann_date', 'end_date', 'holder_name', 'hold_amount', 'hold_ratio', 'hold_float_ratio', 'hold_change', 'holder_type']
     )
     const ops = rows.map((row) => ({
       updateOne: {
@@ -545,6 +601,9 @@ export async function fetchAStockExtendedSnapshot(code: string): Promise<{
             holder_name: String(row.holder_name || ''),
             hold_amount: toNumber(row.hold_amount),
             hold_ratio: toNumber(row.hold_ratio),
+            hold_float_ratio: toNumber(row.hold_float_ratio),
+            hold_change: toNumber(row.hold_change),
+            holder_type: String(row.holder_type || ''),
             updated_at: now
           },
           $setOnInsert: { created_at: now }
@@ -583,7 +642,7 @@ export async function fetchIndexList(): Promise<{
     const rows = await tusharePost(
       'index_basic',
       { market: 'SSE' },
-      ['ts_code', 'name', 'market', 'publisher', 'category', 'list_date']
+      ['ts_code', 'name', 'fullname', 'market', 'publisher', 'index_type', 'category', 'base_date', 'base_point', 'list_date', 'weight_rule', 'desc', 'exp_date']
     )
     const mapped = rows.map((r) => ({
       dm: fromTsCode(String(r.ts_code || '')),
@@ -668,7 +727,8 @@ export async function fetchKcStockList(): Promise<{
     const rows = await tusharePost(
       'stock_basic',
       { list_status: 'L', exchange: 'SSE', market: 'STAR' },
-      ['ts_code', 'name', 'area', 'industry', 'list_date']
+      ['ts_code', 'symbol', 'name', 'area', 'industry', 'fullname', 'enname', 'cnspell', 'market', 'exchange', 'curr_type',
+        'list_status', 'list_date', 'delist_date', 'is_hs', 'act_name', 'act_ent_type']
     )
     const mapped = rows.map((r) => ({
       dm: fromTsCode(String(r.ts_code || '')),
@@ -715,7 +775,8 @@ export async function fetchBjStockList(): Promise<{
     const rows = await tusharePost(
       'stock_basic',
       { list_status: 'L', exchange: 'BSE' },
-      ['ts_code', 'name', 'area', 'industry', 'list_date']
+      ['ts_code', 'symbol', 'name', 'area', 'industry', 'fullname', 'enname', 'cnspell', 'market', 'exchange', 'curr_type',
+        'list_status', 'list_date', 'delist_date', 'is_hs', 'act_name', 'act_ent_type']
     )
     const mapped = rows.map((r) => ({
       dm: fromTsCode(String(r.ts_code || '')),
@@ -742,7 +803,7 @@ export async function fetchBjIndexList(): Promise<{
     const rows = await tusharePost(
       'index_basic',
       { market: 'BSE' },
-      ['ts_code', 'name', 'market']
+      ['ts_code', 'name', 'fullname', 'market', 'publisher', 'index_type', 'category', 'base_date', 'base_point', 'list_date', 'weight_rule', 'desc', 'exp_date']
     )
     const mapped = rows.map((r) => ({
       dm: fromTsCode(String(r.ts_code || '')),

@@ -1015,7 +1015,7 @@ async function loadInstitutionHolding(symbol: string, limit = 10): Promise<Insti
   const db = await getDb()
   const rows = await db
     .collection(INSTITUTION_HOLDING_COLLECTION)
-    .find({ symbol })
+    .find({ symbol, holder_num: { $exists: true } })
     .sort({ report_date: -1, updated_at: -1, created_at: -1 })
     .limit(limit)
     .toArray()
