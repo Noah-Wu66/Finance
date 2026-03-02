@@ -4,7 +4,7 @@ import { getRequestUser } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { fail, ok } from '@/lib/http'
 import { LOCAL_CACHE_ONE_MINUTE_MS, getOrSetLocalCache } from '@/lib/local-data-cache'
-import { fetchAStockQuote } from '@/lib/mairui-data'
+import { fetchAStockQuote } from '@/lib/tushare-data'
 import { inferMarketFromCode, normalizeMarketName } from '@/lib/market'
 import { userIdOrFilter } from '@/lib/mongo-helpers'
 

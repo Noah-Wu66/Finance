@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
 import { fetchAStockData } from '@/lib/fetch-a-stock'
-import { fetchAStockExtendedSnapshot } from '@/lib/mairui-data'
+import { fetchAStockExtendedSnapshot } from '@/lib/tushare-data'
 import { fail, ok } from '@/lib/http'
 
 interface Payload {

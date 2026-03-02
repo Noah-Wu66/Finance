@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 
 import { analyzeWithAI, isAIEnabled } from '@/lib/ai-client'
 import { getDb } from '@/lib/db'
-import { hasMairuiLicence, tusharePost, toTsCode, todayYmd, daysAgoYmd } from '@/lib/mairui-data'
+import { hasTushareLicence, tusharePost, toTsCode, todayYmd, daysAgoYmd } from '@/lib/tushare-data'
 import { TUSHARE_CASHFLOW_FIELDS, TUSHARE_FINA_INDICATOR_FIELDS } from '@/lib/tushare-field-sets'
 import { callTushare11000 } from '@/lib/tushare-11000-call'
 import { getTushare11000Endpoints, normalizeTushareApiName } from '@/lib/tushare-11000'
@@ -58,7 +58,7 @@ async function isFresh(collection: string, query: Record<string, unknown>): Prom
 }
 
 function ensureTushare(): { ok: true } | { ok: false; message: string } {
-  if (!hasMairuiLicence()) return { ok: false, message: '未配置 TUSHARE_TOKEN' }
+  if (!hasTushareLicence()) return { ok: false, message: '未配置 TUSHARE_TOKEN' }
   return { ok: true }
 }
 

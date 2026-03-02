@@ -1,12 +1,12 @@
 import { getDb } from '@/lib/db'
 import {
-  fetchAStockDaily as fetchAStockDailyFromMairui,
+  fetchAStockDaily as fetchAStockDailyFromTushare,
   fetchAStockExtendedSnapshot,
   fetchAStockFinancialSummary,
   fetchAStockProfileSummary,
-  fetchAStockQuote as fetchAStockQuoteFromMairui,
-  hasMairuiLicence
-} from '@/lib/mairui-data'
+  fetchAStockQuote as fetchAStockQuoteFromTushare,
+  hasTushareLicence
+} from '@/lib/tushare-data'
 
 function normalizeSymbol(code: string): string {
   return String(code || '').trim().toUpperCase().replace(/\.(SH|SZ|BJ)$/i, '')
@@ -17,7 +17,7 @@ export async function fetchRealtimeQuote(code: string): Promise<{
   message: string
   data?: Record<string, unknown>
 }> {
-  return fetchAStockQuoteFromMairui(normalizeSymbol(code))
+  return fetchAStockQuoteFromTushare(normalizeSymbol(code))
 }
 
 export async function fetchDailyKline(code: string, days = 60): Promise<{
@@ -26,7 +26,7 @@ export async function fetchDailyKline(code: string, days = 60): Promise<{
   count: number
   stockName?: string
 }> {
-  return fetchAStockDailyFromMairui(normalizeSymbol(code), days)
+  return fetchAStockDailyFromTushare(normalizeSymbol(code), days)
 }
 
 export async function fetchFinancialData(code: string): Promise<{
@@ -68,7 +68,7 @@ export async function fetchAStockData(code: string): Promise<{
     }
   }
 
-  if (!hasMairuiLicence()) {
+  if (!hasTushareLicence()) {
     return {
       success: false,
       message: '未配置 TUSHARE_TOKEN，无法同步',

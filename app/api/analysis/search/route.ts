@@ -4,7 +4,7 @@ import { getRequestUser } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { fail, ok } from '@/lib/http'
 import { inferMarketFromCode, normalizeMarketName } from '@/lib/market'
-import { fetchAStockList } from '@/lib/mairui-data'
+import { fetchAStockList } from '@/lib/tushare-data'
 
 async function searchLocal(keyword: string, limit = 30) {
   const db = await getDb()

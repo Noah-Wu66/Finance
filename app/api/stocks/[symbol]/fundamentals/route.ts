@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server'
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
 import { LOCAL_CACHE_ONE_MINUTE_MS, getOrSetLocalCache } from '@/lib/local-data-cache'
-import { fetchAStockFinancialSummary, fetchAStockProfileSummary, fetchAStockQuote } from '@/lib/mairui-data'
+import { fetchAStockFinancialSummary, fetchAStockProfileSummary, fetchAStockQuote } from '@/lib/tushare-data'
 
 function pickNum(...values: unknown[]): number {
   for (const value of values) {

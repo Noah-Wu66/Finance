@@ -258,7 +258,7 @@ async function tusharePost(
 
 // ─── 公开检测函数 ─────────────────────────────────────────────────────────────
 
-export function hasMairuiLicence(): boolean {
+export function hasTushareLicence(): boolean {
   return TUSHARE_TOKEN.length > 0
 }
 
@@ -294,7 +294,7 @@ export async function fetchAStockList(): Promise<{
   message: string
   data?: Array<{ dm: string; mc: string; jys: string }>
 }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
+  if (!hasTushareLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
   try {
     const rows = await tusharePost(
       'stock_basic',
@@ -326,7 +326,7 @@ export async function fetchAStockQuote(code: string): Promise<{
   message: string
   data?: Record<string, unknown>
 }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
+  if (!hasTushareLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
   const symbol = normalizeStockCode(code)
   const tsCode = toTsCode(symbol)
   try {
@@ -350,11 +350,20 @@ export async function fetchAStockQuote(code: string): Promise<{
     if (!row) {
       let dailyRows = await tusharePost(
         'daily',
-        { ts_code: tsCode, start_date: daysAgoYmd(7), end_date: today },
+        { ts_code: tsCode, start_date: daysAgoYmd(30), end_date: today },
         quoteFields
       )
       dailyRows = dailyRows.sort((a, b) => String(b.trade_date).localeCompare(String(a.trade_date)))
       row = dailyRows[0]
+    }
+
+    if (!row) {
+      const latestRows = await tusharePost(
+        'daily',
+        { ts_code: tsCode, limit: 1 },
+        quoteFields
+      )
+      row = latestRows[0]
     }
 
     if (!row) return { success: false, message: '无行情数据' }
@@ -421,7 +430,7 @@ export async function fetchAStockDaily(code: string, days = 60): Promise<{
   count: number
   stockName?: string
 }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN', count: 0 }
+  if (!hasTushareLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN', count: 0 }
   const symbol = normalizeStockCode(code)
   const tsCode = toTsCode(symbol)
   try {
@@ -472,7 +481,7 @@ export async function fetchAStockFinancialSummary(code: string): Promise<{
   message: string
   data?: { roe: number; revenueGrowth: number; pe: number; pb: number; reportDate: string }
 }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
+  if (!hasTushareLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
   const symbol = normalizeStockCode(code)
   const tsCode = toTsCode(symbol)
   try {
@@ -550,7 +559,7 @@ export async function fetchAStockProfileSummary(code: string): Promise<{
   message: string
   data?: { name: string; industry: string; industryDetail: string }
 }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
+  if (!hasTushareLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
   const symbol = normalizeStockCode(code)
   const tsCode = toTsCode(symbol)
   try {
@@ -637,7 +646,7 @@ export async function fetchAStockExtendedSnapshot(code: string): Promise<{
 }> {
   const symbol = normalizeStockCode(code)
   const tsCode = toTsCode(symbol)
-  if (!hasMairuiLicence()) {
+  if (!hasTushareLicence()) {
     return { success: false, message: '未配置 TUSHARE_TOKEN', results: {} }
   }
 
@@ -809,7 +818,7 @@ export async function fetchKcStockList(): Promise<{
   message: string
   data?: Array<{ dm: string; mc: string; jys: string }>
 }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
+  if (!hasTushareLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
   try {
     const rows = await tusharePost(
       'stock_basic',
@@ -849,7 +858,7 @@ export async function fetchBjStockList(): Promise<{
   message: string
   data?: Array<{ dm: string; mc: string; jys: string }>
 }> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
+  if (!hasTushareLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
   try {
     const rows = await tusharePost(
       'stock_basic',

@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
-import { daysAgoYmd, todayYmd, tusharePost } from '@/lib/mairui-data'
+import { daysAgoYmd, todayYmd, tusharePost } from '@/lib/tushare-data'
 
 interface IndexItem {
   code: string

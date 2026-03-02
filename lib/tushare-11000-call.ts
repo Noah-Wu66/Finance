@@ -1,4 +1,4 @@
-import { daysAgoYmd, todayYmd, tusharePost } from '@/lib/mairui-data'
+import { daysAgoYmd, todayYmd, tusharePost } from '@/lib/tushare-data'
 import {
   findTushare11000Endpoint,
   findTushare11000EndpointsByApiName,

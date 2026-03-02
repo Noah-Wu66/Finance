@@ -3,13 +3,13 @@ import { NextRequest } from 'next/server'
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
 import { LOCAL_CACHE_ONE_MINUTE_MS, getOrSetLocalCache } from '@/lib/local-data-cache'
-import { hasMairuiLicence, todayYmd, tusharePost } from '@/lib/mairui-data'
+import { hasTushareLicence, todayYmd, tusharePost } from '@/lib/tushare-data'
 
 export async function GET(request: NextRequest) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
 
-  if (!hasMairuiLicence()) {
+  if (!hasTushareLicence()) {
     return ok(
       {
         status: 'disabled',

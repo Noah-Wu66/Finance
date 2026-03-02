@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
-import { fetchAStockQuote } from '@/lib/mairui-data'
+import { fetchAStockQuote } from '@/lib/tushare-data'
 
 function toNum(value: unknown): number {
   const num = Number(value)

@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server'
 import { getRequestUser } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { fail, ok } from '@/lib/http'
-import { fetchAStockQuote } from '@/lib/mairui-data'
+import { fetchAStockQuote } from '@/lib/tushare-data'
 import { maybeObjectId } from '@/lib/mongo-helpers'
 
 function toNum(value: unknown): number {

@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
-import { hasMairuiLicence, tusharePost } from '@/lib/mairui-data'
+import { hasTushareLicence, tusharePost } from '@/lib/tushare-data'
 import { buildTushare11000Params } from '@/lib/tushare-11000-call'
 import { getTushare11000Endpoints, normalizeTushareApiName } from '@/lib/tushare-11000'
 
@@ -24,7 +24,7 @@ function toInt(value: unknown, fallback: number): number {
 export async function POST(request: NextRequest) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
-  if (!hasMairuiLicence()) return fail('未配置 TUSHARE_TOKEN', 503)
+  if (!hasTushareLicence()) return fail('未配置 TUSHARE_TOKEN', 503)
 
   const body = (await request.json().catch(() => ({}))) as SyncPayload
   const selectedApiNames = (Array.isArray(body.api_names) ? body.api_names : [])

@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
-import { hasMairuiLicence } from '@/lib/mairui-data'
+import { hasTushareLicence } from '@/lib/tushare-data'
 import { callTushare11000, Tushare11000CallError } from '@/lib/tushare-11000-call'
 
 interface QueryPayload {
@@ -18,7 +18,7 @@ interface QueryPayload {
 export async function POST(request: NextRequest) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
-  if (!hasMairuiLicence()) return fail('未配置 TUSHARE_TOKEN', 503)
+  if (!hasTushareLicence()) return fail('未配置 TUSHARE_TOKEN', 503)
 
   const body = (await request.json().catch(() => ({}))) as QueryPayload
 

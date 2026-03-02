@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server'
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
 import { LOCAL_CACHE_ONE_MINUTE_MS, getOrSetLocalCache } from '@/lib/local-data-cache'
-import { fetchAStockProfileSummary, fetchAStockQuote } from '@/lib/mairui-data'
+import { fetchAStockProfileSummary, fetchAStockQuote } from '@/lib/tushare-data'
 
 function toNum(value: unknown): number {
   const num = Number(value)
