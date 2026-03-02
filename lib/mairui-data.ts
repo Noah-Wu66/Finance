@@ -1,8 +1,16 @@
+import { createHash } from 'node:crypto'
+
 import { getDb } from '@/lib/db'
+import { findTushare11000Endpoint } from '@/lib/tushare-11000'
 import { TUSHARE_FINA_INDICATOR_FIELDS } from '@/lib/tushare-field-sets'
 
 const TUSHARE_TOKEN = (process.env.TUSHARE_TOKEN || '').trim()
 const TUSHARE_API = 'https://api.tushare.pro'
+const TUSHARE_RAW_COLLECTION = 'tushare_api_data'
+const TUSHARE_SYNC_LOG_COLLECTION = 'tushare_api_sync_logs'
+const TUSHARE_AUTO_MIRROR = (process.env.TUSHARE_AUTO_MIRROR || '1').trim() !== '0'
+
+let rawIndexReady = false
 
 // ─── 工具函数 ────────────────────────────────────────────────────────────────
 
@@ -57,6 +65,127 @@ function normalizeStockCode(code: string): string {
   return fromTsCode(code)
 }
 
+function stableRowHash(row: Record<string, unknown>): string {
+  const keys = Object.keys(row).sort((a, b) => a.localeCompare(b))
+  const payload = keys.map((key) => [key, row[key]])
+  return createHash('sha1').update(JSON.stringify(payload)).digest('hex')
+}
+
+function buildRawRowKey(apiName: string, row: Record<string, unknown>, params: Record<string, unknown>): string {
+  const candidates = [
+    'ts_code', 'trade_date', 'end_date', 'ann_date', 'report_date', 'cal_date', 'date', 'month', 'quarter',
+    'exchange', 'market', 'symbol', 'index_code', 'concept_code', 'block_code', 'capital_id', 'bank', 'type', 'holder_name'
+  ]
+  const parts: string[] = []
+
+  for (const key of candidates) {
+    const value = row[key]
+    if (value === null || value === undefined || value === '') continue
+    parts.push(`${key}=${String(value).trim()}`)
+  }
+
+  if (parts.length === 0) {
+    const paramCandidates = ['ts_code', 'trade_date', 'start_date', 'end_date', 'month', 'quarter', 'exchange', 'market']
+    for (const key of paramCandidates) {
+      const value = params[key]
+      if (value === null || value === undefined || value === '') continue
+      parts.push(`p_${key}=${String(value).trim()}`)
+    }
+  }
+
+  if (parts.length === 0) {
+    parts.push(`hash=${stableRowHash(row)}`)
+  }
+
+  return `${apiName}|${parts.join('|')}`
+}
+
+async function ensureRawIndexes() {
+  if (rawIndexReady) return
+  const db = await getDb()
+  await Promise.all([
+    db.collection(TUSHARE_RAW_COLLECTION).createIndex({ api_name: 1, row_key: 1 }, { unique: true }),
+    db.collection(TUSHARE_RAW_COLLECTION).createIndex({ api_name: 1, fetched_at: -1 }),
+    db.collection(TUSHARE_RAW_COLLECTION).createIndex({ api_name: 1, ts_code: 1, trade_date: -1 }),
+    db.collection(TUSHARE_SYNC_LOG_COLLECTION).createIndex({ api_name: 1, requested_at: -1 })
+  ]).catch(() => { })
+  rawIndexReady = true
+}
+
+async function mirrorTushareRows(args: {
+  apiName: string
+  params: Record<string, unknown>
+  fields: string[]
+  rows: Array<Record<string, unknown>>
+}) {
+  if (!TUSHARE_AUTO_MIRROR) return
+
+  const { apiName, params, fields, rows } = args
+  const now = new Date()
+
+  try {
+    await ensureRawIndexes()
+    const db = await getDb()
+    const endpointMeta = await findTushare11000Endpoint({ apiName }).catch(() => null)
+
+    const ops = rows.map((row) => {
+      const rowKey = buildRawRowKey(apiName, row, params)
+      return {
+        updateOne: {
+          filter: { api_name: apiName, row_key: rowKey },
+          update: {
+            $set: {
+              api_name: apiName,
+              doc_id: endpointMeta?.doc_id,
+              interface_name: endpointMeta?.interface_name,
+              category: endpointMeta?.category,
+              row_key: rowKey,
+              data: row,
+              field_names: fields,
+              params_snapshot: params,
+              ts_code: row.ts_code ? String(row.ts_code) : undefined,
+              trade_date: row.trade_date ? String(row.trade_date) : undefined,
+              end_date: row.end_date ? String(row.end_date) : undefined,
+              ann_date: row.ann_date ? String(row.ann_date) : undefined,
+              report_date: row.report_date ? String(row.report_date) : undefined,
+              cal_date: row.cal_date ? String(row.cal_date) : undefined,
+              date: row.date ? String(row.date) : undefined,
+              month: row.month ? String(row.month) : undefined,
+              quarter: row.quarter ? String(row.quarter) : undefined,
+              exchange: row.exchange ? String(row.exchange) : undefined,
+              market: row.market ? String(row.market) : undefined,
+              source: 'tushare',
+              fetched_at: now,
+              updated_at: now
+            },
+            $setOnInsert: {
+              first_seen_at: now,
+              created_at: now
+            }
+          },
+          upsert: true
+        }
+      }
+    })
+
+    if (ops.length > 0) {
+      await db.collection(TUSHARE_RAW_COLLECTION).bulkWrite(ops, { ordered: false }).catch(() => { })
+    }
+
+    await db.collection(TUSHARE_SYNC_LOG_COLLECTION).insertOne({
+      api_name: apiName,
+      doc_id: endpointMeta?.doc_id,
+      requested_at: now,
+      row_count: rows.length,
+      fields,
+      params,
+      status: 'ok',
+      source: 'tushare'
+    }).catch(() => { })
+  } catch {
+  }
+}
+
 // ─── Tushare HTTP 客户端 ─────────────────────────────────────────────────────
 
 async function tusharePost(
@@ -97,13 +226,22 @@ async function tusharePost(
   }
   if (!Array.isArray(items)) return []
 
-  return items.map((row) => {
+  const rows = items.map((row) => {
     const obj: Record<string, unknown> = {}
     colNames.forEach((k, i) => {
       obj[k] = row[i] ?? null
     })
     return obj
   })
+
+  await mirrorTushareRows({
+    apiName: api_name,
+    params,
+    fields: colNames,
+    rows
+  })
+
+  return rows
 }
 
 // ─── 公开检测函数 ─────────────────────────────────────────────────────────────
@@ -520,13 +658,17 @@ export async function fetchAStockExtendedSnapshot(code: string): Promise<{
   // 2. 限售解禁
   try {
     const rows = await tusharePost(
-      'share_float',
+      'stock_restricted',
       { ts_code: tsCode },
-      ['ts_code', 'ann_date', 'float_date', 'float_share', 'float_ratio', 'holder_name', 'share_type']
+      ['ts_code', 'ann_date', 'float_date', 'float_share', 'float_ratio', 'type']
     )
     const ops = rows.map((row) => ({
       updateOne: {
-        filter: { symbol, unlock_date: String(row.float_date || ''), holder_name: String(row.holder_name || '') },
+        filter: {
+          symbol,
+          unlock_date: String(row.float_date || ''),
+          share_type: String(row.type || row.share_type || '')
+        },
         update: {
           $set: {
             symbol,
@@ -535,7 +677,7 @@ export async function fetchAStockExtendedSnapshot(code: string): Promise<{
             unlock_amount_wan: toNumber(row.float_share) / 10000,
             unlock_ratio: toNumber(row.float_ratio),
             holder_name: String(row.holder_name || ''),
-            share_type: String(row.share_type || ''),
+            share_type: String(row.type || row.share_type || ''),
             updated_at: now
           },
           $setOnInsert: { created_at: now }
@@ -552,24 +694,28 @@ export async function fetchAStockExtendedSnapshot(code: string): Promise<{
   // 3. 业绩预告
   try {
     const rows = await tusharePost(
-      'forecast',
+      'fina_forecast',
       { ts_code: tsCode },
-      ['ts_code', 'ann_date', 'end_date', 'type', 'p_change_min', 'p_change_max', 'net_profit_min', 'net_profit_max', 'last_parent_net', 'first_ann_date', 'summary', 'change_reason']
+      ['ts_code', 'end_date', 'type', 'net_profit_min', 'net_profit_max', 'eps_min', 'eps_max', 'reason']
     )
     const ops = rows.map((row) => ({
       updateOne: {
-        filter: { symbol, announce_date: String(row.ann_date || ''), report_date: String(row.end_date || '') },
+        filter: {
+          symbol,
+          report_date: String(row.end_date || ''),
+          forecast_type: String(row.type || '')
+        },
         update: {
           $set: {
             symbol,
-            announce_date: String(row.ann_date || ''),
+            announce_date: String(row.end_date || ''),
             report_date: String(row.end_date || ''),
             forecast_type: String(row.type || ''),
-            p_change_min: toNumber(row.p_change_min),
-            p_change_max: toNumber(row.p_change_max),
             net_profit_min: toNumber(row.net_profit_min),
             net_profit_max: toNumber(row.net_profit_max),
-            summary: String(row.summary || row.change_reason || ''),
+            eps_min: toNumber(row.eps_min),
+            eps_max: toNumber(row.eps_max),
+            summary: String(row.reason || ''),
             updated_at: now
           },
           $setOnInsert: { created_at: now }

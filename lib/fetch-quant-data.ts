@@ -332,16 +332,16 @@ export async function fetchEarningsExpectation(code: string): Promise<{ success:
   try {
     const tsCode = toTsCode(symbol)
     const rows = await tusharePost(
-      'forecast',
+      'fina_forecast',
       { ts_code: tsCode },
-      ['ts_code', 'ann_date', 'end_date', 'type', 'p_change_min', 'p_change_max', 'net_profit_min', 'net_profit_max', 'last_parent_net', 'summary', 'change_reason']
+      ['ts_code', 'end_date', 'type', 'net_profit_min', 'net_profit_max', 'eps_min', 'eps_max', 'reason']
     )
     if (rows.length === 0) return { success: false, message: '业绩预告无数据', count: 0 }
 
     const db = await getDb()
     const now = new Date()
     const ops = rows.map((row) => {
-      const announceDate = toYmd(row.ann_date) || 'latest'
+      const announceDate = toYmd(row.ann_date || row.end_date) || 'latest'
       const sourceType = firstString(row, ['type']) || 'forecast'
       const pMin = hasValue(row.p_change_min) ? toNum(row.p_change_min) : undefined
       const pMax = hasValue(row.p_change_max) ? toNum(row.p_change_max) : undefined
@@ -366,7 +366,9 @@ export async function fetchEarningsExpectation(code: string): Promise<{ success:
               net_profit_min: netMin,
               net_profit_max: netMax,
               net_profit: netProfit,
-              summary: firstString(row, ['summary', 'change_reason']) || undefined,
+              eps_min: hasValue(row.eps_min) ? toNum(row.eps_min) : undefined,
+              eps_max: hasValue(row.eps_max) ? toNum(row.eps_max) : undefined,
+              summary: firstString(row, ['reason', 'summary', 'change_reason']) || undefined,
               source: 'tushare',
               updated_at: now
             },
@@ -559,7 +561,7 @@ export async function fetchMarginTrading(code: string): Promise<{ success: boole
   }
 }
 
-// ─── 龙虎榜（top_list，2000积分可用）─────────────────────────────────────────
+// ─── 龙虎榜（toplist，11000积分可用）──────────────────────────────────────────
 
 export async function fetchDragonTiger(code: string): Promise<{ success: boolean; message: string; count: number }> {
   const symbol = normalizeCode(code)
@@ -575,10 +577,9 @@ export async function fetchDragonTiger(code: string): Promise<{ success: boolean
   try {
     const tsCode = toTsCode(symbol)
     const rows = await tusharePost(
-      'top_list',
+      'toplist',
       { ts_code: tsCode, start_date: daysAgoYmd(120), end_date: todayYmd() },
-      ['trade_date', 'ts_code', 'name', 'close', 'pct_change', 'turnover_rate', 'amount', 'l_sell', 'l_buy', 'l_amount', 'net_amount',
-        'net_rate', 'amount_rate', 'float_values', 'reason']
+      ['trade_date', 'ts_code', 'name', 'close', 'pct_chg', 'turnover_rate', 'amount', 'buy', 'sell', 'net_buy']
     )
     if (rows.length === 0) return { success: false, message: '龙虎榜无数据', count: 0 }
 
@@ -588,7 +589,7 @@ export async function fetchDragonTiger(code: string): Promise<{ success: boolean
       .map((row) => {
         const tradeDate = toYmd(row.trade_date)
         if (!tradeDate) return null
-        const reason = firstString(row, ['reason']) || '上榜'
+        const reason = firstString(row, ['reason']) || '龙虎榜'
         return {
           updateOne: {
             filter: { symbol, trade_date: tradeDate, reason },
@@ -598,16 +599,13 @@ export async function fetchDragonTiger(code: string): Promise<{ success: boolean
                 trade_date: tradeDate,
                 reason,
                 total_amount: toNum(row.amount),
-                buy_amount: toNum(row.l_buy),
-                sell_amount: toNum(row.l_sell),
-                dragon_amount: toNum(row.l_amount),
-                net_amount: toNum(row.net_amount),
+                buy_amount: toNum(row.buy),
+                sell_amount: toNum(row.sell),
+                dragon_amount: toNum(row.net_buy),
+                net_amount: toNum(row.net_buy),
                 close: toNum(row.close),
-                pct_change: toNum(row.pct_change),
+                pct_change: toNum(row.pct_chg),
                 turnover_rate: toNum(row.turnover_rate),
-                net_rate: toNum(row.net_rate),
-                amount_rate: toNum(row.amount_rate),
-                float_values: toNum(row.float_values),
                 source: 'tushare',
                 updated_at: now
               },
