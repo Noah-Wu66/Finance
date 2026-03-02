@@ -3,6 +3,8 @@ import { NextRequest } from 'next/server'
 import { getRequestUser } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { fail, ok } from '@/lib/http'
+import { LOCAL_CACHE_ONE_MINUTE_MS, getOrSetLocalCache } from '@/lib/local-data-cache'
+import { fetchAStockQuote } from '@/lib/mairui-data'
 
 interface RunPayload {
   conditions?: Record<string, any>
@@ -55,26 +57,19 @@ export async function POST(request: NextRequest) {
     const code = String(basic.symbol || '').slice(0, 6)
     if (!code) continue
 
-    const [quote, financial] = await Promise.all([
-      db
-        .collection('stock_quotes')
-        .find({ symbol: code })
-        .sort({ trade_date: -1 })
-        .limit(1)
-        .next(),
-      db
-        .collection('financial_data')
-        .find({ symbol: code })
-        .sort({ report_date: -1, updated_at: -1 })
-        .limit(1)
-        .next()
-    ])
+    const quoteResult = await getOrSetLocalCache(
+      `quote:cached:${code}`,
+      () => fetchAStockQuote(code),
+      LOCAL_CACHE_ONE_MINUTE_MS
+    )
+    if (!quoteResult.success || !quoteResult.data) continue
 
-    const close = Number(quote?.close ?? 0)
-    const pctChg = Number(quote?.pct_chg ?? 0)
-    const amount = Number(quote?.amount ?? 0)
-    const pe = Number(financial?.pe ?? 0)
-    const pb = Number(financial?.pb ?? 0)
+    const quote = quoteResult.data as Record<string, unknown>
+    const close = Number(quote.close ?? 0)
+    const pctChg = Number(quote.pct_chg ?? 0)
+    const amount = Number(quote.amount ?? 0)
+    const pe = Number(quote.pe ?? 0)
+    const pb = Number(quote.pb ?? 0)
 
     if (conditions.close && !inRange(close, conditions.close.min, conditions.close.max)) continue
     if (conditions.pct_chg && !inRange(pctChg, conditions.pct_chg.min, conditions.pct_chg.max)) continue
@@ -101,6 +96,10 @@ export async function POST(request: NextRequest) {
       dea: Number(quote?.dea ?? 0),
       macd_hist: Number(quote?.macd_hist ?? 0)
     })
+
+    if (items.length >= offset + limit) {
+      break
+    }
   }
 
   const sliced = items.slice(offset, offset + limit)

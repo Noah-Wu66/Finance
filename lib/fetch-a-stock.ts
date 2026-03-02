@@ -40,7 +40,7 @@ export async function fetchFinancialData(code: string): Promise<{
 export async function fetchStockProfile(code: string): Promise<{
   success: boolean
   message: string
-  data?: { industry: string; industryDetail: string }
+  data?: { name: string; industry: string; industryDetail: string }
 }> {
   return fetchAStockProfileSummary(normalizeSymbol(code))
 }

@@ -1,9 +1,15 @@
 import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
-import { getDb } from '@/lib/db'
 import { fail, ok } from '@/lib/http'
+import { LOCAL_CACHE_ONE_MINUTE_MS, getOrSetLocalCache } from '@/lib/local-data-cache'
+import { fetchAStockFinancialSummary, fetchAStockProfileSummary, fetchAStockQuote } from '@/lib/mairui-data'
 import { normalizeMarketName } from '@/lib/market'
+
+function toNum(value: unknown): number {
+  const num = Number(value)
+  return Number.isFinite(num) ? num : 0
+}
 
 export async function GET(request: NextRequest) {
   const user = await getRequestUser(request)
@@ -17,49 +23,40 @@ export async function GET(request: NextRequest) {
   }
 
   const market = normalizeMarketName(request.nextUrl.searchParams.get('market') || undefined)
-  const db = await getDb()
-
-  const [basic, latestQuote, prevQuote, financial] = await Promise.all([
-    db.collection('stock_basic_info').findOne({ symbol }),
-    db
-      .collection('stock_quotes')
-      .find({ symbol })
-      .sort({ trade_date: -1, updated_at: -1 })
-      .limit(1)
-      .next(),
-    db
-      .collection('stock_quotes')
-      .find({ symbol })
-      .sort({ trade_date: -1, updated_at: -1 })
-      .skip(1)
-      .limit(1)
-      .next(),
-    db
-      .collection('financial_data')
-      .find({ symbol })
-      .sort({ report_date: -1, updated_at: -1 })
-      .limit(1)
-      .next()
+  const [profileResult, quoteResult, financialResult] = await Promise.all([
+    getOrSetLocalCache(`profile:${symbol}`, () => fetchAStockProfileSummary(symbol), LOCAL_CACHE_ONE_MINUTE_MS),
+    fetchAStockQuote(symbol),
+    getOrSetLocalCache(`financial:${symbol}`, () => fetchAStockFinancialSummary(symbol), LOCAL_CACHE_ONE_MINUTE_MS)
   ])
 
-  const currentPrice = Number(latestQuote?.close ?? 0)
-  const prevPrice = Number(prevQuote?.close ?? currentPrice)
-  const change = currentPrice - prevPrice
-  const changePercent = prevPrice > 0 ? (change / prevPrice) * 100 : 0
+  if (!profileResult.success && !quoteResult.success && !financialResult.success) {
+    return fail('获取股票信息失败', 404)
+  }
+
+  const profile = (profileResult.data || {}) as { name?: string }
+  const quote = (quoteResult.data || {}) as Record<string, unknown>
+  const financial = financialResult.data
+
+  const currentPrice = toNum(quote.close)
+  const prevPrice = toNum(quote.pre_close)
+  const change = Number.isFinite(Number(quote.change)) ? toNum(quote.change) : currentPrice - prevPrice
+  const changePercent = Number.isFinite(Number(quote.pct_chg))
+    ? toNum(quote.pct_chg)
+    : (prevPrice > 0 ? (change / prevPrice) * 100 : 0)
 
   return ok(
     {
       symbol,
-      name: String(basic?.name || symbol),
+      name: String(profile.name || symbol),
       market,
       current_price: currentPrice,
       change,
       change_percent: changePercent,
-      volume: Number(latestQuote?.volume ?? 0),
-      market_cap: Number(basic?.total_mv ?? basic?.market_cap ?? 0),
-      pe_ratio: Number(financial?.pe ?? 0),
-      pb_ratio: Number(financial?.pb ?? 0),
-      dividend_yield: Number(financial?.dividend_yield ?? 0)
+      volume: toNum(quote.volume ?? quote.vol),
+      market_cap: toNum(quote.total_mv),
+      pe_ratio: toNum(financial?.pe ?? quote.pe),
+      pb_ratio: toNum(financial?.pb ?? quote.pb),
+      dividend_yield: toNum(quote.dv_ratio)
     },
     '获取股票信息成功'
   )

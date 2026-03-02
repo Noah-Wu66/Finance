@@ -6,6 +6,11 @@ import { fail, ok } from '@/lib/http'
 import { fetchAStockQuote } from '@/lib/mairui-data'
 import { maybeObjectId } from '@/lib/mongo-helpers'
 
+function toNum(value: unknown): number {
+  const num = Number(value)
+  return Number.isFinite(num) ? num : 0
+}
+
 export async function GET(request: NextRequest) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
@@ -28,31 +33,22 @@ export async function GET(request: NextRequest) {
   if (codes.length === 0) return ok({}, '暂无自选股')
 
   const quotes: Record<string, { price: number; pct_chg: number; trade_date: string }> = {}
-
-  for (const code of codes) {
-    let row = await db
-      .collection('stock_quotes')
-      .find({ symbol: code })
-      .sort({ trade_date: -1 })
-      .limit(1)
-      .next()
-
-    if (!row) {
-      await fetchAStockQuote(code)
-      row = await db
-        .collection('stock_quotes')
-        .find({ symbol: code })
-        .sort({ trade_date: -1 })
-        .limit(1)
-        .next()
+  const uniqueCodes = Array.from(new Set(codes))
+  const rows = await Promise.all(uniqueCodes.map(async (code) => {
+    const result = await fetchAStockQuote(code)
+    if (!result.success || !result.data) return null
+    return {
+      code,
+      data: result.data
     }
+  }))
 
-    if (row) {
-      quotes[code] = {
-        price: Number(row.close ?? 0),
-        pct_chg: Number(row.pct_chg ?? 0),
-        trade_date: String(row.trade_date || '')
-      }
+  for (const row of rows) {
+    if (!row) continue
+    quotes[row.code] = {
+      price: toNum(row.data.close),
+      pct_chg: toNum(row.data.pct_chg),
+      trade_date: String(row.data.trade_date || '')
     }
   }
 

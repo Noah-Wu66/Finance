@@ -3,7 +3,13 @@ import { NextRequest } from 'next/server'
 import { getRequestUser } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { fail, ok } from '@/lib/http'
+import { fetchAStockQuote } from '@/lib/mairui-data'
 import { maybeObjectId } from '@/lib/mongo-helpers'
+
+function toNum(value: unknown): number {
+  const num = Number(value)
+  return Number.isFinite(num) ? num : 0
+}
 
 interface Payload {
   data_source?: string
@@ -39,21 +45,16 @@ export async function POST(request: NextRequest) {
       continue
     }
 
-    const quote = await db
-      .collection('stock_quotes')
-      .find({ symbol })
-      .sort({ trade_date: -1 })
-      .limit(1)
-      .next()
-
-    if (!quote) {
+    const result = await fetchAStockQuote(symbol)
+    if (!result.success || !result.data) {
       failedCount += 1
       continue
     }
 
-    const price = Number(quote.close ?? 0)
-    const changePercent = Number(quote.pct_chg ?? 0)
-    const volume = Number(quote.volume ?? 0)
+    const data = result.data
+    const price = toNum(data.close)
+    const changePercent = toNum(data.pct_chg)
+    const volume = toNum(data.volume ?? data.vol)
 
     await users.updateOne(
       { _id: userObjectId, 'favorite_stocks.stock_code': symbol },

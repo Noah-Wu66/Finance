@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
-import { getDailyQuotesByCode, getFundamentalsByCode } from '@/lib/stock-data'
+import { LOCAL_CACHE_ONE_MINUTE_MS, getOrSetLocalCache } from '@/lib/local-data-cache'
+import { fetchAStockFinancialSummary, fetchAStockQuote } from '@/lib/mairui-data'
 
 interface Params {
   params: Promise<{ symbol: string }>
@@ -14,25 +15,27 @@ export async function GET(request: NextRequest, { params }: Params) {
 
   const { symbol: rawSymbol } = await params
   const symbol = rawSymbol.toUpperCase()
-  const [quotes, financial] = await Promise.all([
-    getDailyQuotesByCode(symbol, { limit: 1 }),
-    getFundamentalsByCode(symbol)
+  const [quoteResult, financialResult] = await Promise.all([
+    getOrSetLocalCache(`quote:cached:${symbol}`, () => fetchAStockQuote(symbol), LOCAL_CACHE_ONE_MINUTE_MS),
+    getOrSetLocalCache(`financial:${symbol}`, () => fetchAStockFinancialSummary(symbol), LOCAL_CACHE_ONE_MINUTE_MS)
   ])
 
-  const latestQuote = quotes[0]
+  const quote = (quoteResult.data || {}) as Record<string, unknown>
+  const reportDate = financialResult.data?.reportDate || null
+  const tradeDate = quote.trade_date ? String(quote.trade_date) : null
 
   return ok(
     {
       symbol,
       historical_data: {
-        last_sync: latestQuote?.trade_date || null,
-        last_date: latestQuote?.trade_date || null,
-        total_records: quotes.length
+        last_sync: quoteResult.success ? tradeDate : null,
+        last_date: quoteResult.success ? tradeDate : null,
+        total_records: quoteResult.success ? 1 : 0
       },
       financial_data: {
-        last_sync: financial?.updated_at || null,
-        last_report_period: financial?.updated_at || null,
-        total_records: financial ? 1 : 0
+        last_sync: financialResult.success ? new Date().toISOString() : null,
+        last_report_period: reportDate,
+        total_records: financialResult.success ? 1 : 0
       }
     },
     '获取同步状态成功'

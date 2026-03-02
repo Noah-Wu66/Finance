@@ -331,15 +331,32 @@ export async function fetchAStockQuote(code: string): Promise<{
   const tsCode = toTsCode(symbol)
   try {
     const today = todayYmd()
-    // 先查当日日线，若无数据则找最近5天
-    let dailyRows = await tusharePost(
-      'daily',
-      { ts_code: tsCode, start_date: daysAgoYmd(7), end_date: today },
-      ['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'pre_close', 'change', 'pct_chg', 'vol', 'amount']
-    )
-    // 按日期倒序排，取最新一条
-    dailyRows = dailyRows.sort((a, b) => String(b.trade_date).localeCompare(String(a.trade_date)))
-    const row = dailyRows[0]
+    const quoteFields = ['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'pre_close', 'change', 'pct_chg', 'vol', 'amount']
+    let row: Record<string, unknown> | undefined
+
+    try {
+      const rtRows = await tusharePost(
+        'daily_rt',
+        { ts_code: tsCode, trade_date: today },
+        quoteFields
+      )
+      if (rtRows.length > 0) {
+        const sortedRtRows = rtRows.sort((a, b) => String(b.trade_date).localeCompare(String(a.trade_date)))
+        row = sortedRtRows[0]
+      }
+    } catch {
+    }
+
+    if (!row) {
+      let dailyRows = await tusharePost(
+        'daily',
+        { ts_code: tsCode, start_date: daysAgoYmd(7), end_date: today },
+        quoteFields
+      )
+      dailyRows = dailyRows.sort((a, b) => String(b.trade_date).localeCompare(String(a.trade_date)))
+      row = dailyRows[0]
+    }
+
     if (!row) return { success: false, message: '无行情数据' }
 
     // 再查 daily_basic 获取 PE/PB/换手率等（当日或最近）
@@ -531,7 +548,7 @@ export async function fetchAStockFinancialSummary(code: string): Promise<{
 export async function fetchAStockProfileSummary(code: string): Promise<{
   success: boolean
   message: string
-  data?: { industry: string; industryDetail: string }
+  data?: { name: string; industry: string; industryDetail: string }
 }> {
   if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
   const symbol = normalizeStockCode(code)
@@ -607,7 +624,7 @@ export async function fetchAStockProfileSummary(code: string): Promise<{
       { upsert: true }
     )
 
-    return { success: true, message: `已获取 ${symbol} 公司资料`, data: { industry, industryDetail } }
+    return { success: true, message: `已获取 ${symbol} 公司资料`, data: { name, industry, industryDetail } }
   } catch (err) {
     return { success: false, message: err instanceof Error ? err.message : '未知错误' }
   }

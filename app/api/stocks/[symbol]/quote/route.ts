@@ -3,7 +3,11 @@ import { NextRequest } from 'next/server'
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
 import { fetchAStockQuote } from '@/lib/mairui-data'
-import { getLatestQuoteByCode } from '@/lib/stock-data'
+
+function toNum(value: unknown): number {
+  const num = Number(value)
+  return Number.isFinite(num) ? num : 0
+}
 
 interface Params {
   params: Promise<{ symbol: string }>
@@ -15,14 +19,12 @@ export async function GET(request: NextRequest, { params }: Params) {
 
   const { symbol: rawSymbol } = await params
   const symbol = rawSymbol.toUpperCase()
-  let quote = await getLatestQuoteByCode(symbol)
-
-  if (!quote) {
-    await fetchAStockQuote(symbol)
-    quote = await getLatestQuoteByCode(symbol)
+  const result = await fetchAStockQuote(symbol)
+  if (!result.success || !result.data) {
+    return fail('行情不存在', 404, result.message)
   }
 
-  if (!quote) return fail('行情不存在', 404)
+  const quote = result.data
 
   return ok(
     {
@@ -30,13 +32,13 @@ export async function GET(request: NextRequest, { params }: Params) {
       code: symbol,
       full_symbol: symbol,
       market: '',
-      price: quote.close,
-      change_percent: quote.pct_chg,
-      amount: quote.amount,
-      prev_close: 0,
-      turnover_rate: quote.turnover_rate,
-      amplitude: quote.amplitude,
-      trade_date: quote.trade_date,
+      price: toNum(quote.close),
+      change_percent: toNum(quote.pct_chg),
+      amount: toNum(quote.amount),
+      prev_close: toNum(quote.pre_close),
+      turnover_rate: toNum(quote.turnover_rate),
+      amplitude: toNum(quote.amplitude),
+      trade_date: String(quote.trade_date || ''),
       updated_at: new Date().toISOString()
     },
     '获取股票行情成功'

@@ -31,7 +31,7 @@ const AI_CONFIG = {
   api_version: 'v1beta',
   base_url: 'https://generativelanguage.googleapis.com',
   temperature: 1.0,
-  thinking_level: 'high' as const,
+  thinking_level: 'medium' as const,
   include_thoughts: false,
   enable_search: true
 }

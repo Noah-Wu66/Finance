@@ -3,8 +3,15 @@ import { NextRequest } from 'next/server'
 import { getRequestUser } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { fail, ok } from '@/lib/http'
+import { LOCAL_CACHE_ONE_MINUTE_MS, getOrSetLocalCache } from '@/lib/local-data-cache'
+import { fetchAStockQuote } from '@/lib/mairui-data'
 import { inferMarketFromCode, normalizeMarketName } from '@/lib/market'
 import { userIdOrFilter } from '@/lib/mongo-helpers'
+
+function toNum(value: unknown): number {
+  const num = Number(value)
+  return Number.isFinite(num) ? num : 0
+}
 
 export async function GET(request: NextRequest) {
   const user = await getRequestUser(request)
@@ -28,29 +35,28 @@ export async function GET(request: NextRequest) {
     ])
     .toArray()
 
-  const items = []
-  for (const row of reports) {
+  const items = (await Promise.all(reports.map(async (row) => {
     const symbol = String(row._id || '').toUpperCase()
     const mkt = normalizeMarketName(row.market || inferMarketFromCode(symbol))
-    if (market && mkt !== market) continue
+    if (market && mkt !== market) return null
 
-    const quote = await db
-      .collection('stock_quotes')
-      .find({ symbol })
-      .sort({ trade_date: -1 })
-      .limit(1)
-      .next()
+    const quoteResult = await getOrSetLocalCache(
+      `quote:cached:${symbol}`,
+      () => fetchAStockQuote(symbol),
+      LOCAL_CACHE_ONE_MINUTE_MS
+    )
+    const quote = (quoteResult.data || {}) as Record<string, unknown>
 
-    items.push({
+    return {
       symbol,
       name: String(row.name || symbol),
       market: mkt,
-      current_price: Number(quote?.close ?? 0),
-      change_percent: Number(quote?.pct_chg ?? 0),
-      volume: Number(quote?.volume ?? 0),
+      current_price: toNum(quote.close),
+      change_percent: toNum(quote.pct_chg),
+      volume: toNum(quote.volume ?? quote.vol),
       analysis_count: Number(row.count || 0)
-    })
-  }
+    }
+  }))).filter(Boolean)
 
   return ok(items, '获取热门股票成功')
 }
