@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
-import { fetchAStockQuote } from '@/lib/tushare-data'
+import { fetchAStockQuote, hasTushareLicence } from '@/lib/tushare-data'
 
 function toNum(value: unknown): number {
   const num = Number(value)
@@ -17,11 +17,15 @@ export async function GET(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
 
+  if (!hasTushareLicence()) {
+    return fail('未配置 TUSHARE_TOKEN', 503)
+  }
+
   const { code: rawCode } = await params
   const code = rawCode.toUpperCase()
   const result = await fetchAStockQuote(code)
   if (!result.success || !result.data) {
-    return fail('行情不存在', 404, result.message)
+    return fail('获取行情失败，上游数据暂不可用', 503, result.message)
   }
 
   const quote = result.data
