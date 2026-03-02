@@ -17,9 +17,22 @@ import { StockDataPanel } from '@/components/stock-data-panel'
 
 type Status = 'running' | 'completed' | 'failed' | 'canceled' | 'stopped'
 
-interface ExecutionLog {
-  at: string
-  text: string
+const STEP_TITLES = [
+  '校验股票代码',
+  '拉取基础信息',
+  '加载行情样本',
+  '加载财务指标',
+  '联网检索消息',
+  '量化增强与AI分析',
+  '生成分析报告'
+]
+
+const STATUS_TEXT: Record<Status, string> = {
+  running: '分析中',
+  completed: '已完成',
+  failed: '失败',
+  canceled: '已取消',
+  stopped: '已停止'
 }
 
 interface Execution {
@@ -30,7 +43,6 @@ interface Execution {
   progress: number
   step: number
   total_steps: number
-  logs: ExecutionLog[]
   result?: {
     report_id?: string
   }
@@ -67,6 +79,41 @@ function AnalysisPageContent() {
   const progressText = useMemo(() => {
     if (!execution) return '暂无任务'
     return `${execution.progress}% (${execution.step}/${execution.total_steps})`
+  }, [execution])
+
+  const currentStepNo = useMemo(() => {
+    if (!execution) return 0
+    if (execution.status === 'completed') return execution.total_steps
+    return Math.min(Math.max(execution.step + 1, 1), execution.total_steps)
+  }, [execution])
+
+  const currentStepTitle = useMemo(() => {
+    if (!execution || currentStepNo <= 0) return '暂无步骤'
+    return STEP_TITLES[currentStepNo - 1] || `步骤 ${currentStepNo}`
+  }, [execution, currentStepNo])
+
+  const stepTimeline = useMemo(() => {
+    if (!execution) return []
+    const total = Math.max(1, execution.total_steps)
+    const doneUntil = execution.status === 'completed' ? total : Math.max(0, execution.step)
+    const activeStep = execution.status === 'completed'
+      ? 0
+      : Math.min(Math.max(execution.step + 1, 1), total)
+
+    return Array.from({ length: total }, (_, index) => {
+      const stepNo = index + 1
+      let state: 'done' | 'active' | 'todo' = 'todo'
+      if (stepNo <= doneUntil) {
+        state = 'done'
+      } else if (stepNo === activeStep) {
+        state = 'active'
+      }
+      return {
+        stepNo,
+        title: STEP_TITLES[index] || `步骤 ${stepNo}`,
+        state
+      }
+    })
   }, [execution])
 
   const fetchExecution = async (id: string) => {
@@ -397,17 +444,32 @@ function AnalysisPageContent() {
                   <span>股票 <span className="font-mono font-medium">{execution.symbol}</span> · {execution.market}</span>
                 </div>
 
-                {/* Logs */}
-                <div className="border border-[var(--border)] rounded-lg overflow-hidden">
-                  {execution.logs?.map((log, idx) => (
+                <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] px-3 py-2 text-xs text-[var(--fg-secondary)] space-y-1">
+                  <p className="m-0">当前状态：{STATUS_TEXT[execution.status]}</p>
+                  <p className="m-0">当前步骤：第 {currentStepNo}/{execution.total_steps} 步 · {currentStepTitle}</p>
+                </div>
+
+                <div className="space-y-2">
+                  {stepTimeline.map((item) => (
                     <div
-                      key={`${log.at}-${idx}`}
-                      className="flex flex-col sm:flex-row gap-1 sm:gap-3 px-3 py-2 text-xs border-b border-dashed border-[var(--border)] last:border-b-0"
+                      key={item.stepNo}
+                      className="flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-xs"
                     >
-                      <span className="font-mono text-[var(--fg-muted)] shrink-0">
-                        {new Date(log.at).toLocaleTimeString()}
+                      <span
+                        className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] ${
+                          item.state === 'done'
+                            ? 'bg-success-100 text-success-700'
+                            : item.state === 'active'
+                              ? 'bg-primary-100 text-primary-700'
+                              : 'bg-[var(--bg-secondary)] text-[var(--fg-muted)]'
+                        }`}
+                      >
+                        {item.stepNo}
                       </span>
-                      <span className="text-[var(--fg-secondary)]">{log.text}</span>
+                      <span className="text-[var(--fg-secondary)]">{item.title}</span>
+                      <span className="ml-auto text-[var(--fg-muted)]">
+                        {item.state === 'done' ? '已完成' : item.state === 'active' ? '进行中' : '待执行'}
+                      </span>
                     </div>
                   ))}
                 </div>

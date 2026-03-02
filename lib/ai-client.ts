@@ -1,25 +1,39 @@
-interface AnalyzeParams {
+export interface AnalyzeParams {
   systemPrompt: string
   messages: Array<{ role: string; content: string }>
-  depth: 'deep'
 }
 
-interface AnalyzeResult {
+interface UsageInfo {
+  input_tokens: number
+  output_tokens: number
+  thinking_tokens: number
+  total_tokens: number
+}
+
+interface GroundingSource {
+  title: string
+  uri: string
+}
+
+export interface AnalyzeResult {
   content: string
-  usage: {
-    input_tokens: number
-    output_tokens: number
-  }
+  usage: UsageInfo
   thinking?: string
+  sources: GroundingSource[]
+  search_queries: string[]
 }
 
 const AI_CONFIG = {
   provider: 'google' as const,
-  model: 'google/gemini-3.1-pro-preview',
+  model: 'gemini-3.1-pro-preview',
   max_output_tokens: 65535,
-  timeout: 120,
-  api_version: 'v1',
-  base_url: 'https://zenmux.ai/api/vertex-ai'
+  timeout_seconds: 120,
+  api_version: 'v1beta',
+  base_url: 'https://generativelanguage.googleapis.com',
+  temperature: 1.0,
+  thinking_level: 'high' as const,
+  include_thoughts: false,
+  enable_search: true
 }
 
 export const AI_MODEL_INFO = {
@@ -28,44 +42,15 @@ export const AI_MODEL_INFO = {
 } as const
 
 function getApiKey(): string {
-  const apiKey = (process.env.ZENMUX_API_KEY || '').trim()
+  const apiKey = (process.env.GOOGLE_API_KEY || '').trim()
   if (!apiKey) {
-    throw new Error('ZENMUX_API_KEY 环境变量未设置')
+    throw new Error('GOOGLE_API_KEY 环境变量未设置')
   }
   return apiKey
 }
 
-function getApiBase(): string {
-  return AI_CONFIG.base_url
-}
-
-function getGenerationConfig() {
-  return {
-    maxOutputTokens: AI_CONFIG.max_output_tokens,
-    thinkingConfig: {
-      thinkingLevel: 'HIGH'
-    }
-  }
-}
-
-function resolveProviderAndModel(model: string): { provider: string; model: string } {
-  const raw = String(model || '').trim()
-  if (!raw) {
-    return { provider: AI_CONFIG.provider, model: 'gemini-3.1-pro-preview' }
-  }
-
-  const parts = raw.split('/').filter(Boolean)
-  if (parts.length >= 2) {
-    return { provider: parts[0], model: parts.slice(1).join('/') }
-  }
-
-  return { provider: AI_CONFIG.provider, model: raw }
-}
-
 function buildEndpoint(action: 'generateContent' | 'streamGenerateContent'): string {
-  const { provider, model } = resolveProviderAndModel(AI_CONFIG.model)
-  const apiBase = getApiBase()
-  return `${apiBase}/${AI_CONFIG.api_version}/publishers/${encodeURIComponent(provider)}/models/${encodeURIComponent(model)}:${action}`
+  return `${AI_CONFIG.base_url}/${AI_CONFIG.api_version}/models/${encodeURIComponent(AI_CONFIG.model)}:${action}`
 }
 
 function toVertexRole(role: string): 'user' | 'model' {
@@ -84,13 +69,22 @@ function buildContents(messages: Array<{ role: string; content: string }>) {
         parts: [{ text }]
       }
     })
-    .filter(Boolean)
+    .filter((item): item is { role: 'user' | 'model'; parts: Array<{ text: string }> } => Boolean(item))
 }
 
 function buildRequestBody(params: AnalyzeParams) {
+  const generationConfig: Record<string, unknown> = {
+    maxOutputTokens: AI_CONFIG.max_output_tokens,
+    temperature: AI_CONFIG.temperature,
+    thinkingConfig: {
+      thinkingLevel: AI_CONFIG.thinking_level,
+      includeThoughts: AI_CONFIG.include_thoughts
+    }
+  }
+
   const body: Record<string, unknown> = {
     contents: buildContents(params.messages),
-    generationConfig: getGenerationConfig()
+    generationConfig
   }
 
   if (params.systemPrompt.trim()) {
@@ -99,11 +93,17 @@ function buildRequestBody(params: AnalyzeParams) {
     }
   }
 
+  if (AI_CONFIG.enable_search) {
+    body.tools = [{ googleSearch: {} }]
+  }
+
   return body
 }
 
-function extractTextAndThinking(candidate: any): { content: string; thinking: string } {
-  const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : []
+function extractTextAndThinking(candidate: unknown): { content: string; thinking: string } {
+  const row = candidate as Record<string, unknown>
+  const contentNode = row?.content as Record<string, unknown> | undefined
+  const parts = Array.isArray(contentNode?.parts) ? (contentNode.parts as Array<Record<string, unknown>>) : []
   let content = ''
   let thinking = ''
 
@@ -120,10 +120,48 @@ function extractTextAndThinking(candidate: any): { content: string; thinking: st
   return { content, thinking }
 }
 
-function extractUsage(data: any) {
+function extractUsage(data: unknown): UsageInfo {
+  const row = data as Record<string, unknown>
+  const usageMetadata = (row?.usageMetadata || row?.usage_metadata || {}) as Record<string, unknown>
+
+  const inputTokens = Number(usageMetadata?.promptTokenCount || usageMetadata?.prompt_token_count || 0)
+  const outputTokens = Number(usageMetadata?.candidatesTokenCount || usageMetadata?.candidates_token_count || 0)
+  const thinkingTokens = Number(usageMetadata?.thoughtsTokenCount || usageMetadata?.thoughts_token_count || 0)
+  const totalTokens = Number(usageMetadata?.totalTokenCount || usageMetadata?.total_token_count || inputTokens + outputTokens + thinkingTokens)
+
   return {
-    input_tokens: Number(data?.usageMetadata?.promptTokenCount || 0),
-    output_tokens: Number(data?.usageMetadata?.candidatesTokenCount || 0)
+    input_tokens: Number.isFinite(inputTokens) ? inputTokens : 0,
+    output_tokens: Number.isFinite(outputTokens) ? outputTokens : 0,
+    thinking_tokens: Number.isFinite(thinkingTokens) ? thinkingTokens : 0,
+    total_tokens: Number.isFinite(totalTokens) ? totalTokens : 0
+  }
+}
+
+function extractGrounding(candidate: unknown): { sources: GroundingSource[]; searchQueries: string[] } {
+  const row = candidate as Record<string, unknown>
+  const groundingMetadata = (row?.groundingMetadata || row?.grounding_metadata || {}) as Record<string, unknown>
+
+  const queryRows = (groundingMetadata?.webSearchQueries || groundingMetadata?.web_search_queries || []) as unknown[]
+  const searchQueries = queryRows
+    .map((item) => String(item || '').trim())
+    .filter((item) => item.length > 0)
+
+  const chunks = (groundingMetadata?.groundingChunks || groundingMetadata?.grounding_chunks || []) as Array<Record<string, unknown>>
+  const sourceMap = new Map<string, GroundingSource>()
+
+  for (const chunk of chunks) {
+    const web = (chunk?.web || {}) as Record<string, unknown>
+    const uri = String(web?.uri || web?.url || '').trim()
+    if (!uri) continue
+    const title = String(web?.title || uri).trim() || uri
+    if (!sourceMap.has(uri)) {
+      sourceMap.set(uri, { title, uri })
+    }
+  }
+
+  return {
+    sources: Array.from(sourceMap.values()),
+    searchQueries
   }
 }
 
@@ -131,7 +169,9 @@ async function parseErrorMessage(response: Response): Promise<string> {
   const fallback = `HTTP ${response.status}`
   try {
     const data = await response.json()
-    return String(data?.error?.message || fallback)
+    const row = data as Record<string, unknown>
+    const errorRow = (row?.error || {}) as Record<string, unknown>
+    return String(errorRow?.message || fallback)
   } catch {
     return fallback
   }
@@ -143,7 +183,7 @@ export async function analyzeWithAI(params: AnalyzeParams): Promise<AnalyzeResul
   const requestBody = buildRequestBody(params)
 
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), AI_CONFIG.timeout * 1000)
+  const timeoutId = setTimeout(() => controller.abort(), AI_CONFIG.timeout_seconds * 1000)
 
   try {
     const response = await fetch(endpoint, {
@@ -151,7 +191,7 @@ export async function analyzeWithAI(params: AnalyzeParams): Promise<AnalyzeResul
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
-        Authorization: `Bearer ${apiKey}`
+        'x-goog-api-key': apiKey
       },
       body: JSON.stringify(requestBody),
       signal: controller.signal
@@ -165,13 +205,18 @@ export async function analyzeWithAI(params: AnalyzeParams): Promise<AnalyzeResul
     }
 
     const data = await response.json()
-    const candidate = Array.isArray(data?.candidates) ? data.candidates[0] : null
+    const row = data as Record<string, unknown>
+    const candidates = Array.isArray(row?.candidates) ? (row.candidates as unknown[]) : []
+    const candidate = candidates[0]
     const parsed = extractTextAndThinking(candidate)
+    const grounding = extractGrounding(candidate)
 
     return {
       content: parsed.content,
       usage: extractUsage(data),
-      thinking: parsed.thinking || undefined
+      thinking: parsed.thinking || undefined,
+      sources: grounding.sources,
+      search_queries: grounding.searchQueries
     }
   } catch (error) {
     clearTimeout(timeoutId)
@@ -182,7 +227,7 @@ export async function analyzeWithAI(params: AnalyzeParams): Promise<AnalyzeResul
   }
 }
 
-function processStreamLine(line: string): any | null {
+function processStreamLine(line: string): Record<string, unknown> | null {
   const trimmed = line.trim()
   if (!trimmed) return null
   if (trimmed.startsWith('event:')) return null
@@ -191,29 +236,31 @@ function processStreamLine(line: string): any | null {
   if (!payload || payload === '[DONE]') return null
 
   try {
-    return JSON.parse(payload)
+    return JSON.parse(payload) as Record<string, unknown>
   } catch {
     return null
   }
 }
 
-function normalizeStreamChunks(payload: any): any[] {
-  if (Array.isArray(payload)) return payload
-  if (payload && typeof payload === 'object') return [payload]
-  return []
+function normalizeStreamChunks(payload: Record<string, unknown> | null): Record<string, unknown>[] {
+  if (!payload) return []
+  if (Array.isArray(payload)) {
+    return payload.filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+  }
+  return [payload]
 }
 
 export async function streamAnalyzeWithAI(
   params: AnalyzeParams,
   onChunk: (chunk: string) => void,
   onThinking?: (thinking: string) => void
-): Promise<{ usage: { input_tokens: number; output_tokens: number } }> {
+): Promise<{ usage: UsageInfo }> {
   const apiKey = getApiKey()
-  const endpoint = buildEndpoint('streamGenerateContent')
+  const endpoint = `${buildEndpoint('streamGenerateContent')}?alt=sse`
   const requestBody = buildRequestBody(params)
 
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), AI_CONFIG.timeout * 1000)
+  const timeoutId = setTimeout(() => controller.abort(), AI_CONFIG.timeout_seconds * 1000)
 
   try {
     const response = await fetch(endpoint, {
@@ -221,7 +268,7 @@ export async function streamAnalyzeWithAI(
       headers: {
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
-        Authorization: `Bearer ${apiKey}`
+        'x-goog-api-key': apiKey
       },
       body: JSON.stringify(requestBody),
       signal: controller.signal
@@ -241,7 +288,12 @@ export async function streamAnalyzeWithAI(
 
     const decoder = new TextDecoder()
     let buffer = ''
-    let usage = { input_tokens: 0, output_tokens: 0 }
+    let usage: UsageInfo = {
+      input_tokens: 0,
+      output_tokens: 0,
+      thinking_tokens: 0,
+      total_tokens: 0
+    }
 
     while (true) {
       const { done, value } = await reader.read()
@@ -256,13 +308,14 @@ export async function streamAnalyzeWithAI(
         if (!payload) continue
 
         for (const chunk of normalizeStreamChunks(payload)) {
-          const candidate = Array.isArray(chunk?.candidates) ? chunk.candidates[0] : null
+          const candidates = Array.isArray(chunk?.candidates) ? (chunk.candidates as unknown[]) : []
+          const candidate = candidates[0]
           const parsed = extractTextAndThinking(candidate)
 
           if (parsed.content) onChunk(parsed.content)
           if (parsed.thinking && onThinking) onThinking(parsed.thinking)
 
-          if (chunk?.usageMetadata) {
+          if (chunk?.usageMetadata || chunk?.usage_metadata) {
             usage = extractUsage(chunk)
           }
         }
@@ -272,10 +325,11 @@ export async function streamAnalyzeWithAI(
     if (buffer.trim()) {
       const payload = processStreamLine(buffer)
       for (const chunk of normalizeStreamChunks(payload)) {
-        if (chunk?.usageMetadata) {
+        if (chunk?.usageMetadata || chunk?.usage_metadata) {
           usage = extractUsage(chunk)
         }
-        const candidate = Array.isArray(chunk?.candidates) ? chunk.candidates[0] : null
+        const candidates = Array.isArray(chunk?.candidates) ? (chunk.candidates as unknown[]) : []
+        const candidate = candidates[0]
         const parsed = extractTextAndThinking(candidate)
         if (parsed.content) onChunk(parsed.content)
         if (parsed.thinking && onThinking) onThinking(parsed.thinking)
@@ -294,7 +348,7 @@ export async function streamAnalyzeWithAI(
 
 export async function isAIEnabled(): Promise<boolean> {
   try {
-    const apiKey = (process.env.ZENMUX_API_KEY || '').trim()
+    const apiKey = (process.env.GOOGLE_API_KEY || '').trim()
     return apiKey.length > 10
   } catch {
     return false

@@ -1,0 +1,2960 @@
+[
+  {
+    "order": 1,
+    "interface_name": "股票列表",
+    "api_name": "stock_basic",
+    "api_name_raw": "stock_basic",
+    "doc_id": 25,
+    "category": "股票数据 → 基础数据",
+    "description": "获取沪深京股票列表，包含股票代码、名称、上市日期、退市日期、交易所等基本信息。",
+    "params": [
+      "ts_code",
+      "name",
+      "market",
+      "exchange",
+      "cur_status",
+      "list_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "symbol",
+      "name",
+      "area",
+      "industry",
+      "market",
+      "exchange",
+      "curr_type",
+      "list_status",
+      "list_date",
+      "delist_date",
+      "is_hs"
+    ]
+  },
+  {
+    "order": 2,
+    "interface_name": "每日股本（盘前）",
+    "api_name": "stock_equity",
+    "api_name_raw": "stock_equity",
+    "doc_id": 329,
+    "category": "股票数据 → 基础数据",
+    "description": "每日盘前股本数据，提供股票的总股本、流通股本等数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "total_share",
+      "float_share",
+      "total_mv",
+      "float_mv"
+    ]
+  },
+  {
+    "order": 3,
+    "interface_name": "交易日历",
+    "api_name": "trade_cal",
+    "api_name_raw": "trade_cal",
+    "doc_id": 26,
+    "category": "股票数据 → 基础数据",
+    "description": "交易所交易日历，用于查询特定日期是否为交易日。",
+    "params": [
+      "exchange",
+      "start_date",
+      "end_date",
+      "is_open"
+    ],
+    "return_fields": [
+      "exchange",
+      "cal_date",
+      "is_open",
+      "pre_open_date",
+      "pre_close_date"
+    ]
+  },
+  {
+    "order": 4,
+    "interface_name": "ST股票列表",
+    "api_name": "stock_st",
+    "api_name_raw": "stock_st",
+    "doc_id": 397,
+    "category": "股票数据 → 基础数据",
+    "description": "获取沪深两市ST股票列表，包含特别处理股票的代码和名称。",
+    "params": [
+      "ts_code",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "name",
+      "st_date",
+      "end_date"
+    ]
+  },
+  {
+    "order": 5,
+    "interface_name": "ST风险警示板股票",
+    "api_name": "stock_st_warn",
+    "api_name_raw": "stock_st_warn",
+    "doc_id": 423,
+    "category": "股票数据 → 基础数据",
+    "description": "获取风险警示板股票列表，包括*ST、ST等风险警示股票。",
+    "params": [
+      "ts_code",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "name",
+      "warn_type",
+      "warn_date",
+      "end_date"
+    ]
+  },
+  {
+    "order": 6,
+    "interface_name": "沪深港通股票列表",
+    "api_name": "stock_hsgt",
+    "api_name_raw": "stock_hsgt",
+    "doc_id": 398,
+    "category": "股票数据 → 基础数据",
+    "description": "获取沪深港通标的股票列表，包括沪股通、深股通、港股通标的。",
+    "params": [
+      "ts_code",
+      "exchange",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "exchange",
+      "list_date",
+      "remove_date"
+    ]
+  },
+  {
+    "order": 7,
+    "interface_name": "股票曾用名",
+    "api_name": "stock_namechange",
+    "api_name_raw": "stock_namechange",
+    "doc_id": 100,
+    "category": "股票数据 → 基础数据",
+    "description": "获取股票历史名称变更记录。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "name",
+      "start_date",
+      "end_date",
+      "change_reason"
+    ]
+  },
+  {
+    "order": 8,
+    "interface_name": "上市公司基本信息",
+    "api_name": "stock_company",
+    "api_name_raw": "stock_company",
+    "doc_id": 112,
+    "category": "股票数据 → 基础数据",
+    "description": "获取上市公司基本信息，包括公司名称、成立日期、注册资本、所属地区等。",
+    "params": [
+      "ts_code",
+      "exchange",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "exchange",
+      "chairman",
+      "manager",
+      "secretary",
+      "reg_capital",
+      "setup_date",
+      "province",
+      "city",
+      "introduction",
+      "website",
+      "email",
+      "office",
+      "employees",
+      "history",
+      "business_scope"
+    ]
+  },
+  {
+    "order": 9,
+    "interface_name": "上市公司管理层",
+    "api_name": "stock_manager",
+    "api_name_raw": "stock_manager",
+    "doc_id": 193,
+    "category": "股票数据 → 基础数据",
+    "description": "获取上市公司管理层信息，包括董事、监事、高级管理人员等。",
+    "params": [
+      "ts_code",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "end_date",
+      "name",
+      "title",
+      "edu",
+      "nationality",
+      "birthday",
+      "gender",
+      "begin_date",
+      "end_date",
+      "resume"
+    ]
+  },
+  {
+    "order": 10,
+    "interface_name": "管理层薪酬和持股",
+    "api_name": "stock_manager",
+    "api_name_raw": "stock_manager薪酬",
+    "doc_id": 194,
+    "category": "股票数据 → 基础数据",
+    "description": "获取上市公司管理层薪酬和持股情况。",
+    "params": [
+      "ts_code",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "end_date",
+      "name",
+      "title",
+      "salary",
+      "bonus",
+      "stock",
+      "total"
+    ]
+  },
+  {
+    "order": 11,
+    "interface_name": "IPO新股上市",
+    "api_name": "stock_new",
+    "api_name_raw": "stock_new",
+    "doc_id": 123,
+    "category": "股票数据 → 基础数据",
+    "description": "获取IPO新股上市信息。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "name",
+      "ipo_date",
+      "issue_date",
+      "price",
+      "pema",
+      "amount",
+      "pe",
+      "limit"
+    ]
+  },
+  {
+    "order": 12,
+    "interface_name": "股票历史列表",
+    "api_name": "stock_hist",
+    "api_name_raw": "stock_hist",
+    "doc_id": 262,
+    "category": "股票数据 → 基础数据",
+    "description": "获取股票历史列表，包括已退市股票。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "name",
+      "list_date",
+      "delist_date"
+    ]
+  },
+  {
+    "order": 13,
+    "interface_name": "ETF基本信息",
+    "api_name": "etf_basic",
+    "api_name_raw": "etf_basic",
+    "doc_id": 385,
+    "category": "ETF专题",
+    "description": "获取ETF基金的基本信息，包括ETF代码、名称、跟踪指数等。",
+    "params": [
+      "ts_code",
+      "market",
+      "exchange",
+      "list_status",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "name",
+      "market",
+      "exchange",
+      "list_date",
+      "delist_date",
+      "track_index",
+      "type"
+    ]
+  },
+  {
+    "order": 14,
+    "interface_name": "ETF基准指数",
+    "api_name": "etf_index",
+    "api_name_raw": "etf_index",
+    "doc_id": 386,
+    "category": "ETF专题",
+    "description": "获取ETF对应的基准指数信息。",
+    "params": [
+      "ts_code",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "index_code",
+      "name",
+      "weight"
+    ]
+  },
+  {
+    "order": 15,
+    "interface_name": "ETF日线行情",
+    "api_name": "etf_daily",
+    "api_name_raw": "etf_daily",
+    "doc_id": 127,
+    "category": "ETF专题",
+    "description": "获取ETF的历史日线行情数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "open",
+      "high",
+      "low",
+      "close",
+      "pre_close",
+      "change",
+      "pct_chg",
+      "vol",
+      "amount"
+    ]
+  },
+  {
+    "order": 16,
+    "interface_name": "ETF实时日线",
+    "api_name": "etf_daily_rt",
+    "api_name_raw": "etf_daily_rt",
+    "doc_id": 400,
+    "category": "ETF专题",
+    "description": "获取ETF实时日线行情。",
+    "params": [
+      "ts_code",
+      "trade_date"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "open",
+      "high",
+      "low",
+      "close",
+      "pre_close",
+      "change",
+      "pct_chg",
+      "vol",
+      "amount"
+    ]
+  },
+  {
+    "order": 17,
+    "interface_name": "ETF历史分钟",
+    "api_name": "etf_minute",
+    "api_name_raw": "etf_minute",
+    "doc_id": 387,
+    "category": "ETF专题",
+    "description": "获取ETF历史分钟级行情数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_time",
+      "end_time",
+      "limit"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "open",
+      "high",
+      "low",
+      "close",
+      "vol",
+      "amount"
+    ]
+  },
+  {
+    "order": 18,
+    "interface_name": "ETF实时分钟",
+    "api_name": "etf_minute_rt",
+    "api_name_raw": "etf_minute_rt",
+    "doc_id": 416,
+    "category": "ETF专题",
+    "description": "获取ETF实时分钟级行情。",
+    "params": [
+      "ts_code",
+      "trade_date"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "open",
+      "high",
+      "low",
+      "close",
+      "vol",
+      "amount"
+    ]
+  },
+  {
+    "order": 19,
+    "interface_name": "ETF复权因子",
+    "api_name": "etf_adj_factor",
+    "api_name_raw": "etf_adj_factor",
+    "doc_id": 199,
+    "category": "ETF专题",
+    "description": "获取ETF复权因子数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "adj_factor"
+    ]
+  },
+  {
+    "order": 20,
+    "interface_name": "ETF份额规模",
+    "api_name": "etf_share",
+    "api_name_raw": "etf_share",
+    "doc_id": 408,
+    "category": "ETF专题",
+    "description": "获取ETF份额和规模数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "share",
+      "nav",
+      "nav_ps",
+      "total_mv",
+      "adj_nav"
+    ]
+  },
+  {
+    "order": 21,
+    "interface_name": "期权合约信息",
+    "api_name": "option_basic",
+    "api_name_raw": "option_basic",
+    "doc_id": 158,
+    "category": "期权数据",
+    "description": "获取期权合约基本信息，包括期权代码、标的股票、行权价、到期日等。",
+    "params": [
+      "ts_code",
+      "exchange",
+      "call_put",
+      "underlying_type",
+      "list_status",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "exchange",
+      "name",
+      "call_put",
+      "underlying_symbol",
+      "underlying_type",
+      "strike_price",
+      "list_date",
+      "delist_date",
+      "margin"
+    ]
+  },
+  {
+    "order": 22,
+    "interface_name": "期权日线行情",
+    "api_name": "option_daily",
+    "api_name_raw": "option_daily",
+    "doc_id": 159,
+    "category": "期权数据",
+    "description": "获取期权日线行情数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "open",
+      "high",
+      "low",
+      "close",
+      "pre_settle",
+      "settle",
+      "vol",
+      "amount",
+      "oi",
+      "delta",
+      "gamma",
+      "vega",
+      "theta",
+      "rho"
+    ]
+  },
+  {
+    "order": 23,
+    "interface_name": "期权分钟行情",
+    "api_name": "option_minute",
+    "api_name_raw": "option_minute",
+    "doc_id": 341,
+    "category": "期权数据",
+    "description": "获取期权分钟级行情数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_time",
+      "end_time",
+      "limit"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "open",
+      "high",
+      "low",
+      "close",
+      "vol",
+      "amount",
+      "oi"
+    ]
+  },
+  {
+    "order": 24,
+    "interface_name": "历史日线",
+    "api_name": "daily",
+    "api_name_raw": "daily",
+    "doc_id": 27,
+    "category": "股票数据 → 行情数据",
+    "description": "获取股票历史每日行情数据，是最常用的行情数据接口。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "trade_date"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "open",
+      "high",
+      "low",
+      "close",
+      "pre_close",
+      "change",
+      "pct_chg",
+      "vol",
+      "amount"
+    ]
+  },
+  {
+    "order": 25,
+    "interface_name": "周线行情",
+    "api_name": "weekly",
+    "api_name_raw": "weekly",
+    "doc_id": 144,
+    "category": "股票数据 → 行情数据",
+    "description": "获取股票周线级别历史行情数据。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "trade_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "open",
+      "high",
+      "low",
+      "close",
+      "vol",
+      "amount",
+      "pct_chg"
+    ]
+  },
+  {
+    "order": 26,
+    "interface_name": "月线行情",
+    "api_name": "monthly",
+    "api_name_raw": "monthly",
+    "doc_id": 145,
+    "category": "股票数据 → 行情数据",
+    "description": "获取股票月线级别历史行情数据。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "trade_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "open",
+      "high",
+      "low",
+      "close",
+      "vol",
+      "amount",
+      "pct_chg"
+    ]
+  },
+  {
+    "order": 27,
+    "interface_name": "实时日线",
+    "api_name": "daily_rt",
+    "api_name_raw": "daily_rt",
+    "doc_id": 372,
+    "category": "股票数据 → 行情数据",
+    "description": "获取股票实时日线行情（当日数据）。",
+    "params": [
+      "ts_code",
+      "trade_date"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "open",
+      "high",
+      "low",
+      "close",
+      "pre_close",
+      "change",
+      "pct_chg",
+      "vol",
+      "amount"
+    ]
+  },
+  {
+    "order": 28,
+    "interface_name": "历史分钟",
+    "api_name": "minute",
+    "api_name_raw": "minute",
+    "doc_id": 370,
+    "category": "股票数据 → 行情数据",
+    "description": "获取股票历史分钟级行情数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_time",
+      "end_time",
+      "freq",
+      "limit"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "open",
+      "high",
+      "low",
+      "close",
+      "vol",
+      "amount"
+    ]
+  },
+  {
+    "order": 29,
+    "interface_name": "实时分钟",
+    "api_name": "minute_rt",
+    "api_name_raw": "minute_rt",
+    "doc_id": 374,
+    "category": "股票数据 → 行情数据",
+    "description": "获取股票实时分钟级行情。",
+    "params": [
+      "ts_code",
+      "trade_date"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "open",
+      "high",
+      "low",
+      "close",
+      "vol",
+      "amount"
+    ]
+  },
+  {
+    "order": 30,
+    "interface_name": "复权行情",
+    "api_name": "daily_adj",
+    "api_name_raw": "daily_adj",
+    "doc_id": 146,
+    "category": "股票数据 → 行情数据",
+    "description": "获取股票复权后的历史行情数据。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "trade_date",
+      "adj",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "open",
+      "high",
+      "low",
+      "close",
+      "vol",
+      "amount"
+    ]
+  },
+  {
+    "order": 31,
+    "interface_name": "复权因子",
+    "api_name": "adj_factor",
+    "api_name_raw": "adj_factor",
+    "doc_id": 28,
+    "category": "股票数据 → 行情数据",
+    "description": "获取股票复权因子，用于自行计算复权价格。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "trade_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "adj_factor"
+    ]
+  },
+  {
+    "order": 32,
+    "interface_name": "每日指标",
+    "api_name": "daily_basic",
+    "api_name_raw": "daily_basic",
+    "doc_id": 32,
+    "category": "股票数据 → 行情数据",
+    "description": "获取股票每日交易指标数据，包括总市值、流通市值、换手率等。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "turnover_rate",
+      "volume_ratio",
+      "pe",
+      "pe_ttm",
+      "pb",
+      "ps",
+      "ps_ttm",
+      "dv_ratio",
+      "dv_ttm",
+      "total_share",
+      "float_share",
+      "total_mv",
+      "circ_mv"
+    ]
+  },
+  {
+    "order": 33,
+    "interface_name": "每日涨跌停价格",
+    "api_name": "st_limit_price",
+    "api_name_raw": "st_limit_price",
+    "doc_id": 302,
+    "category": "股票数据 → 行情数据",
+    "description": "获取每日涨跌停价格限制。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "limit_up",
+      "limit_down"
+    ]
+  },
+  {
+    "order": 34,
+    "interface_name": "每日停复牌信息",
+    "api_name": "suspend",
+    "api_name_raw": "suspend",
+    "doc_id": 301,
+    "category": "股票数据 → 行情数据",
+    "description": "获取股票每日停复牌信息。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "suspend_type",
+      "suspend_time",
+      "resume_time"
+    ]
+  },
+  {
+    "order": 35,
+    "interface_name": "沪深股通十大成交股",
+    "api_name": "hsgt_top10",
+    "api_name_raw": "hsgt_top10",
+    "doc_id": 48,
+    "category": "股票数据 → 行情数据",
+    "description": "获取沪深股通每日十大成交股数据。",
+    "params": [
+      "trade_date",
+      "start_date",
+      "end_date",
+      "market",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "exchange",
+      "ts_code",
+      "name",
+      "close",
+      "change",
+      "volume",
+      "amount",
+      "buy",
+      "sell",
+      "net_buy"
+    ]
+  },
+  {
+    "order": 36,
+    "interface_name": "港股通十大成交股",
+    "api_name": "hkgt_top10",
+    "api_name_raw": "hkgt_top10",
+    "doc_id": 49,
+    "category": "股票数据 → 行情数据",
+    "description": "获取港股通每日十大成交股数据。",
+    "params": [
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "ts_code",
+      "name",
+      "close",
+      "change",
+      "volume",
+      "amount",
+      "buy",
+      "sell",
+      "net_buy"
+    ]
+  },
+  {
+    "order": 37,
+    "interface_name": "港股通每日成交统计",
+    "api_name": "hkgt_daily",
+    "api_name_raw": "hkgt_daily",
+    "doc_id": 196,
+    "category": "股票数据 → 行情数据",
+    "description": "获取港股通每日成交统计数据。",
+    "params": [
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "buy_amount",
+      "buy_vol",
+      "sell_amount",
+      "sell_vol",
+      "net_amount",
+      "net_vol"
+    ]
+  },
+  {
+    "order": 38,
+    "interface_name": "港股通每月成交统计",
+    "api_name": "hkgt_monthly",
+    "api_name_raw": "hkgt_monthly",
+    "doc_id": 197,
+    "category": "股票数据 → 行情数据",
+    "description": "获取港股通每月成交统计数据。",
+    "params": [
+      "month",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "month",
+      "buy_amount",
+      "buy_vol",
+      "sell_amount",
+      "sell_vol",
+      "net_amount",
+      "net_vol"
+    ]
+  },
+  {
+    "order": 39,
+    "interface_name": "利润表",
+    "api_name": "income",
+    "api_name_raw": "income",
+    "doc_id": 33,
+    "category": "股票数据 → 财务数据",
+    "description": "获取上市公司利润表数据，包括营业收入、净利润等。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "report_type",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "end_date",
+      "report_type",
+      "comp_type",
+      "total_revenue",
+      "revenue",
+      "intl_income",
+      "biz_income",
+      "net_profit",
+      "diluted_eps"
+    ]
+  },
+  {
+    "order": 40,
+    "interface_name": "资产负债表",
+    "api_name": "balance_sheet",
+    "api_name_raw": "balance_sheet",
+    "doc_id": 36,
+    "category": "股票数据 → 财务数据",
+    "description": "获取上市公司资产负债表数据，包括资产、负债等。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "report_type",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "end_date",
+      "report_type",
+      "comp_type",
+      "total_assets",
+      "total_liab",
+      "total_hldr_eqy",
+      "cash_and_equivalents"
+    ]
+  },
+  {
+    "order": 41,
+    "interface_name": "现金流量表",
+    "api_name": "cashflow",
+    "api_name_raw": "cashflow",
+    "doc_id": 44,
+    "category": "股票数据 → 财务数据",
+    "description": "获取上市公司现金流量表数据。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "report_type",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "end_date",
+      "report_type",
+      "comp_type",
+      "net_cashflow_oper",
+      "net_cashflow_invst",
+      "net_cashflow_fnc"
+    ]
+  },
+  {
+    "order": 42,
+    "interface_name": "业绩预告",
+    "api_name": "fina_forecast",
+    "api_name_raw": "fina_forecast",
+    "doc_id": 45,
+    "category": "股票数据 → 财务数据",
+    "description": "获取上市公司业绩预告数据。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "type",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "end_date",
+      "type",
+      "net_profit_min",
+      "net_profit_max",
+      "eps_min",
+      "eps_max",
+      "reason"
+    ]
+  },
+  {
+    "order": 43,
+    "interface_name": "业绩快报",
+    "api_name": "fina_indicator",
+    "api_name_raw": "fina_indicator",
+    "doc_id": 79,
+    "category": "股票数据 → 财务数据",
+    "description": "获取上市公司业绩快报数据。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "end_date",
+      "eps",
+      "eps_yoy",
+      "net_profit",
+      "net_profit_yoy",
+      "total_assets",
+      "total_assets_yoy"
+    ]
+  },
+  {
+    "order": 44,
+    "interface_name": "分红送股数据",
+    "api_name": "dividend",
+    "api_name_raw": "dividend",
+    "doc_id": 103,
+    "category": "股票数据 → 财务数据",
+    "description": "获取上市公司分红送股数据。",
+    "params": [
+      "ts_code",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "end_date",
+      "divi",
+      "divib",
+      "base_bonus",
+      "base_share",
+      "capital_rese",
+      "profit_rese",
+      "record_date",
+      "ex_date",
+      "ann_date"
+    ]
+  },
+  {
+    "order": 45,
+    "interface_name": "财务指标数据",
+    "api_name": "fina_indicator",
+    "api_name_raw": "fina_indicator",
+    "doc_id": 79,
+    "category": "股票数据 → 财务数据",
+    "description": "获取上市公司主要财务指标数据。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "end_date",
+      "roe",
+      "net_profit_ratio",
+      "gross_profit_rate",
+      "expense_ratio",
+      "profit_ratio"
+    ]
+  },
+  {
+    "order": 46,
+    "interface_name": "财务审计意见",
+    "api_name": "fina_audit",
+    "api_name_raw": "fina_audit",
+    "doc_id": 80,
+    "category": "股票数据 → 财务数据",
+    "description": "获取上市公司财务审计意见数据。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "end_date",
+      "audit_remark",
+      "audit_type"
+    ]
+  },
+  {
+    "order": 47,
+    "interface_name": "主营业务构成",
+    "api_name": "fina_mainbz",
+    "api_name_raw": "fina_mainbz",
+    "doc_id": 81,
+    "category": "股票数据 → 财务数据",
+    "description": "获取上市公司主营业务收入构成数据。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "type",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "end_date",
+      "type",
+      "bz_item",
+      "bz_item_name",
+      "bz_sales",
+      "bz_profit",
+      "bz_cost"
+    ]
+  },
+  {
+    "order": 48,
+    "interface_name": "财报披露日期表",
+    "api_name": "fina_report_date",
+    "api_name_raw": "fina_report_date",
+    "doc_id": 162,
+    "category": "股票数据 → 财务数据",
+    "description": "获取上市公司财报披露日期信息。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "end_date",
+      "report_date",
+      "pre_date",
+      "org_id"
+    ]
+  },
+  {
+    "order": 49,
+    "interface_name": "前十大股东",
+    "api_name": "top10_holders",
+    "api_name_raw": "top10_holders",
+    "doc_id": 61,
+    "category": "股票数据 → 参考数据",
+    "description": "获取上市公司前十大股东数据。",
+    "params": [
+      "ts_code",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "end_date",
+      "holder_name",
+      "hold_num",
+      "hold_ratio"
+    ]
+  },
+  {
+    "order": 50,
+    "interface_name": "前十大流通股东",
+    "api_name": "top10_floatholders",
+    "api_name_raw": "top10_floatholders",
+    "doc_id": 62,
+    "category": "股票数据 → 参考数据",
+    "description": "获取上市公司前十大流通股东数据。",
+    "params": [
+      "ts_code",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "end_date",
+      "holder_name",
+      "hold_num",
+      "hold_ratio"
+    ]
+  },
+  {
+    "order": 51,
+    "interface_name": "股权质押统计数据",
+    "api_name": "stock_pledge_stat",
+    "api_name_raw": "stock_pledge_stat",
+    "doc_id": 110,
+    "category": "股票数据 → 参考数据",
+    "description": "获取上市公司股权质押统计汇总数据。",
+    "params": [
+      "ts_code",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "end_date",
+      "pledge_num",
+      "pledge_ratio",
+      "total_shares",
+      "circulation_shares"
+    ]
+  },
+  {
+    "order": 52,
+    "interface_name": "股权质押明细数据",
+    "api_name": "stock_pledge_detail",
+    "api_name_raw": "stock_pledge_detail",
+    "doc_id": 111,
+    "category": "股票数据 → 参考数据",
+    "description": "获取上市公司股权质押详细明细数据。",
+    "params": [
+      "ts_code",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "end_date",
+      "pledge_holder",
+      "pledge_num",
+      "pledge_date",
+      "release_date"
+    ]
+  },
+  {
+    "order": 53,
+    "interface_name": "股票回购",
+    "api_name": "stock_repurchase",
+    "api_name_raw": "stock_repurchase",
+    "doc_id": 124,
+    "category": "股票数据 → 参考数据",
+    "description": "获取上市公司股票回购数据。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "ann_date",
+      "repur_date",
+      "end_date",
+      "repur_amount",
+      "repur_vol",
+      "high_limit",
+      "low_limit"
+    ]
+  },
+  {
+    "order": 54,
+    "interface_name": "限售股解禁",
+    "api_name": "stock_restricted",
+    "api_name_raw": "stock_restricted",
+    "doc_id": 160,
+    "category": "股票数据 → 参考数据",
+    "description": "获取上市公司限售股解禁数据。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "ann_date",
+      "float_date",
+      "float_share",
+      "float_ratio",
+      "type"
+    ]
+  },
+  {
+    "order": 55,
+    "interface_name": "大宗交易",
+    "api_name": "stock_block_trade",
+    "api_name_raw": "stock_block_trade",
+    "doc_id": 161,
+    "category": "股票数据 → 参考数据",
+    "description": "获取上市公司大宗交易数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "price",
+      "vol",
+      "amount",
+      "buyer",
+      "seller"
+    ]
+  },
+  {
+    "order": 56,
+    "interface_name": "股东人数",
+    "api_name": "stock_holdernum",
+    "api_name_raw": "stock_holdernum",
+    "doc_id": 166,
+    "category": "股票数据 → 参考数据",
+    "description": "获取上市公司股东人数数据。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "end_date",
+      "holder_num"
+    ]
+  },
+  {
+    "order": 57,
+    "interface_name": "股东增减持",
+    "api_name": "stock_holder_trade",
+    "api_name_raw": "stock_holder_trade",
+    "doc_id": 175,
+    "category": "股票数据 → 参考数据",
+    "description": "获取上市公司股东增减持数据。",
+    "params": [
+      "ts_code",
+      "holder_type",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "holder_name",
+      "holder_type",
+      "change_type",
+      "change_vol",
+      "change_ratio",
+      "after_share",
+      "ann_date"
+    ]
+  },
+  {
+    "order": 58,
+    "interface_name": "融资融券交易汇总",
+    "api_name": "margin",
+    "api_name_raw": "margin",
+    "doc_id": 58,
+    "category": "股票数据 → 两融及转融通",
+    "description": "获取融资融券交易汇总数据。",
+    "params": [
+      "trade_date",
+      "start_date",
+      "end_date",
+      "ts_code",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "ts_code",
+      "rzye",
+      "rzmre",
+      "rzche",
+      "rqyl",
+      "rqmcl",
+      "rqchl"
+    ]
+  },
+  {
+    "order": 59,
+    "interface_name": "融资融券交易明细",
+    "api_name": "margin_detail",
+    "api_name_raw": "margin_detail",
+    "doc_id": 59,
+    "category": "股票数据 → 两融及转融通",
+    "description": "获取融资融券交易明细数据。",
+    "params": [
+      "trade_date",
+      "ts_code",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "ts_code",
+      "rzye",
+      "rzmre",
+      "rzche",
+      "rqyl",
+      "rqmcl",
+      "rqchl"
+    ]
+  },
+  {
+    "order": 60,
+    "interface_name": "融资融券标的（盘前）",
+    "api_name": "margin_target",
+    "api_name_raw": "margin_target",
+    "doc_id": 326,
+    "category": "股票数据 → 两融及转融通",
+    "description": "获取融资融券标的证券列表（盘前数据）。",
+    "params": [
+      "exchange",
+      "target_type",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "exchange",
+      "target_type",
+      "target_status",
+      "list_date",
+      "remove_date"
+    ]
+  },
+  {
+    "order": 61,
+    "interface_name": "转融资交易汇总",
+    "api_name": "rzye_target",
+    "api_name_raw": "rzye_target",
+    "doc_id": 331,
+    "category": "股票数据 → 两融及转融通",
+    "description": "获取转融资交易汇总数据。",
+    "params": [
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "rzye",
+      "rzmre",
+      "rzche"
+    ]
+  },
+  {
+    "order": 62,
+    "interface_name": "券商盈利预测数据",
+    "api_name": "fina_forecast",
+    "api_name_raw": "fina_forecast",
+    "doc_id": 292,
+    "category": "股票数据 → 特色数据",
+    "description": "获取券商对上市公司盈利预测数据。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "end_date",
+      "org_type",
+      "org_name",
+      "eps",
+      "net_profit",
+      "revenue",
+      "op_income"
+    ]
+  },
+  {
+    "order": 63,
+    "interface_name": "每日筹码及胜率",
+    "api_name": "stock_chip",
+    "api_name_raw": "stock_chip",
+    "doc_id": 293,
+    "category": "股票数据 → 特色数据",
+    "description": "获取每日筹码数据及胜率统计。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "chip_win_rate",
+      "chip_avg_cost",
+      "chip_20_80"
+    ]
+  },
+  {
+    "order": 64,
+    "interface_name": "每日筹码分布",
+    "api_name": "stock_shareholdernum",
+    "api_name_raw": "stock_shareholdernum",
+    "doc_id": 294,
+    "category": "股票数据 → 特色数据",
+    "description": "获取每日筹码分布数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "shareholder_num",
+      "share_float",
+      "share_ratio"
+    ]
+  },
+  {
+    "order": 65,
+    "interface_name": "股票技术面因子（专业版）",
+    "api_name": "stock_factor",
+    "api_name_raw": "stock_factor",
+    "doc_id": 328,
+    "category": "股票数据 → 特色数据",
+    "description": "获取股票技术面因子数据，包括各种技术指标。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "fields",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "ma5",
+      "ma10",
+      "ma20",
+      "ma30",
+      "ma60",
+      "ema5",
+      "ema10",
+      "rsi",
+      "kdj",
+      "macd"
+    ]
+  },
+  {
+    "order": 66,
+    "interface_name": "中央结算系统持股统计",
+    "api_name": "stock_hold_stats",
+    "api_name_raw": "stock_hold_stats",
+    "doc_id": 295,
+    "category": "股票数据 → 特色数据",
+    "description": "获取中央结算系统持股统计数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "holder_num",
+      "hold_share",
+      "hold_ratio"
+    ]
+  },
+  {
+    "order": 67,
+    "interface_name": "中央结算系统持股明细",
+    "api_name": "stock_hold_detail",
+    "api_name_raw": "stock_hold_detail",
+    "doc_id": 274,
+    "category": "股票数据 → 特色数据",
+    "description": "获取中央结算系统持股明细数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "holder_name",
+      "hold_share",
+      "hold_ratio"
+    ]
+  },
+  {
+    "order": 68,
+    "interface_name": "沪深股通持股明细",
+    "api_name": "hsgt_hold_detail",
+    "api_name_raw": "hsgt_hold_detail",
+    "doc_id": 188,
+    "category": "股票数据 → 特色数据",
+    "description": "获取沪深股通持股明细数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "market",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "exchange",
+      "holder_name",
+      "hold_share",
+      "hold_ratio",
+      "change_ratio"
+    ]
+  },
+  {
+    "order": 69,
+    "interface_name": "股票开盘集合竞价数据",
+    "api_name": "stock_auction",
+    "api_name_raw": "stock_auction",
+    "doc_id": 353,
+    "category": "股票数据 → 特色数据",
+    "description": "获取股票开盘集合竞价阶段数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "time",
+      "pre_close",
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume",
+      "amount",
+      "match_vol"
+    ]
+  },
+  {
+    "order": 70,
+    "interface_name": "股票收盘集合竞价数据",
+    "api_name": "stock_auction_end",
+    "api_name_raw": "stock_auction_end",
+    "doc_id": 354,
+    "category": "股票数据 → 特色数据",
+    "description": "获取股票收盘集合竞价阶段数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "time",
+      "pre_close",
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume",
+      "amount",
+      "match_vol"
+    ]
+  },
+  {
+    "order": 71,
+    "interface_name": "神奇九转指标",
+    "api_name": "stock_magical",
+    "api_name_raw": "stock_magical",
+    "doc_id": 306,
+    "category": "股票数据 → 特色数据",
+    "description": "获取股票神奇九转技术指标数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "magical_turn",
+      "signal",
+      "level"
+    ]
+  },
+  {
+    "order": 72,
+    "interface_name": "AH股比价",
+    "api_name": "stock_ah_price",
+    "api_name_raw": "stock_ah_price",
+    "doc_id": 399,
+    "category": "股票数据 → 特色数据",
+    "description": "获取AH股比价数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "ah_price",
+      "ah_ratio"
+    ]
+  },
+  {
+    "order": 73,
+    "interface_name": "机构调研数据",
+    "api_name": "stock_research",
+    "api_name_raw": "stock_research",
+    "doc_id": 275,
+    "category": "股票数据 → 特色数据",
+    "description": "获取机构调研上市公司数据。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "name",
+      "org_name",
+      "org_type",
+      "meet_type",
+      "meet_date",
+      "pub_date",
+      "content"
+    ]
+  },
+  {
+    "order": 74,
+    "interface_name": "券商月度金股",
+    "api_name": "stock_gold",
+    "api_name_raw": "stock_gold",
+    "doc_id": 267,
+    "category": "股票数据 → 特色数据",
+    "description": "获取券商每月推荐的金股数据。",
+    "params": [
+      "month",
+      "ts_code",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "month",
+      "ts_code",
+      "name",
+      "org_name",
+      "target_price",
+      "reason"
+    ]
+  },
+  {
+    "order": 75,
+    "interface_name": "个股资金流向",
+    "api_name": "moneyflow",
+    "api_name_raw": "moneyflow",
+    "doc_id": 170,
+    "category": "股票数据 → 资金流向数据",
+    "description": "获取个股资金流向数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "net_inflow_main",
+      "net_inflow_small",
+      "net_inflow_medium",
+      "net_inflow_large"
+    ]
+  },
+  {
+    "order": 76,
+    "interface_name": "个股资金流向（THS）",
+    "api_name": "moneyflow_ths",
+    "api_name_raw": "moneyflow_ths",
+    "doc_id": 348,
+    "category": "股票数据 → 资金流向数据",
+    "description": "获取同花顺版本的个股资金流向数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "net_inflow_main",
+      "net_inflow_small",
+      "net_inflow_medium",
+      "net_inflow_large"
+    ]
+  },
+  {
+    "order": 77,
+    "interface_name": "个股资金流向（DC）",
+    "api_name": "moneyflow_dc",
+    "api_name_raw": "moneyflow_dc",
+    "doc_id": 349,
+    "category": "股票数据 → 资金流向数据",
+    "description": "获取东方财富版本的个股资金流向数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "net_inflow_main",
+      "net_inflow_small",
+      "net_inflow_medium",
+      "net_inflow_large"
+    ]
+  },
+  {
+    "order": 78,
+    "interface_name": "板块资金流向（THS）",
+    "api_name": "moneyflow_industry_ths",
+    "api_name_raw": "moneyflow_industry_ths",
+    "doc_id": 371,
+    "category": "股票数据 → 资金流向数据",
+    "description": "获取同花顺版本的板块资金流向数据。",
+    "params": [
+      "trade_date",
+      "start_date",
+      "end_date",
+      "industry_code",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "industry_code",
+      "industry_name",
+      "net_inflow_main",
+      "net_inflow_small"
+    ]
+  },
+  {
+    "order": 79,
+    "interface_name": "行业资金流向（THS）",
+    "api_name": "moneyflow_hy_ths",
+    "api_name_raw": "moneyflow_hy_ths",
+    "doc_id": 343,
+    "category": "股票数据 → 资金流向数据",
+    "description": "获取同花顺版本的行业资金流向数据。",
+    "params": [
+      "trade_date",
+      "start_date",
+      "end_date",
+      "industry_code",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "industry_code",
+      "industry_name",
+      "net_inflow"
+    ]
+  },
+  {
+    "order": 80,
+    "interface_name": "板块资金流向（DC）",
+    "api_name": "moneyflow_concept_dc",
+    "api_name_raw": "moneyflow_concept_dc",
+    "doc_id": 344,
+    "category": "股票数据 → 资金流向数据",
+    "description": "获取东方财富版本的板块资金流向数据。",
+    "params": [
+      "trade_date",
+      "start_date",
+      "end_date",
+      "concept_code",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "concept_code",
+      "concept_name",
+      "net_inflow"
+    ]
+  },
+  {
+    "order": 81,
+    "interface_name": "大盘资金流向（DC）",
+    "api_name": "moneyflow_market_dc",
+    "api_name_raw": "moneyflow_market_dc",
+    "doc_id": 345,
+    "category": "股票数据 → 资金流向数据",
+    "description": "获取东方财富版本的大盘资金流向数据。",
+    "params": [
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "net_inflow_main",
+      "net_inflow_small",
+      "net_inflow_medium",
+      "net_inflow_large"
+    ]
+  },
+  {
+    "order": 82,
+    "interface_name": "沪深港通资金流向",
+    "api_name": "moneyflow_hsgt",
+    "api_name_raw": "moneyflow_hsgt",
+    "doc_id": 47,
+    "category": "股票数据 → 资金流向数据",
+    "description": "获取沪深港通资金流向数据。",
+    "params": [
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "north_money",
+      "south_money",
+      "north_vol",
+      "south_vol"
+    ]
+  },
+  {
+    "order": 83,
+    "interface_name": "龙虎榜每日统计单",
+    "api_name": "toplist",
+    "api_name_raw": "toplist",
+    "doc_id": 106,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取龙虎榜每日交易统计数据。",
+    "params": [
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "ts_code",
+      "name",
+      "close",
+      "pct_chg",
+      "turnover_rate",
+      "amount",
+      "buy",
+      "sell",
+      "net_buy"
+    ]
+  },
+  {
+    "order": 84,
+    "interface_name": "龙虎榜机构交易单",
+    "api_name": "top_inst",
+    "api_name_raw": "top_inst",
+    "doc_id": 107,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取龙虎榜机构买卖交易明细。",
+    "params": [
+      "trade_date",
+      "ts_code",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "ts_code",
+      "name",
+      "exalter",
+      "buy_vol",
+      "sell_vol",
+      "net_buy_vol"
+    ]
+  },
+  {
+    "order": 85,
+    "interface_name": "同花顺涨跌停榜单",
+    "api_name": "ths_daily",
+    "api_name_raw": "ths_daily",
+    "doc_id": 355,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取同花顺版本的涨跌停榜单数据。",
+    "params": [
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit_type",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "ts_code",
+      "name",
+      "close",
+      "pct_chg",
+      "limit_type",
+      "reason"
+    ]
+  },
+  {
+    "order": 86,
+    "interface_name": "涨跌停和炸板数据",
+    "api_name": "st_limit_list",
+    "api_name_raw": "st_limit_list",
+    "doc_id": 298,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取涨跌停和炸板数据。",
+    "params": [
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "ts_code",
+      "name",
+      "limit_type",
+      "limit_price",
+      "close_price",
+      "open_price"
+    ]
+  },
+  {
+    "order": 87,
+    "interface_name": "涨停股票连板天梯",
+    "api_name": "limit_ladder",
+    "api_name_raw": "limit_ladder",
+    "doc_id": 356,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取涨停股票连板天数排行数据。",
+    "params": [
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "ts_code",
+      "name",
+      "limit_days",
+      "close_price",
+      "pct_chg"
+    ]
+  },
+  {
+    "order": 88,
+    "interface_name": "涨停最强板块统计",
+    "api_name": "limit_industry_stat",
+    "api_name_raw": "limit_industry_stat",
+    "doc_id": 357,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取涨停最强板块统计数据。",
+    "params": [
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "industry_code",
+      "industry_name",
+      "stock_num",
+      "limit_num",
+      "limit_ratio"
+    ]
+  },
+  {
+    "order": 89,
+    "interface_name": "同花顺行业概念板块",
+    "api_name": "concept",
+    "api_name_raw": "concept",
+    "doc_id": 259,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取同花顺行业概念板块列表。",
+    "params": [
+      "ts_code",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "name",
+      "src"
+    ]
+  },
+  {
+    "order": 90,
+    "interface_name": "同花顺概念和行业指数行情",
+    "api_name": "concept_daily",
+    "api_name_raw": "concept_daily",
+    "doc_id": 260,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取同花顺概念和行业指数行情数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "open",
+      "high",
+      "low",
+      "close",
+      "vol",
+      "amount"
+    ]
+  },
+  {
+    "order": 91,
+    "interface_name": "同花顺行业概念成分",
+    "api_name": "concept_detail",
+    "api_name_raw": "concept_detail",
+    "doc_id": 261,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取同花顺行业概念成分股。",
+    "params": [
+      "ts_code",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "concept_code",
+      "concept_name",
+      "weight",
+      "in_date",
+      "out_date"
+    ]
+  },
+  {
+    "order": 92,
+    "interface_name": "东方财富概念板块",
+    "api_name": "concept_dc",
+    "api_name_raw": "concept_dc",
+    "doc_id": 362,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取东方财富概念板块列表。",
+    "params": [
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "name",
+      "src"
+    ]
+  },
+  {
+    "order": 93,
+    "interface_name": "东方财富概念成分",
+    "api_name": "concept_detail_dc",
+    "api_name_raw": "concept_detail_dc",
+    "doc_id": 363,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取东方财富概念成分股。",
+    "params": [
+      "ts_code",
+      "concept_code",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "concept_code",
+      "concept_name",
+      "weight",
+      "in_date",
+      "out_date"
+    ]
+  },
+  {
+    "order": 94,
+    "interface_name": "东财概念和行业指数行情",
+    "api_name": "concept_daily_dc",
+    "api_name_raw": "concept_daily_dc",
+    "doc_id": 382,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取东方财富概念和行业指数行情数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "open",
+      "high",
+      "low",
+      "close",
+      "vol",
+      "amount"
+    ]
+  },
+  {
+    "order": 95,
+    "interface_name": "开盘竞价成交（当日）",
+    "api_name": "auction_trade",
+    "api_name_raw": "auction_trade",
+    "doc_id": 369,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取当日开盘竞价成交数据。",
+    "params": [
+      "trade_date",
+      "ts_code",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "ts_code",
+      "name",
+      "price",
+      "vol",
+      "amount",
+      "turnover_rate"
+    ]
+  },
+  {
+    "order": 96,
+    "interface_name": "市场游资最全名录",
+    "api_name": "money_capital",
+    "api_name_raw": "money_capital",
+    "doc_id": 311,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取市场游资（热钱）最全面名录数据。",
+    "params": [
+      "capital_type",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "capital_id",
+      "capital_name",
+      "capital_type",
+      "market"
+    ]
+  },
+  {
+    "order": 97,
+    "interface_name": "游资交易每日明细",
+    "api_name": "money_trade",
+    "api_name_raw": "money_trade",
+    "doc_id": 312,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取游资每日交易明细数据。",
+    "params": [
+      "trade_date",
+      "capital_id",
+      "ts_code",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "ts_code",
+      "name",
+      "capital_id",
+      "capital_name",
+      "buy_vol",
+      "sell_vol",
+      "net_vol"
+    ]
+  },
+  {
+    "order": 98,
+    "interface_name": "同花顺App热榜数",
+    "api_name": "ths_hot",
+    "api_name_raw": "ths_hot",
+    "doc_id": 320,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取同花顺App热榜数据。",
+    "params": [
+      "trade_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "ts_code",
+      "name",
+      "hot_index"
+    ]
+  },
+  {
+    "order": 99,
+    "interface_name": "东方财富App热榜",
+    "api_name": "dc_hot",
+    "api_name_raw": "dc_hot",
+    "doc_id": 321,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取东方财富App热榜数据。",
+    "params": [
+      "trade_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "ts_code",
+      "name",
+      "hot_index"
+    ]
+  },
+  {
+    "order": 100,
+    "interface_name": "通达信板块信息",
+    "api_name": "tdx_block_info",
+    "api_name_raw": "tdx_block_info",
+    "doc_id": 376,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取通达信板块信息。",
+    "params": [
+      "ts_code",
+      "block_code",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "block_code",
+      "block_name",
+      "ts_code",
+      "src"
+    ]
+  },
+  {
+    "order": 101,
+    "interface_name": "通达信板块成分",
+    "api_name": "tdx_block_detail",
+    "api_name_raw": "tdx_block_detail",
+    "doc_id": 377,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取通达信板块成分股。",
+    "params": [
+      "block_code",
+      "ts_code",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "block_code",
+      "block_name",
+      "ts_code",
+      "weight"
+    ]
+  },
+  {
+    "order": 102,
+    "interface_name": "通达信板块行情",
+    "api_name": "tdx_block_daily",
+    "api_name_raw": "tdx_block_daily",
+    "doc_id": 378,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取通达信板块行情数据。",
+    "params": [
+      "ts_code",
+      "trade_date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "trade_date",
+      "open",
+      "high",
+      "low",
+      "close",
+      "vol",
+      "amount"
+    ]
+  },
+  {
+    "order": 103,
+    "interface_name": "榜单数据（开盘啦）",
+    "api_name": "kpl_toplist",
+    "api_name_raw": "kpl_toplist",
+    "doc_id": 347,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取开盘啦平台的榜单数据。",
+    "params": [
+      "trade_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "trade_date",
+      "ts_code",
+      "name",
+      "buy_amount",
+      "sell_amount",
+      "net_amount"
+    ]
+  },
+  {
+    "order": 104,
+    "interface_name": "题材成分（开盘啦）",
+    "api_name": "kpl_concept",
+    "api_name_raw": "kpl_concept",
+    "doc_id": 351,
+    "category": "股票数据 → 打板专题数据",
+    "description": "获取开盘啦平台的题材成分股。",
+    "params": [
+      "ts_code",
+      "concept_code",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "ts_code",
+      "concept_code",
+      "concept_name",
+      "weight"
+    ]
+  },
+  {
+    "order": 105,
+    "interface_name": "国内生产总值（GDP）",
+    "api_name": "gdp",
+    "api_name_raw": "gdp",
+    "doc_id": 227,
+    "category": "宏观经济 → 国内宏观 → 国民经济",
+    "description": "获取中国国内生产总值数据。",
+    "params": [
+      "quarter",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "quarter",
+      "gdp",
+      "gdp_yoy",
+      "pi",
+      "pi_yoy",
+      "ci",
+      "ci_yoy"
+    ]
+  },
+  {
+    "order": 106,
+    "interface_name": "居民消费价格指数（CPI）",
+    "api_name": "cpi",
+    "api_name_raw": "cpi",
+    "doc_id": 228,
+    "category": "宏观经济 → 国内宏观 → 价格指数",
+    "description": "获取中国居民消费价格指数月度数据。",
+    "params": [
+      "month",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "month",
+      "cpi",
+      "cpi_yoy",
+      "cpi_month"
+    ]
+  },
+  {
+    "order": 107,
+    "interface_name": "工业生产者出厂价格指数（PPI）",
+    "api_name": "ppi",
+    "api_name_raw": "ppi",
+    "doc_id": 245,
+    "category": "宏观经济 → 国内宏观 → 价格指数",
+    "description": "获取工业生产者出厂价格指数月度数据。",
+    "params": [
+      "month",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "month",
+      "ppi",
+      "ppi_yoy",
+      "ppi_month"
+    ]
+  },
+  {
+    "order": 108,
+    "interface_name": "货币供应量（月度）",
+    "api_name": "money_supply",
+    "api_name_raw": "money_supply",
+    "doc_id": 242,
+    "category": "宏观经济 → 国内宏观 → 金融",
+    "description": "获取货币供应量月度数据。",
+    "params": [
+      "month",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "month",
+      "m0",
+      "m0_yoy",
+      "m1",
+      "m1_yoy",
+      "m2",
+      "m2_yoy"
+    ]
+  },
+  {
+    "order": 109,
+    "interface_name": "社会融资增量（月度）",
+    "api_name": "financing",
+    "api_name_raw": "financing",
+    "doc_id": 310,
+    "category": "宏观经济 → 国内宏观 → 金融",
+    "description": "获取社会融资增量月度数据。",
+    "params": [
+      "month",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "month",
+      "financing",
+      "financing_yoy"
+    ]
+  },
+  {
+    "order": 110,
+    "interface_name": "Shibor利率",
+    "api_name": "shibor",
+    "api_name_raw": "shibor",
+    "doc_id": 149,
+    "category": "宏观经济 → 国内宏观 → 利率数据",
+    "description": "获取上海银行间同业拆放利率数据。",
+    "params": [
+      "date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "date",
+      "on_1w",
+      "on_2w",
+      "on_1m",
+      "on_3m",
+      "on_6m",
+      "on_9m",
+      "on_1y"
+    ]
+  },
+  {
+    "order": 111,
+    "interface_name": "Shibor报价数据",
+    "api_name": "shibor_detail",
+    "api_name_raw": "shibor_detail",
+    "doc_id": 150,
+    "category": "宏观经济 → 国内宏观 → 利率数据",
+    "description": "获取Shibor报价详细数据。",
+    "params": [
+      "date",
+      "start_date",
+      "end_date",
+      "bank",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "date",
+      "bank",
+      "on_1w",
+      "on_2w",
+      "on_1m",
+      "on_3m",
+      "on_6m",
+      "on_9m",
+      "on_1y"
+    ]
+  },
+  {
+    "order": 112,
+    "interface_name": "LPR贷款基础利率",
+    "api_name": "lpr",
+    "api_name_raw": "lpr",
+    "doc_id": 151,
+    "category": "宏观经济 → 国内宏观 → 利率数据",
+    "description": "获取贷款市场报价利率（LPR）数据。",
+    "params": [
+      "date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "date",
+      "lpr_1y",
+      "lpr_1y_avg",
+      "lpr_5y",
+      "lpr_5y_avg"
+    ]
+  },
+  {
+    "order": 113,
+    "interface_name": "Libor利率",
+    "api_name": "libor",
+    "api_name_raw": "libor",
+    "doc_id": 152,
+    "category": "宏观经济 → 国内宏观 → 利率数据",
+    "description": "获取伦敦银行同业拆借利率（Libor）数据。",
+    "params": [
+      "date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "date",
+      "usd_1w",
+      "usd_2w",
+      "usd_1m",
+      "usd_3m",
+      "usd_6m",
+      "usd_12m"
+    ]
+  },
+  {
+    "order": 114,
+    "interface_name": "Hibor利率",
+    "api_name": "hibor",
+    "api_name_raw": "hibor",
+    "doc_id": 153,
+    "category": "宏观经济 → 国内宏观 → 利率数据",
+    "description": "获取香港银行同业拆借利率（Hibor）数据。",
+    "params": [
+      "date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "date",
+      "hibor_1w",
+      "hibor_2w",
+      "hibor_1m",
+      "hibor_3m",
+      "hibor_6m",
+      "hibor_12m"
+    ]
+  },
+  {
+    "order": 115,
+    "interface_name": "温州民间借贷利率",
+    "api_name": "wz_rate",
+    "api_name_raw": "wz_rate",
+    "doc_id": 173,
+    "category": "宏观经济 → 国内宏观 → 利率数据",
+    "description": "获取温州民间借贷利率数据。",
+    "params": [
+      "month",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "month",
+      "rate"
+    ]
+  },
+  {
+    "order": 116,
+    "interface_name": "广州民间借贷利率",
+    "api_name": "gz_rate",
+    "api_name_raw": "gz_rate",
+    "doc_id": 174,
+    "category": "宏观经济 → 国内宏观 → 利率数据",
+    "description": "获取广州民间借贷利率数据。",
+    "params": [
+      "month",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "month",
+      "rate"
+    ]
+  },
+  {
+    "order": 117,
+    "interface_name": "采购经理指数（PMI）",
+    "api_name": "pmi",
+    "api_name_raw": "pmi",
+    "doc_id": 325,
+    "category": "宏观经济 → 国内宏观 → 景气度",
+    "description": "获取中国采购经理指数（PMI）数据。",
+    "params": [
+      "month",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "month",
+      "pmi",
+      "pmi_yoy"
+    ]
+  },
+  {
+    "order": 118,
+    "interface_name": "国债收益率曲线利率",
+    "api_name": "bond_china_yield",
+    "api_name_raw": "bond_china_yield",
+    "doc_id": 218,
+    "category": "宏观经济 → 国际宏观 → 美国利率",
+    "description": "获取中国国债收益率曲线利率数据。",
+    "params": [
+      "date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "date",
+      "type",
+      "rate"
+    ]
+  },
+  {
+    "order": 119,
+    "interface_name": "短期国债利率",
+    "api_name": "bond_treasury_short",
+    "api_name_raw": "bond_treasury_short",
+    "doc_id": 220,
+    "category": "宏观经济 → 国际宏观 → 美国利率",
+    "description": "获取美国短期国债利率数据。",
+    "params": [
+      "date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "date",
+      "m1",
+      "m3",
+      "m6",
+      "y1"
+    ]
+  },
+  {
+    "order": 120,
+    "interface_name": "国债长期利率",
+    "api_name": "bond_treasury_long",
+    "api_name_raw": "bond_treasury_long",
+    "doc_id": 221,
+    "category": "宏观经济 → 国际宏观 → 美国利率",
+    "description": "获取美国长期国债利率数据。",
+    "params": [
+      "date",
+      "start_date",
+      "end_date",
+      "limit",
+      "offset"
+    ],
+    "return_fields": [
+      "date",
+      "y3",
+      "y5",
+      "y7",
+      "y10",
+      "y20",
+      "y30"
+    ]
+  }
+]
