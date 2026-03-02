@@ -102,66 +102,6 @@ export async function fetchTradingCalendar(): Promise<{ success: boolean; messag
   }
 }
 
-// ─── 指数日线 ─────────────────────────────────────────────────────────────────
-
-export async function fetchIndexDaily(indexCode = '000300', days = 120): Promise<{ success: boolean; message: string; count: number }> {
-  if (await isFresh('index_daily', { index_code: indexCode })) {
-    return { success: true, message: `指数 ${indexCode} 缓存有效`, count: 0 }
-  }
-  const tok = ensureTushare()
-  if (!tok.ok) return { success: false, message: tok.message, count: 0 }
-
-  // Tushare 指数代码格式：000300.SH / 399006.SZ / 000001.SH
-  const tsIndexCode = toTsCode(indexCode)
-
-  try {
-    const rows = await tusharePost(
-      'index_daily',
-      { ts_code: tsIndexCode, start_date: daysAgoYmd(days + 10), end_date: todayYmd() },
-      ['ts_code', 'trade_date', 'close', 'open', 'high', 'low', 'pre_close', 'change', 'pct_chg', 'vol', 'amount']
-    )
-    if (rows.length === 0) return { success: false, message: '指数K线无数据', count: 0 }
-
-    const db = await getDb()
-    const now = new Date()
-    const ops = rows
-      .map((row) => {
-        const tradeDate = toYmd(row.trade_date)
-        if (!tradeDate) return null
-        return {
-          updateOne: {
-            filter: { index_code: indexCode, trade_date: tradeDate },
-            update: {
-              $set: {
-                index_code: indexCode,
-                trade_date: tradeDate,
-                open: toNum(row.open),
-                close: toNum(row.close),
-                high: toNum(row.high),
-                low: toNum(row.low),
-                volume: toNum(row.vol),
-                pct_chg: toNum(row.pct_chg),
-                change: toNum(row.change),
-                source: 'tushare',
-                updated_at: now
-              },
-              $setOnInsert: { created_at: now }
-            },
-            upsert: true
-          }
-        }
-      })
-      .filter(Boolean) as Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }>
-
-    if (ops.length > 0) {
-      await db.collection('index_daily').bulkWrite(ops, { ordered: false }).catch(() => { })
-    }
-    return { success: true, message: `指数 ${indexCode} 已更新 ${ops.length} 条`, count: ops.length }
-  } catch (err) {
-    return { success: false, message: `指数K线拉取失败: ${err instanceof Error ? err.message : '未知'}`, count: 0 }
-  }
-}
-
 // ─── 个股资金流 ───────────────────────────────────────────────────────────────
 
 export async function fetchFundFlow(code: string): Promise<{ success: boolean; message: string; count: number }> {
@@ -719,14 +659,9 @@ export async function fetchAllQuantData(params: {
   market: string
   industry: string
 }): Promise<{ success: boolean; message: string; results: Record<string, { success: boolean; message: string }> }> {
-  const { symbol, market, industry } = params
+  const { symbol, industry } = params
 
-  const indexCodes = market.includes('A') ? ['000300', '000001', '399006'] : ['000300']
-
-  const [calendarResult, ...indexResults] = await Promise.all([
-    fetchTradingCalendar(),
-    ...indexCodes.map((ic) => fetchIndexDaily(ic, 120))
-  ])
+  const calendarResult = await fetchTradingCalendar()
 
   const [
     northboundResult,
@@ -758,9 +693,6 @@ export async function fetchAllQuantData(params: {
     margin_trading: marginResult,
     dragon_tiger: dragonTigerResult,
     institution_holding: institutionResult
-  }
-  for (let i = 0; i < indexCodes.length; i++) {
-    results[`index_${indexCodes[i]}`] = indexResults[i]
   }
 
   const allOk = Object.values(results).every((r) => r.success)

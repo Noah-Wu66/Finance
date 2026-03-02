@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto'
 
 import { getDb } from '@/lib/db'
-import { findTushare11000Endpoint } from '@/lib/tushare-11000'
+import {
+  findTushare11000Endpoint,
+  isTushare11000SupportedApi,
+  normalizeTushareApiName
+} from '@/lib/tushare-11000'
 import { TUSHARE_FINA_INDICATOR_FIELDS } from '@/lib/tushare-field-sets'
 
 const TUSHARE_TOKEN = (process.env.TUSHARE_TOKEN || '').trim()
@@ -195,6 +199,14 @@ async function tusharePost(
 ): Promise<Array<Record<string, unknown>>> {
   if (!TUSHARE_TOKEN) throw new Error('未配置 TUSHARE_TOKEN 环境变量')
 
+  const normalizedApiName = normalizeTushareApiName(api_name)
+  if (!normalizedApiName) throw new Error('api_name 不合法')
+
+  const isSupported = await isTushare11000SupportedApi(normalizedApiName)
+  if (!isSupported) {
+    throw new Error(`接口 ${normalizedApiName} 不在 11000 积分支持清单中，已禁止调用`)
+  }
+
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 20000)
 
@@ -205,7 +217,7 @@ async function tusharePost(
       signal: controller.signal,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        api_name,
+        api_name: normalizedApiName,
         token: TUSHARE_TOKEN,
         params,
         fields: fields.join(',')
@@ -218,7 +230,7 @@ async function tusharePost(
   if (!res.ok) throw new Error(`Tushare HTTP ${res.status}`)
 
   const json = await res.json()
-  if (json.code !== 0) throw new Error(`Tushare ${api_name} 错误：${json.msg}`)
+  if (json.code !== 0) throw new Error(`Tushare ${normalizedApiName} 错误：${json.msg}`)
 
   const { fields: colNames, items } = json.data as {
     fields: string[]
@@ -235,7 +247,7 @@ async function tusharePost(
   })
 
   await mirrorTushareRows({
-    apiName: api_name,
+    apiName: normalizedApiName,
     params,
     fields: colNames,
     rows
@@ -772,91 +784,6 @@ export async function fetchAStockExtendedSnapshot(code: string): Promise<{
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 指数
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export async function fetchIndexList(): Promise<{
-  success: boolean
-  message: string
-  data?: Array<{ dm: string; mc: string; jys: string }>
-}> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
-  try {
-    const rows = await tusharePost(
-      'index_basic',
-      { market: 'SSE' },
-      ['ts_code', 'name', 'fullname', 'market', 'publisher', 'index_type', 'category', 'base_date', 'base_point', 'list_date', 'weight_rule', 'desc', 'exp_date']
-    )
-    const mapped = rows.map((r) => ({
-      dm: fromTsCode(String(r.ts_code || '')),
-      mc: String(r.name || ''),
-      jys: String(r.market || 'SSE')
-    }))
-    await upsertSimpleList(
-      'index_list',
-      rows.map((r) => ({
-        symbol: fromTsCode(String(r.ts_code || '')),
-        name: String(r.name || ''),
-        market: '指数'
-      }))
-    )
-    return { success: true, message: `已获取 ${mapped.length} 个指数`, data: mapped }
-  } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : '未知错误' }
-  }
-}
-
-export async function fetchIndexQuote(code: string): Promise<{
-  success: boolean
-  message: string
-  data?: Record<string, unknown>
-}> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
-  const symbol = normalizeStockCode(code)
-  const tsCode = toTsCode(symbol)
-  try {
-    const rows = await tusharePost(
-      'index_daily',
-      { ts_code: tsCode, start_date: daysAgoYmd(7), end_date: todayYmd() },
-      ['ts_code', 'trade_date', 'close', 'open', 'high', 'low', 'pre_close', 'change', 'pct_chg', 'vol', 'amount']
-    )
-    const sorted = rows.sort((a, b) => String(b.trade_date).localeCompare(String(a.trade_date)))
-    const row = sorted[0]
-    if (!row) return { success: false, message: '无指数行情数据' }
-
-    const tradeDate = toYmd(row.trade_date) || todayYmd()
-    const doc = {
-      symbol,
-      name: symbol,
-      close: toNumber(row.close),
-      open: toNumber(row.open),
-      high: toNumber(row.high),
-      low: toNumber(row.low),
-      pre_close: toNumber(row.pre_close),
-      pct_chg: toNumber(row.pct_chg),
-      change: toNumber(row.change),
-      amplitude: 0,
-      amount: toNumber(row.amount),
-      volume: toNumber(row.vol),
-      trade_date: tradeDate,
-      data_source: 'tushare_index',
-      updated_at: new Date(),
-      created_at: new Date()
-    }
-
-    const db = await getDb()
-    await db.collection('stock_quotes').updateOne(
-      { symbol, trade_date: tradeDate, data_source: 'tushare_index' },
-      { $set: doc, $setOnInsert: { created_at: new Date() } },
-      { upsert: true }
-    )
-    return { success: true, message: `已获取 ${symbol} 指数行情`, data: doc }
-  } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : '未知错误' }
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // 科创板（统一用 A 股 daily 接口）
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -928,47 +855,12 @@ export async function fetchBjStockList(): Promise<{
   }
 }
 
-export async function fetchBjIndexList(): Promise<{
-  success: boolean
-  message: string
-  data?: Array<{ dm: string; mc: string; jys: string }>
-}> {
-  if (!hasMairuiLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
-  try {
-    const rows = await tusharePost(
-      'index_basic',
-      { market: 'BSE' },
-      ['ts_code', 'name', 'fullname', 'market', 'publisher', 'index_type', 'category', 'base_date', 'base_point', 'list_date', 'weight_rule', 'desc', 'exp_date']
-    )
-    const mapped = rows.map((r) => ({
-      dm: fromTsCode(String(r.ts_code || '')),
-      mc: String(r.name || ''),
-      jys: 'BSE'
-    }))
-    await upsertSimpleList(
-      'bj_index_list',
-      rows.map((r) => ({ symbol: fromTsCode(String(r.ts_code || '')), name: String(r.name || ''), market: '京市指数' }))
-    )
-    return { success: true, message: `已获取 ${mapped.length} 个京市指数`, data: mapped }
-  } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : '未知错误' }
-  }
-}
-
 export async function fetchBjQuote(code: string): Promise<{
   success: boolean
   message: string
   data?: Record<string, unknown>
 }> {
   return fetchAStockQuote(code)
-}
-
-export async function fetchBjIndexQuote(code: string): Promise<{
-  success: boolean
-  message: string
-  data?: Record<string, unknown>
-}> {
-  return fetchIndexQuote(code)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

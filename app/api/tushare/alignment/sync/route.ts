@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
-import { daysAgoYmd, hasMairuiLicence, todayYmd, tusharePost } from '@/lib/mairui-data'
+import { hasMairuiLicence, tusharePost } from '@/lib/mairui-data'
+import { buildTushare11000Params } from '@/lib/tushare-11000-call'
 import { getTushare11000Endpoints, normalizeTushareApiName } from '@/lib/tushare-11000'
 
 interface SyncPayload {
@@ -10,6 +11,7 @@ interface SyncPayload {
   doc_ids?: Array<number | string>
   params?: Record<string, unknown>
   max_interfaces?: number
+  auto_fill_params?: boolean
   dry_run?: boolean
   stop_on_error?: boolean
 }
@@ -17,42 +19,6 @@ interface SyncPayload {
 function toInt(value: unknown, fallback: number): number {
   const parsed = Number.parseInt(String(value ?? ''), 10)
   return Number.isFinite(parsed) ? parsed : fallback
-}
-
-function currentQuarter() {
-  const now = new Date()
-  const year = now.getFullYear()
-  const q = Math.floor(now.getMonth() / 3) + 1
-  return `${year}Q${q}`
-}
-
-function buildParams(endpointParams: string[], overrides: Record<string, unknown>) {
-  const today = todayYmd()
-  const base: Record<string, unknown> = { ...overrides }
-
-  const ensure = (key: string, value: unknown) => {
-    if (base[key] === undefined || base[key] === null || base[key] === '') {
-      base[key] = value
-    }
-  }
-
-  if (endpointParams.includes('start_date')) ensure('start_date', daysAgoYmd(30))
-  if (endpointParams.includes('end_date')) ensure('end_date', today)
-  if (endpointParams.includes('trade_date')) ensure('trade_date', today)
-  if (endpointParams.includes('date')) ensure('date', today)
-  if (endpointParams.includes('month')) ensure('month', today.slice(0, 6))
-  if (endpointParams.includes('quarter')) ensure('quarter', currentQuarter())
-  if (endpointParams.includes('exchange')) ensure('exchange', 'SSE')
-  if (endpointParams.includes('market')) ensure('market', 'SSE')
-  if (endpointParams.includes('list_status')) ensure('list_status', 'L')
-  if (endpointParams.includes('freq')) ensure('freq', 'D')
-  if (endpointParams.includes('call_put')) ensure('call_put', 'C')
-  if (endpointParams.includes('target_type')) ensure('target_type', '1')
-  if (endpointParams.includes('limit_type')) ensure('limit_type', 'up')
-  if (endpointParams.includes('limit')) ensure('limit', 200)
-  if (endpointParams.includes('offset')) ensure('offset', 0)
-
-  return base
 }
 
 export async function POST(request: NextRequest) {
@@ -75,8 +41,9 @@ export async function POST(request: NextRequest) {
       : {}
 
   const dryRun = body.dry_run === true
+  const autoFillParams = body.auto_fill_params !== false
   const stopOnError = body.stop_on_error === true
-  const maxInterfaces = Math.min(Math.max(toInt(body.max_interfaces, 120), 1), 500)
+  const requestedMax = toInt(body.max_interfaces, 0)
 
   const allEndpoints = await getTushare11000Endpoints()
   let targets = allEndpoints
@@ -92,11 +59,17 @@ export async function POST(request: NextRequest) {
     return fail('没有匹配到可同步的接口', 400)
   }
 
+  const maxInterfaces = requestedMax > 0
+    ? Math.min(Math.max(requestedMax, 1), 1000)
+    : targets.length
+
   const limitedTargets = targets.slice(0, maxInterfaces)
   const results: Array<Record<string, unknown>> = []
 
   for (const endpoint of limitedTargets) {
-    const params = buildParams(endpoint.params, overrideParams)
+    const params = autoFillParams
+      ? buildTushare11000Params(endpoint, overrideParams)
+      : { ...overrideParams }
     const fields = endpoint.return_fields
 
     if (dryRun) {
@@ -144,6 +117,7 @@ export async function POST(request: NextRequest) {
   return ok(
     {
       dry_run: dryRun,
+      auto_fill_params: autoFillParams,
       requested_interfaces: targets.length,
       executed_interfaces: limitedTargets.length,
       success_count: successCount,

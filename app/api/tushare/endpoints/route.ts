@@ -69,10 +69,22 @@ export async function GET(request: NextRequest) {
         matched: filtered.length,
         categories,
         items: filtered.map((item) => {
+          const invokeGet = item.doc_id === undefined
+            ? `/api/tushare/apis/${item.api_name}`
+            : `/api/tushare/apis/${item.api_name}?doc_id=${item.doc_id}`
+          const invokePost = `/api/tushare/apis/${item.api_name}`
           const stat = statsMap.get(item.api_name)
-          if (!withStats) return item
+          if (!withStats) {
+            return {
+              ...item,
+              invoke_get: invokeGet,
+              invoke_post: invokePost
+            }
+          }
           return {
             ...item,
+            invoke_get: invokeGet,
+            invoke_post: invokePost,
             aligned: Boolean(stat),
             stored_count: stat?.stored_count || 0,
             last_fetched_at: stat?.last_fetched_at || null

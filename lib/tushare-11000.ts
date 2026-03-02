@@ -280,3 +280,15 @@ export async function findTushare11000EndpointsByApiName(apiName: string): Promi
   const endpoints = await getTushare11000Endpoints()
   return endpoints.filter((item) => item.api_name === normalizedApiName)
 }
+
+export async function getTushare11000SupportedApiNames(): Promise<string[]> {
+  const endpoints = await getTushare11000Endpoints()
+  return Array.from(new Set(endpoints.map((item) => item.api_name))).sort((a, b) => a.localeCompare(b))
+}
+
+export async function isTushare11000SupportedApi(apiName: string): Promise<boolean> {
+  const normalizedApiName = normalizeTushareApiName(apiName)
+  if (!normalizedApiName) return false
+  const endpoints = await getTushare11000Endpoints()
+  return endpoints.some((item) => item.api_name === normalizedApiName)
+}
