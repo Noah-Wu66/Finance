@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server'
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
 import { LOCAL_CACHE_ONE_MINUTE_MS, getOrSetLocalCache } from '@/lib/local-data-cache'
-import { fetchAStockFinancialSummary, fetchAStockProfileSummary, fetchAStockQuote } from '@/lib/tushare-data'
+import { fetchAStockFinancialSummary, fetchAStockProfileSummary, fetchAStockQuote, hasTushareLicence } from '@/lib/tushare-data'
 
 function pickNum(...values: unknown[]): number {
   for (const value of values) {
@@ -21,6 +21,10 @@ export async function GET(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
 
+  if (!hasTushareLicence()) {
+    return fail('未配置 TUSHARE_TOKEN', 503)
+  }
+
   const { symbol: rawSymbol } = await params
   const symbol = rawSymbol.toUpperCase()
   const [profileResult, financialResult, quoteResult] = await Promise.all([
@@ -30,7 +34,7 @@ export async function GET(request: NextRequest, { params }: Params) {
   ])
 
   if (!profileResult.success && !financialResult.success && !quoteResult.success) {
-    return fail('基本面数据不存在', 404)
+    return fail('获取基本面失败，上游数据暂不可用', 503)
   }
 
   const profile = (profileResult.data || {}) as { name?: string; industry?: string }

@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server'
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
 import { LOCAL_CACHE_ONE_MINUTE_MS, getOrSetLocalCache } from '@/lib/local-data-cache'
-import { daysAgoYmd, todayYmd, toTsCode, tusharePost } from '@/lib/tushare-data'
+import { daysAgoYmd, hasTushareLicence, todayYmd, toTsCode, tusharePost } from '@/lib/tushare-data'
 
 function toNum(value: unknown): number {
   const num = Number(value)
@@ -17,6 +17,10 @@ interface Params {
 export async function GET(request: NextRequest, { params }: Params) {
   const user = await getRequestUser(request)
   if (!user) return fail('未登录', 401)
+
+  if (!hasTushareLicence()) {
+    return fail('未配置 TUSHARE_TOKEN', 503)
+  }
 
   const { symbol: rawSymbol } = await params
   const symbol = rawSymbol.toUpperCase()
