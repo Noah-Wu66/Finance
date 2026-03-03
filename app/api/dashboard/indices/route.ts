@@ -20,41 +20,20 @@ interface IndexItem {
   amount: number
 }
 
-const DASHBOARD_INDEXES: Array<{ code: string; name: string; tsCode: string }> = [
-  { code: '000300', name: '沪深300', tsCode: '510300.SH' },
-  { code: '000016', name: '上证50', tsCode: '510050.SH' },
-  { code: '000905', name: '中证500', tsCode: '510500.SH' },
-  { code: '399006', name: '创业板指', tsCode: '159915.SZ' }
+const DASHBOARD_INDEXES: Array<{ code: string; name: string; indexTsCode: string }> = [
+  { code: '000300', name: '沪深300', indexTsCode: '000300.SH' },
+  { code: '000016', name: '上证50',  indexTsCode: '000016.SH' },
+  { code: '000905', name: '中证500', indexTsCode: '000905.SH' },
+  { code: '399006', name: '创业板指', indexTsCode: '399006.SZ' }
 ]
 
 const INDEX_FIELDS = ['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'pre_close', 'change', 'pct_chg', 'vol', 'amount']
 
-async function fetchLatestIndexRow(tsCode: string): Promise<Record<string, unknown> | null> {
+async function fetchLatestIndexRow(indexTsCode: string): Promise<Record<string, unknown> | null> {
   const today = todayYmd()
-
-  try {
-    const rtRows = await tusharePost(
-      'rt_k',
-      { ts_code: tsCode },
-      ['ts_code', 'name', 'pre_close', 'high', 'open', 'low', 'close', 'vol', 'amount', 'trade_time']
-    )
-    if (rtRows.length > 0) {
-      const rt = rtRows[0]
-      const preClose = toNum(rt.pre_close)
-      const closePrice = toNum(rt.close)
-      return {
-        ...rt,
-        trade_date: today,
-        change: preClose > 0 ? Number((closePrice - preClose).toFixed(4)) : 0,
-        pct_chg: preClose > 0 ? Number(((closePrice - preClose) / preClose * 100).toFixed(4)) : 0
-      }
-    }
-  } catch {
-  }
-
   const rows = await tusharePost(
-    'etf_daily',
-    { ts_code: tsCode, start_date: daysAgoYmd(7), end_date: today },
+    'index_daily',
+    { ts_code: indexTsCode, start_date: daysAgoYmd(10), end_date: today },
     INDEX_FIELDS
   )
   if (rows.length === 0) return null
@@ -68,7 +47,7 @@ export async function GET(request: NextRequest) {
   try {
     const rows = await Promise.all(
       DASHBOARD_INDEXES.map((index) =>
-        getOrSetLocalCache(`dashboard-index:${index.tsCode}`, () => fetchLatestIndexRow(index.tsCode)).catch(() => null)
+        getOrSetLocalCache(`dashboard-index:${index.indexTsCode}`, () => fetchLatestIndexRow(index.indexTsCode)).catch(() => null)
       )
     )
 

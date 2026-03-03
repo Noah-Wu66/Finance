@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server'
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
 import { LOCAL_CACHE_ONE_MINUTE_MS, getOrSetLocalCache } from '@/lib/local-data-cache'
-import { hasTushareLicence, todayYmd, tusharePost } from '@/lib/tushare-data'
+import { daysAgoYmd, hasTushareLicence, todayYmd, tusharePost } from '@/lib/tushare-data'
 
 export async function GET(request: NextRequest) {
   const user = await getRequestUser(request)
@@ -26,10 +26,11 @@ export async function GET(request: NextRequest) {
     const today = todayYmd()
     const rows = await getOrSetLocalCache(
       `sync-status:quotes:${today}`,
-      () => tusharePost('rt_k', { ts_code: '000001.SZ' }, ['ts_code', 'close', 'trade_time']),
+      () => tusharePost('daily', { ts_code: '000001.SZ', start_date: daysAgoYmd(10), end_date: today }, ['ts_code', 'trade_date', 'close']),
       LOCAL_CACHE_ONE_MINUTE_MS
     )
-    const lastTradeDate = today
+    const sorted = rows.sort((a, b) => String(b.trade_date || '').localeCompare(String(a.trade_date || '')))
+    const lastTradeDate = sorted.length > 0 ? String(sorted[0].trade_date || today) : today
 
     return ok(
       {
