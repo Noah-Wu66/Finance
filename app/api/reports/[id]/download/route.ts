@@ -49,7 +49,6 @@ export async function GET(request: NextRequest, { params }: Params) {
   }
 
   const title = `${String(doc.stock_name || doc.stock_symbol || '')}(${String(doc.stock_symbol || '')}) 分析报告`
-  const nextTradingDays = Array.isArray(doc.next_trading_days) ? doc.next_trading_days : []
   const benchmarkSummary = Array.isArray(doc.benchmark_summary) ? doc.benchmark_summary : []
   const fundFlow = Array.isArray(doc.fund_flow) ? doc.fund_flow : []
   const financialEnhanced = (doc.financial_enhanced && typeof doc.financial_enhanced === 'object')
@@ -87,10 +86,6 @@ export async function GET(request: NextRequest, { params }: Params) {
     '## 关键要点',
     '',
     ...(Array.isArray(doc.key_points) ? doc.key_points.map((x: unknown) => `- ${String(x)}`) : ['- 无']),
-    '',
-    '## 未来交易日历',
-    '',
-    ...(nextTradingDays.length > 0 ? nextTradingDays.map((d: unknown) => `- ${fmtDate(d)}`) : ['- 无']),
     '',
     '## 基准指数对照',
     '',

@@ -6,6 +6,7 @@ import { fetchAllQuantData } from '@/lib/fetch-quant-data'
 import { inferMarketFromCode } from '@/lib/market'
 import { createOperationLog } from '@/lib/operation-logs'
 import { analyzeWithAI, isAIEnabled } from '@/lib/ai-client'
+import { tusharePost, toTsCode, hasTushareLicence } from '@/lib/tushare-data'
 
 const EXEC_COLLECTION = 'web_executions'
 const REPORT_COLLECTION = 'analysis_reports'
@@ -147,6 +148,34 @@ async function loadStockBasic(symbol: string) {
 }
 
 async function loadQuotePack(symbol: string) {
+  const tsCode = toTsCode(symbol)
+
+  if (hasTushareLicence()) {
+    try {
+      const rtRows = await tusharePost(
+        'rt_k',
+        { ts_code: tsCode },
+        ['ts_code', 'name', 'pre_close', 'high', 'open', 'low', 'close', 'vol', 'amount', 'trade_time']
+      )
+      if (rtRows.length > 0) {
+        const rt = rtRows[0]
+        const latestClose = toNumber(rt.close)
+        const preClose = toNumber(rt.pre_close)
+        const changePct = preClose > 0 ? ((latestClose - preClose) / preClose) * 100 : 0
+        if (latestClose > 0) {
+          return {
+            latestClose,
+            prevClose: preClose,
+            changePct,
+            samples: 1,
+            source: 'realtime' as const
+          }
+        }
+      }
+    } catch {
+    }
+  }
+
   const db = await getDb()
   const rows = await db
     .collection('stock_quotes')
@@ -157,19 +186,20 @@ async function loadQuotePack(symbol: string) {
       }
     })
     .sort({ trade_date: -1 })
-    .limit(30)
+    .limit(2)
     .toArray()
 
   if (rows.length > 0) {
     const latestClose = Number(rows[0].close ?? 0)
-    const prevClose = Number(rows[rows.length - 1].close ?? latestClose)
-    const changePct = prevClose > 0 ? ((latestClose - prevClose) / prevClose) * 100 : 0
+    const preClose = rows.length >= 2 ? Number(rows[1].close ?? latestClose) : Number(rows[0].pre_close ?? latestClose)
+    const changePct = preClose > 0 ? ((latestClose - preClose) / preClose) * 100 : 0
 
     return {
       latestClose,
-      prevClose,
+      prevClose: preClose,
       changePct,
-      samples: rows.length
+      samples: rows.length,
+      source: 'database' as const
     }
   }
 
@@ -177,39 +207,26 @@ async function loadQuotePack(symbol: string) {
     latestClose: 0,
     prevClose: 0,
     changePct: 0,
-    samples: 0
+    samples: 0,
+    source: 'none' as const
   }
 }
 
 async function loadFundamentals(symbol: string) {
   const db = await getDb()
 
-  const doc = await db.collection('financial_data').findOne(
+  const basicDoc = await db.collection('stock_basic_info').findOne({ symbol })
+  const finaDoc = await db.collection('financial_data').findOne(
     { symbol },
     { sort: { report_date: -1, updated_at: -1 } }
   )
 
-  if (doc) {
-    return {
-      roe: Number(doc.roe ?? 0),
-      pe: Number(doc.pe ?? 0),
-      pb: Number(doc.pb ?? 0),
-      revenueGrowth: Number(doc.revenue_yoy ?? 0)
-    }
-  }
+  const roe = Number(basicDoc?.roe ?? finaDoc?.roe ?? 0)
+  const pe = Number(basicDoc?.pe ?? finaDoc?.pe ?? 0)
+  const pb = Number(basicDoc?.pb ?? finaDoc?.pb ?? 0)
+  const revenueGrowth = Number(basicDoc?.revenue_yoy ?? finaDoc?.revenue_yoy ?? 0)
 
-  // financial_data 没有时从 stock_basic_info 读取（行情同步写入的 PE/PB）
-  const basicDoc = await db.collection('stock_basic_info').findOne({ symbol })
-  if (basicDoc && (basicDoc.pe || basicDoc.pb)) {
-    return {
-      roe: Number(basicDoc.roe ?? 0),
-      pe: Number(basicDoc.pe ?? 0),
-      pb: Number(basicDoc.pb ?? 0),
-      revenueGrowth: Number(basicDoc.revenue_yoy ?? 0)
-    }
-  }
-
-  return { roe: 0, pe: 0, pb: 0, revenueGrowth: 0 }
+  return { roe, pe, pb, revenueGrowth }
 }
 
 function makeDecision(changePct: number, roe: number, pe: number, pb: number) {
@@ -931,7 +948,7 @@ function summarizeNewsSentiment(items: NewsSentimentItem[]) {
 }
 
 function summarizeBenchmarks(items: IndexDailyItem[]) {
-  if (items.length === 0) return [] as Array<{ index_code: string; latest_close: number; day_change: number; trend_20d: number }>
+  if (items.length === 0) return [] as Array<{ index_code: string; latest_close: number; day_change: number; trend_20d: number; trade_date: string }>
   const grouped = new Map<string, IndexDailyItem[]>()
   for (const item of items) {
     const list = grouped.get(item.index_code) || []
@@ -939,7 +956,7 @@ function summarizeBenchmarks(items: IndexDailyItem[]) {
     grouped.set(item.index_code, list)
   }
 
-  const summary: Array<{ index_code: string; latest_close: number; day_change: number; trend_20d: number }> = []
+  const summary: Array<{ index_code: string; latest_close: number; day_change: number; trend_20d: number; trade_date: string }> = []
   for (const [indexCode, series] of grouped.entries()) {
     const sorted = [...series].sort((a, b) => a.trade_date.localeCompare(b.trade_date))
     const last = sorted[sorted.length - 1]
@@ -952,7 +969,8 @@ function summarizeBenchmarks(items: IndexDailyItem[]) {
       index_code: indexCode,
       latest_close: Number(last.close.toFixed(4)),
       day_change: Number(last.pct_chg.toFixed(4)),
-      trend_20d: Number(trend20.toFixed(4))
+      trend_20d: Number(trend20.toFixed(4)),
+      trade_date: last.trade_date
     })
   }
   return summary
@@ -1183,7 +1201,7 @@ async function runAIAnalysis(
   if (!aiEnabled) return null
 
   const basic = execution.context.basic as { name: string; industry: string }
-  const quote = execution.context.quote as { latestClose: number; changePct: number; samples: number }
+  const quote = execution.context.quote as { latestClose: number; prevClose: number; changePct: number; samples: number }
   const financial = execution.context.financial as { roe: number; pe: number; pb: number; revenueGrowth: number }
   const news = (execution.context.news as NewsItem[] | undefined) || []
   const groundingSources = (execution.context.news_grounding_sources as GroundingSource[] | undefined) || []
@@ -1246,7 +1264,7 @@ async function runAIAnalysis(
   const benchmarkSummary = summarizeBenchmarks(indexBenchmarks)
   const benchmarkText = benchmarkSummary.length > 0
     ? benchmarkSummary
-      .map((item) => `${item.index_code}: 最新${item.latest_close}，当日${item.day_change.toFixed(2)}%，20日${item.trend_20d.toFixed(2)}%`)
+      .map((item) => `${item.index_code}(${formatYmd(item.trade_date)}): 收盘${item.latest_close}，涨跌${item.day_change.toFixed(2)}%，20日趋势${item.trend_20d.toFixed(2)}%`)
       .join('\n')
     : '暂无基准指数数据'
 
@@ -1350,15 +1368,16 @@ async function runAIAnalysis(
 行业：${basic.industry}
 市场：${execution.market}
 
-【最新行情】
+【最新行情（实时）】
 最新价：${quote.latestClose}
-阶段涨跌：${quote.changePct.toFixed(2)}%
+当日涨跌：${quote.changePct.toFixed(2)}%
+昨收价：${quote.prevClose}
 
 【财务指标】
-ROE：${financial.roe.toFixed(2)}%
-PE：${financial.pe.toFixed(2)}
-PB：${financial.pb.toFixed(2)}
-营收增长：${financial.revenueGrowth.toFixed(2)}%
+ROE：${financial.roe ? financial.roe.toFixed(2) + '%' : '暂无数据'}
+PE：${financial.pe ? financial.pe.toFixed(2) : '暂无数据'}
+PB：${financial.pb ? financial.pb.toFixed(2) : '暂无数据'}
+营收增长：${financial.revenueGrowth ? financial.revenueGrowth.toFixed(2) + '%' : '暂无数据'}
 
 【近期K线数据（日期|开盘|最高|最低|收盘|成交量）】
 ${klineSummary}
@@ -1494,7 +1513,7 @@ async function buildReport(execution: ExecutionDoc) {
   const reports = db.collection(REPORT_COLLECTION)
 
   const basic = execution.context.basic as { name: string; industry: string }
-  const quote = execution.context.quote as { latestClose: number; changePct: number }
+  const quote = execution.context.quote as { latestClose: number; prevClose: number; changePct: number }
   const financial = execution.context.financial as { roe: number; pe: number; pb: number; revenueGrowth: number }
   const decision = execution.context.decision as { action: string; risk: string; confidence: number }
   const aiAnalysis = execution.context.ai_analysis as AIAnalysisResult | null | undefined
@@ -1548,7 +1567,7 @@ async function buildReport(execution: ExecutionDoc) {
 
   // 如果有AI分析结果，优先使用AI的内容
   const summary = aiAnalysis?.ai_summary
-    || `${basic.name}（${execution.symbol}）当前价格 ${quote.latestClose.toFixed(2)}，阶段涨跌 ${quote.changePct.toFixed(2)}%。结合财务指标（ROE ${financial.roe.toFixed(2)}%，PE ${financial.pe.toFixed(2)}）给出${decision.action}观点。`
+    || `${basic.name}（${execution.symbol}）当前价格 ${quote.latestClose.toFixed(2)}，当日涨跌 ${quote.changePct.toFixed(2)}%。${financial.pe ? `结合财务指标（ROE ${financial.roe.toFixed(2)}%，PE ${financial.pe.toFixed(2)}）` : ''}给出${decision.action}观点。`
   const recommendation = aiAnalysis?.ai_recommendation
     || `建议：${decision.action}。风险等级：${decision.risk}。若继续观察，请重点跟踪行业景气与成交量变化。`
   const confidenceScore = aiAnalysis?.ai_confidence ?? decision.confidence
@@ -1557,8 +1576,8 @@ async function buildReport(execution: ExecutionDoc) {
     ? aiAnalysis.ai_key_points
     : [
       `行业：${basic.industry}`,
-      `价格：${quote.latestClose.toFixed(2)}，阶段变化 ${quote.changePct.toFixed(2)}%`,
-      `ROE：${financial.roe.toFixed(2)}%，PE：${financial.pe.toFixed(2)}，PB：${financial.pb.toFixed(2)}`
+      `价格：${quote.latestClose.toFixed(2)}，当日涨跌 ${quote.changePct.toFixed(2)}%`,
+      ...(financial.pe || financial.roe ? [`ROE：${financial.roe ? financial.roe.toFixed(2) + '%' : '暂无'}，PE：${financial.pe ? financial.pe.toFixed(2) : '暂无'}，PB：${financial.pb ? financial.pb.toFixed(2) : '暂无'}`] : [])
     ]
 
   const analysisId = `live_${Date.now()}_${execution.symbol}`

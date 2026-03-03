@@ -36,6 +36,7 @@ interface BenchmarkSummaryItem {
   latest_close: number
   day_change: number
   trend_20d: number
+  trade_date?: string
 }
 
 interface FundFlowItem {
@@ -117,7 +118,6 @@ interface ReportDetail {
   key_points?: string[]
   predicted_kline?: KlineBar[]
   kline_history?: KlineBar[]
-  next_trading_days?: string[]
   benchmark_summary?: BenchmarkSummaryItem[]
   fund_flow?: FundFlowItem[]
   financial_enhanced?: FinancialEnhancedItem | null
@@ -360,34 +360,18 @@ export default function ReportDetailPage() {
             })()}
           </Card>
 
-          {detail.next_trading_days && detail.next_trading_days.length > 0 && (
-            <Card>
-              <h4 className="text-sm font-semibold text-[var(--fg)] mb-3">未来交易日历（10天）</h4>
-              <div className="flex flex-wrap gap-2">
-                {detail.next_trading_days.map((day) => (
-                  <span
-                    key={day}
-                    className="text-xs px-2 py-1 rounded-md bg-[var(--bg-secondary)] text-[var(--fg-secondary)] font-mono"
-                  >
-                    {fmtDate(day)}
-                  </span>
-                ))}
-              </div>
-            </Card>
-          )}
-
           {detail.benchmark_summary && detail.benchmark_summary.length > 0 && (
             <Card>
               <h4 className="text-sm font-semibold text-[var(--fg)] mb-3">基准指数对照</h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {detail.benchmark_summary.map((item) => (
                   <div key={item.index_code} className="rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] px-3 py-2">
-                    <p className="text-xs text-[var(--fg-muted)] m-0">{item.index_code}</p>
+                    <p className="text-xs text-[var(--fg-muted)] m-0">{item.index_code}{item.trade_date ? ` · ${fmtDate(item.trade_date)}` : ''}</p>
                     <p className="text-sm text-[var(--fg)] m-0 mt-1">
-                      最新 {fmtNumber(item.latest_close, 2)}
+                      收盘 {fmtNumber(item.latest_close, 2)}
                     </p>
                     <p className="text-xs text-[var(--fg-secondary)] m-0 mt-1">
-                      当日 {item.day_change >= 0 ? '+' : ''}{fmtNumber(item.day_change, 2)}% · 20日 {item.trend_20d >= 0 ? '+' : ''}{fmtNumber(item.trend_20d, 2)}%
+                      涨跌 {item.day_change >= 0 ? '+' : ''}{fmtNumber(item.day_change, 2)}% · 20日 {item.trend_20d >= 0 ? '+' : ''}{fmtNumber(item.trend_20d, 2)}%
                     </p>
                   </div>
                 ))}
