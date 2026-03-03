@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
+import { getOrSetLocalCache } from '@/lib/local-data-cache'
 import { daysAgoYmd, todayYmd, tusharePost } from '@/lib/tushare-data'
 
 interface IndexItem {
@@ -58,7 +59,9 @@ export async function GET(request: NextRequest) {
 
   try {
     const rows = await Promise.all(
-      DASHBOARD_INDEXES.map((index) => fetchLatestIndexRow(index.tsCode).catch(() => null))
+      DASHBOARD_INDEXES.map((index) =>
+        getOrSetLocalCache(`dashboard-index:${index.tsCode}`, () => fetchLatestIndexRow(index.tsCode)).catch(() => null)
+      )
     )
 
     const items: IndexItem[] = DASHBOARD_INDEXES.map((index, idx) => {

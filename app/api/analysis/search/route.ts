@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server'
 import { getRequestUser } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { fail, ok } from '@/lib/http'
+import { getOrSetLocalCache } from '@/lib/local-data-cache'
 import { inferMarketFromCode, normalizeMarketName } from '@/lib/market'
 import { fetchAStockList } from '@/lib/tushare-data'
 
@@ -63,7 +64,7 @@ export async function GET(request: NextRequest) {
   const db = await getDb()
   const count = await db.collection('stock_basic_info').estimatedDocumentCount()
   if (count === 0) {
-    await fetchAStockList()
+    await getOrSetLocalCache('stock-list:all', () => fetchAStockList())
     // 拉完后再查一次
     rows = await searchLocal(keyword)
   }

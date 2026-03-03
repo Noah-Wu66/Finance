@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server'
 import { getRequestUser } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { fail, ok } from '@/lib/http'
+import { getOrSetLocalCache } from '@/lib/local-data-cache'
 import { fetchAStockQuote } from '@/lib/tushare-data'
 import { maybeObjectId } from '@/lib/mongo-helpers'
 
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
       continue
     }
 
-    const result = await fetchAStockQuote(symbol)
+    const result = await getOrSetLocalCache(`stock-quote:${symbol}`, () => fetchAStockQuote(symbol))
     if (!result.success || !result.data) {
       failedCount += 1
       continue

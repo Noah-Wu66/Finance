@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
   const market = normalizeMarketName(request.nextUrl.searchParams.get('market') || undefined)
   const [profileResult, quoteResult, financialResult] = await Promise.all([
     getOrSetLocalCache(`profile:${symbol}`, () => fetchAStockProfileSummary(symbol), LOCAL_CACHE_ONE_MINUTE_MS),
-    fetchAStockQuote(symbol),
+    getOrSetLocalCache(`stock-quote:${symbol}`, () => fetchAStockQuote(symbol), LOCAL_CACHE_ONE_MINUTE_MS),
     getOrSetLocalCache(`financial:${symbol}`, () => fetchAStockFinancialSummary(symbol), LOCAL_CACHE_ONE_MINUTE_MS)
   ])
 

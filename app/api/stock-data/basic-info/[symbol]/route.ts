@@ -22,7 +22,7 @@ export async function GET(request: NextRequest, { params }: Params) {
   const symbol = rawSymbol.toUpperCase()
   const [profileResult, quoteResult] = await Promise.all([
     getOrSetLocalCache(`profile:${symbol}`, () => fetchAStockProfileSummary(symbol), LOCAL_CACHE_ONE_MINUTE_MS),
-    fetchAStockQuote(symbol)
+    getOrSetLocalCache(`stock-quote:${symbol}`, () => fetchAStockQuote(symbol), LOCAL_CACHE_ONE_MINUTE_MS)
   ])
 
   if (!profileResult.success && !quoteResult.success) {

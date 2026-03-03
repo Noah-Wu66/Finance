@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
+import { getOrSetLocalCache } from '@/lib/local-data-cache'
 import { fetchAStockQuote, hasTushareLicence } from '@/lib/tushare-data'
 
 function toNum(value: unknown): number {
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest, { params }: Params) {
 
   const { symbol: rawSymbol } = await params
   const symbol = rawSymbol.toUpperCase()
-  const result = await fetchAStockQuote(symbol)
+  const result = await getOrSetLocalCache(`stock-quote:${symbol}`, () => fetchAStockQuote(symbol))
   if (!result.success || !result.data) {
     return fail('获取行情失败，上游数据暂不可用', 503, result.message)
   }

@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server'
 import { getRequestUser } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { fail, ok } from '@/lib/http'
+import { getOrSetLocalCache } from '@/lib/local-data-cache'
 import { fetchAStockQuote } from '@/lib/tushare-data'
 import { maybeObjectId } from '@/lib/mongo-helpers'
 
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
   const quotes: Record<string, { price: number; pct_chg: number; trade_date: string }> = {}
   const uniqueCodes = Array.from(new Set(codes))
   const rows = await Promise.all(uniqueCodes.map(async (code) => {
-    const result = await fetchAStockQuote(code)
+    const result = await getOrSetLocalCache(`stock-quote:${code}`, () => fetchAStockQuote(code))
     if (!result.success || !result.data) return null
     return {
       code,
