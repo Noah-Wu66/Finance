@@ -6,7 +6,7 @@ import { fetchAllQuantData } from '@/lib/fetch-quant-data'
 import { inferMarketFromCode } from '@/lib/market'
 import { createOperationLog } from '@/lib/operation-logs'
 import { analyzeWithAI, isAIEnabled } from '@/lib/ai-client'
-import { tusharePost, toTsCode, hasTushareLicence } from '@/lib/tushare-data'
+import { tusharePost, toTsCode, hasTushareLicence, todayYmd, daysAgoYmd } from '@/lib/tushare-data'
 
 const EXEC_COLLECTION = 'web_executions'
 const REPORT_COLLECTION = 'analysis_reports'
@@ -152,23 +152,24 @@ async function loadQuotePack(symbol: string) {
 
   if (hasTushareLicence()) {
     try {
-      const rtRows = await tusharePost(
-        'rt_k',
-        { ts_code: tsCode },
-        ['ts_code', 'name', 'pre_close', 'high', 'open', 'low', 'close', 'vol', 'amount', 'trade_time']
+      const rows = await tusharePost(
+        'daily',
+        { ts_code: tsCode, start_date: daysAgoYmd(10), end_date: todayYmd() },
+        ['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'pre_close', 'change', 'pct_chg', 'vol', 'amount']
       )
-      if (rtRows.length > 0) {
-        const rt = rtRows[0]
-        const latestClose = toNumber(rt.close)
-        const preClose = toNumber(rt.pre_close)
-        const changePct = preClose > 0 ? ((latestClose - preClose) / preClose) * 100 : 0
+      if (rows.length > 0) {
+        const sorted = [...rows].sort((a, b) => String(b.trade_date || '').localeCompare(String(a.trade_date || '')))
+        const latest = sorted[0]
+        const latestClose = toNumber(latest.close)
+        const preClose = toNumber(latest.pre_close)
+        const changePct = toNumber(latest.pct_chg)
         if (latestClose > 0) {
           return {
             latestClose,
             prevClose: preClose,
             changePct,
-            samples: 1,
-            source: 'realtime' as const
+            samples: rows.length,
+            source: 'tushare' as const
           }
         }
       }
@@ -637,18 +638,61 @@ async function loadNextTradingDays(lastDate: string, market: string, count = 10)
 }
 
 async function loadIndexBenchmarks(lastDate: string, market: string, limit = 60): Promise<IndexDailyItem[]> {
+  const indexTsCodes: Array<{ code: string; tsCode: string }> = [
+    { code: '000300', tsCode: '000300.SH' },
+    { code: '000016', tsCode: '000016.SH' },
+    { code: '399006', tsCode: '399006.SZ' },
+    { code: '000905', tsCode: '000905.SH' }
+  ]
+
+  if (hasTushareLicence()) {
+    try {
+      const allRows: IndexDailyItem[] = []
+      const endDate = todayYmd()
+      const startDate = daysAgoYmd(limit + 20)
+      for (const idx of indexTsCodes) {
+        try {
+          const rows = await tusharePost(
+            'index_daily',
+            { ts_code: idx.tsCode, start_date: startDate, end_date: endDate },
+            ['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'vol', 'amount', 'pct_chg']
+          )
+          for (const row of rows) {
+            allRows.push({
+              index_code: idx.code,
+              trade_date: normalizeYmd(row.trade_date),
+              open: toNumber(row.open),
+              high: toNumber(row.high),
+              low: toNumber(row.low),
+              close: toNumber(row.close),
+              volume: toNumber(row.vol),
+              pct_chg: toNumber(row.pct_chg)
+            })
+          }
+        } catch {
+        }
+      }
+      if (allRows.length > 0) {
+        return allRows
+          .filter((row) => row.index_code && row.trade_date)
+          .sort((a, b) => a.trade_date.localeCompare(b.trade_date))
+      }
+    } catch {
+    }
+  }
+
   const db = await getDb()
-  const startDate = normalizeYmd(lastDate)
-  const formattedStart = formatYmd(startDate)
+  const normalizedDate = normalizeYmd(lastDate)
+  const formattedDate = formatYmd(normalizedDate)
   const rows = await db
     .collection(INDEX_COLLECTION)
     .find({
       index_code: { $in: getIndexCandidatesByMarket(market) },
-      ...(startDate
+      ...(normalizedDate
         ? {
           $or: [
-            { trade_date: { $lte: startDate } },
-            { trade_date: { $lte: formattedStart } }
+            { trade_date: { $lte: normalizedDate } },
+            { trade_date: { $lte: formattedDate } }
           ]
         }
         : {})
@@ -2089,7 +2133,7 @@ export async function tickExecution(id: string, userId: string) {
     const market = inferMarketFromCode(execution.symbol)
     if (market === 'A股') {
       try {
-        await fetchAStockData(execution.symbol)
+        await fetchAStockData(execution.symbol, { force: true })
       } catch {
       }
     }

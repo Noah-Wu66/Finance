@@ -45,7 +45,7 @@ export async function fetchStockProfile(code: string): Promise<{
   return fetchAStockProfileSummary(normalizeSymbol(code))
 }
 
-export async function fetchAStockData(code: string): Promise<{
+export async function fetchAStockData(code: string, options?: { force?: boolean }): Promise<{
   success: boolean
   message: string
   realtime: { success: boolean; message: string }
@@ -55,6 +55,7 @@ export async function fetchAStockData(code: string): Promise<{
   extended: { success: boolean; message: string }
 }> {
   const normalized = normalizeSymbol(code)
+  const force = options?.force ?? false
 
   if (!/^[0-9]{6}$/.test(normalized)) {
     return {
@@ -80,24 +81,26 @@ export async function fetchAStockData(code: string): Promise<{
     }
   }
 
-  const FRESHNESS_MS = 10 * 60 * 1000
-  const db = await getDb()
-  const latestQuote = await db.collection('stock_quotes').findOne(
-    {
-      symbol: normalized,
-      data_source: { $in: ['tushare_a_stock_daily', 'tushare_a_stock'] }
-    },
-    { sort: { updated_at: -1 }, projection: { updated_at: 1 } }
-  )
-  if (latestQuote?.updated_at && Date.now() - new Date(latestQuote.updated_at as string | Date).getTime() < FRESHNESS_MS) {
-    return {
-      success: true,
-      message: `${normalized} 数据在 10 分钟内已拉取过，跳过重复请求`,
-      realtime: { success: true, message: '使用缓存数据' },
-      kline: { success: true, message: '使用缓存数据', count: 0 },
-      financial: { success: true, message: '使用缓存数据' },
-      profile: { success: true, message: '使用缓存数据' },
-      extended: { success: true, message: '使用缓存数据' }
+  if (!force) {
+    const FRESHNESS_MS = 10 * 60 * 1000
+    const db = await getDb()
+    const latestQuote = await db.collection('stock_quotes').findOne(
+      {
+        symbol: normalized,
+        data_source: { $in: ['tushare_a_stock_daily', 'tushare_a_stock'] }
+      },
+      { sort: { updated_at: -1 }, projection: { updated_at: 1 } }
+    )
+    if (latestQuote?.updated_at && Date.now() - new Date(latestQuote.updated_at as string | Date).getTime() < FRESHNESS_MS) {
+      return {
+        success: true,
+        message: `${normalized} 数据在 10 分钟内已拉取过，跳过重复请求`,
+        realtime: { success: true, message: '使用缓存数据' },
+        kline: { success: true, message: '使用缓存数据', count: 0 },
+        financial: { success: true, message: '使用缓存数据' },
+        profile: { success: true, message: '使用缓存数据' },
+        extended: { success: true, message: '使用缓存数据' }
+      }
     }
   }
 
@@ -140,6 +143,7 @@ export async function fetchAStockData(code: string): Promise<{
   }
 
   if (profile.success && profile.data) {
+    if (profile.data.name && profile.data.name !== normalized) basicInfoPatch.name = profile.data.name
     if (profile.data.industry) basicInfoPatch.industry = profile.data.industry
     basicInfoPatch.industry_detail = profile.data.industryDetail
   }
