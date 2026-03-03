@@ -59,54 +59,52 @@ export function StockDataPanel({
   const load = useCallback(async () => {
     if (!symbol) return
     setLoading(true)
-    try {
-      const [qRes, fRes, kRes] = await Promise.all([
-        apiFetch<{
-          price: number
-          change_percent: number
-          amount: number
-          trade_date: string
-          turnover_rate: number
-          amplitude: number
-        }>(`/api/stocks/${symbol}/quote`).catch(() => null),
-        apiFetch<{
-          pe: number; pb: number; ps: number; roe: number
-          total_mv: number; circ_mv: number; industry: string; debt_ratio: number
-        }>(`/api/stocks/${symbol}/fundamentals`).catch(() => null),
-        apiFetch<{ items: KlineBar[] }>(`/api/stocks/${symbol}/kline?limit=${klineLimit}`).catch(() => null)
-      ])
 
-      if (qRes?.data) {
-        setQuote({
-          price: qRes.data.price,
-          change_percent: qRes.data.change_percent,
-          amount: qRes.data.amount,
-          trade_date: qRes.data.trade_date,
-          open: 0,
-          high: 0,
-          low: 0,
-          turnover_rate: qRes.data.turnover_rate,
-          amplitude: qRes.data.amplitude
-        })
-      }
-      if (fRes?.data) {
-        setFunda({
-          pe: fRes.data.pe ?? 0,
-          pb: fRes.data.pb ?? 0,
-          ps: fRes.data.ps ?? 0,
-          roe: fRes.data.roe ?? 0,
-          total_mv: fRes.data.total_mv ?? 0,
-          circ_mv: fRes.data.circ_mv ?? 0,
-          industry: fRes.data.industry ?? '',
-          debt_ratio: fRes.data.debt_ratio ?? 0
-        })
-      }
-      if (kRes?.data?.items) {
-        const sorted = [...kRes.data.items].sort((a, b) => (a.time > b.time ? 1 : -1))
-        setKline(sorted)
-      }
-    } catch {}
+    const qRes = await apiFetch<{
+      price: number
+      change_percent: number
+      amount: number
+      trade_date: string
+      turnover_rate: number
+      amplitude: number
+    }>(`/api/stocks/${symbol}/quote`).catch(() => null)
+    if (qRes?.data) {
+      setQuote({
+        price: qRes.data.price,
+        change_percent: qRes.data.change_percent,
+        amount: qRes.data.amount,
+        trade_date: qRes.data.trade_date,
+        open: 0,
+        high: 0,
+        low: 0,
+        turnover_rate: qRes.data.turnover_rate,
+        amplitude: qRes.data.amplitude
+      })
+    }
     setLoading(false)
+
+    const fRes = await apiFetch<{
+      pe: number; pb: number; ps: number; roe: number
+      total_mv: number; circ_mv: number; industry: string; debt_ratio: number
+    }>(`/api/stocks/${symbol}/fundamentals`).catch(() => null)
+    if (fRes?.data) {
+      setFunda({
+        pe: fRes.data.pe ?? 0,
+        pb: fRes.data.pb ?? 0,
+        ps: fRes.data.ps ?? 0,
+        roe: fRes.data.roe ?? 0,
+        total_mv: fRes.data.total_mv ?? 0,
+        circ_mv: fRes.data.circ_mv ?? 0,
+        industry: fRes.data.industry ?? '',
+        debt_ratio: fRes.data.debt_ratio ?? 0
+      })
+    }
+
+    const kRes = await apiFetch<{ items: KlineBar[] }>(`/api/stocks/${symbol}/kline?limit=${klineLimit}`).catch(() => null)
+    if (kRes?.data?.items) {
+      const sorted = [...kRes.data.items].sort((a, b) => (a.time > b.time ? 1 : -1))
+      setKline(sorted)
+    }
   }, [symbol, klineLimit])
 
   useEffect(() => {
