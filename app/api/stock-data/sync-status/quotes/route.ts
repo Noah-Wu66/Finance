@@ -26,10 +26,10 @@ export async function GET(request: NextRequest) {
     const today = todayYmd()
     const rows = await getOrSetLocalCache(
       `sync-status:quotes:${today}`,
-      () => tusharePost('daily_rt', { ts_code: '000001.SZ', trade_date: today }, ['trade_date']),
+      () => tusharePost('rt_k', { ts_code: '000001.SZ' }, ['ts_code', 'close', 'trade_time']),
       LOCAL_CACHE_ONE_MINUTE_MS
     )
-    const lastTradeDate = rows[0]?.trade_date ? String(rows[0].trade_date) : today
+    const lastTradeDate = rows.length > 0 ? today : today
 
     return ok(
       {

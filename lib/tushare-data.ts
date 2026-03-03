@@ -336,13 +336,20 @@ export async function fetchAStockQuote(code: string): Promise<{
 
     try {
       const rtRows = await tusharePost(
-        'daily_rt',
-        { ts_code: tsCode, trade_date: today },
-        quoteFields
+        'rt_k',
+        { ts_code: tsCode },
+        ['ts_code', 'name', 'pre_close', 'high', 'open', 'low', 'close', 'vol', 'amount', 'trade_time']
       )
       if (rtRows.length > 0) {
-        const sortedRtRows = rtRows.sort((a, b) => String(b.trade_date).localeCompare(String(a.trade_date)))
-        row = sortedRtRows[0]
+        const rt = rtRows[0]
+        const preClose = toNumber(rt.pre_close)
+        const closePrice = toNumber(rt.close)
+        row = {
+          ...rt,
+          trade_date: today,
+          change: preClose > 0 ? Number((closePrice - preClose).toFixed(4)) : 0,
+          pct_chg: preClose > 0 ? Number(((closePrice - preClose) / preClose * 100).toFixed(4)) : 0
+        }
       }
     } catch {
     }
@@ -380,7 +387,7 @@ export async function fetchAStockQuote(code: string): Promise<{
     const tradeDate = toYmd(row.trade_date) || today
     const doc = {
       symbol,
-      name: symbol,
+      name: String(row.name || symbol),
       close: toNumber(row.close),
       open: toNumber(row.open),
       high: toNumber(row.high),

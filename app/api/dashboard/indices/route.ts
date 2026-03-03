@@ -37,9 +37,21 @@ async function fetchLatestIndexRow(tsCode: string): Promise<Record<string, unkno
   const today = todayYmd()
 
   try {
-    const rtRows = await tusharePost('etf_daily_rt', { ts_code: tsCode, trade_date: today }, INDEX_FIELDS)
+    const rtRows = await tusharePost(
+      'rt_k',
+      { ts_code: tsCode },
+      ['ts_code', 'name', 'pre_close', 'high', 'open', 'low', 'close', 'vol', 'amount', 'trade_time']
+    )
     if (rtRows.length > 0) {
-      return rtRows.sort((a, b) => String(b.trade_date || '').localeCompare(String(a.trade_date || '')))[0]
+      const rt = rtRows[0]
+      const preClose = toNum(rt.pre_close)
+      const closePrice = toNum(rt.close)
+      return {
+        ...rt,
+        trade_date: today,
+        change: preClose > 0 ? Number((closePrice - preClose).toFixed(4)) : 0,
+        pct_chg: preClose > 0 ? Number(((closePrice - preClose) / preClose * 100).toFixed(4)) : 0
+      }
     }
   } catch {
   }
