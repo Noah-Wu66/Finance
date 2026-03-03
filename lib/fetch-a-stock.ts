@@ -81,9 +81,10 @@ export async function fetchAStockData(code: string, options?: { force?: boolean 
     }
   }
 
+  const db = await getDb()
+
   if (!force) {
     const FRESHNESS_MS = 10 * 60 * 1000
-    const db = await getDb()
     const latestQuote = await db.collection('stock_quotes').findOne(
       {
         symbol: normalized,
