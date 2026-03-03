@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
       () => tusharePost('rt_k', { ts_code: '000001.SZ' }, ['ts_code', 'close', 'trade_time']),
       LOCAL_CACHE_ONE_MINUTE_MS
     )
-    const lastTradeDate = rows.length > 0 ? today : today
+    const lastTradeDate = today
 
     return ok(
       {

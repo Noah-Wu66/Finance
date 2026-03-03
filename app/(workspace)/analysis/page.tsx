@@ -59,11 +59,9 @@ function AnalysisPageContent() {
   const [symbol, setSymbol] = useState('')
   const [selectedName, setSelectedName] = useState('')
   const [market, setMarket] = useState('A股')
-  const depth = '全面' as const
   const [executionId, setExecutionId] = useState('')
   const [execution, setExecution] = useState<Execution | null>(null)
   const [loading, setLoading] = useState(false)
-  const [ticking, setTicking] = useState(false)
   const [error, setError] = useState('')
 
   // 搜索相关
@@ -123,14 +121,9 @@ function AnalysisPageContent() {
   }
 
   const runTick = async (id: string) => {
-    setTicking(true)
-    try {
-      const res = await apiFetch<Execution>(`/api/executions/${id}/tick`, { method: 'POST' })
-      setExecution(res.data)
-      return res.data
-    } finally {
-      setTicking(false)
-    }
+    const res = await apiFetch<Execution>(`/api/executions/${id}/tick`, { method: 'POST' })
+    setExecution(res.data)
+    return res.data
   }
 
   const start = async () => {
@@ -144,7 +137,7 @@ function AnalysisPageContent() {
     try {
       const res = await apiFetch<{ execution_id: string }>('/api/executions', {
         method: 'POST',
-        body: JSON.stringify({ symbol, market, depth })
+        body: JSON.stringify({ symbol, market, depth: '全面' })
       })
 
       const id = res.data.execution_id

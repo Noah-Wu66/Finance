@@ -6,11 +6,7 @@ import { fail, ok } from '@/lib/http'
 import { getOrSetLocalCache } from '@/lib/local-data-cache'
 import { fetchAStockQuote } from '@/lib/tushare-data'
 import { maybeObjectId } from '@/lib/mongo-helpers'
-
-function toNum(value: unknown): number {
-  const num = Number(value)
-  return Number.isFinite(num) ? num : 0
-}
+import { toNum } from '@/lib/utils'
 
 export async function GET(request: NextRequest) {
   const user = await getRequestUser(request)

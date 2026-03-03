@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server'
 import { getRequestUser } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { fail, ok } from '@/lib/http'
+import { toNum as toNumber } from '@/lib/utils'
 
 type DatasetType =
   | 'trading_calendar'
@@ -19,11 +20,6 @@ type DatasetType =
 interface ImportPayload {
   dataset?: DatasetType
   records?: Array<Record<string, unknown>>
-}
-
-function toNumber(value: unknown): number {
-  const num = Number(value)
-  return Number.isFinite(num) ? num : 0
 }
 
 function normalizeYmd(value: unknown): string {

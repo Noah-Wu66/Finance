@@ -3,29 +3,12 @@ import {
   normalizeTushareApiName
 } from '@/lib/tushare-11000'
 import { TUSHARE_FINA_INDICATOR_FIELDS } from '@/lib/tushare-field-sets'
+import { toNum as toNumber, toYmd } from '@/lib/utils'
 
 const TUSHARE_TOKEN = (process.env.TUSHARE_TOKEN || '').trim()
 const TUSHARE_API = 'https://api.tushare.pro'
 
 // ─── 工具函数 ────────────────────────────────────────────────────────────────
-
-function toNumber(value: unknown): number {
-  const num = Number(value)
-  return Number.isFinite(num) ? num : 0
-}
-
-function toYmd(value: unknown): string {
-  const source = String(value || '').trim()
-  if (!source) return ''
-  const compact = source.replace(/[^0-9]/g, '')
-  if (compact.length >= 8) return compact.slice(0, 8)
-  const parsed = new Date(source)
-  if (Number.isNaN(parsed.getTime())) return ''
-  const y = parsed.getFullYear().toString()
-  const m = String(parsed.getMonth() + 1).padStart(2, '0')
-  const d = String(parsed.getDate()).padStart(2, '0')
-  return `${y}${m}${d}`
-}
 
 function todayYmd(): string {
   const now = new Date()
@@ -404,78 +387,6 @@ export async function fetchAStockExtendedSnapshot(code: string): Promise<{
     message: allOk ? '扩展信息同步完成' : '扩展信息部分同步失败',
     results
   }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// 科创板（统一用 A 股 daily 接口）
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export async function fetchKcStockList(): Promise<{
-  success: boolean
-  message: string
-  data?: Array<{ dm: string; mc: string; jys: string }>
-}> {
-  if (!hasTushareLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
-  try {
-    const rows = await tusharePost(
-      'stock_basic',
-      { list_status: 'L', exchange: 'SSE', market: 'STAR' },
-      ['ts_code', 'symbol', 'name', 'area', 'industry', 'fullname', 'enname', 'cnspell', 'market', 'exchange', 'curr_type',
-        'list_status', 'list_date', 'delist_date', 'is_hs', 'act_name', 'act_ent_type']
-    )
-    const mapped = rows.map((r) => ({
-      dm: fromTsCode(String(r.ts_code || '')),
-      mc: String(r.name || ''),
-      jys: 'SSE'
-    }))
-    return { success: true, message: `已获取 ${mapped.length} 只科创股票`, data: mapped }
-  } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : '未知错误' }
-  }
-}
-
-export async function fetchKcQuote(code: string): Promise<{
-  success: boolean
-  message: string
-  data?: Record<string, unknown>
-}> {
-  return fetchAStockQuote(code)
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// 北交所
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export async function fetchBjStockList(): Promise<{
-  success: boolean
-  message: string
-  data?: Array<{ dm: string; mc: string; jys: string }>
-}> {
-  if (!hasTushareLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
-  try {
-    const rows = await tusharePost(
-      'stock_basic',
-      { list_status: 'L', exchange: 'BSE' },
-      ['ts_code', 'symbol', 'name', 'area', 'industry', 'fullname', 'enname', 'cnspell', 'market', 'exchange', 'curr_type',
-        'list_status', 'list_date', 'delist_date', 'is_hs', 'act_name', 'act_ent_type']
-    )
-    const mapped = rows.map((r) => ({
-      dm: fromTsCode(String(r.ts_code || '')),
-      mc: String(r.name || ''),
-      jys: 'BSE'
-    }))
-    return { success: true, message: `已获取 ${mapped.length} 只京市股票`, data: mapped }
-  } catch (err) {
-    return { success: false, message: err instanceof Error ? err.message : '未知错误' }
-  }
-}
-
-export async function fetchBjQuote(code: string): Promise<{
-  success: boolean
-  message: string
-  data?: Record<string, unknown>
-}> {
-  return fetchAStockQuote(code)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -6,7 +6,7 @@ export function inferMarketFromCode(symbol: string): string {
     return '科创板'
   }
 
-  if (code.startsWith('8') || code.startsWith('4') || code.endsWith('.BJ')) {
+  if (code.startsWith('8') || code.startsWith('4')) {
     return '京市A股'
   }
 
@@ -35,24 +35,4 @@ export function normalizeMarketName(market?: string): string {
   if (m.includes('a股') || m.includes('沪') || m.includes('深')) return 'A股'
 
   return 'A股'
-}
-
-export function getMarketType(code: string): 'a_stock' | 'kc_stock' | 'bj_stock' | 'fund' | 'index' | 'hk_stock' {
-  const market = inferMarketFromCode(code)
-  const normalized = normalizeMarketName(market)
-  
-  switch (normalized) {
-    case '科创板':
-      return 'kc_stock'
-    case '京市A股':
-      return 'bj_stock'
-    case '基金':
-      return 'fund'
-    case '指数':
-      return 'index'
-    case '港股':
-      return 'hk_stock'
-    default:
-      return 'a_stock'
-  }
 }

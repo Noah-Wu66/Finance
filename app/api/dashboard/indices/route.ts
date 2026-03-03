@@ -4,6 +4,7 @@ import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
 import { getOrSetLocalCache } from '@/lib/local-data-cache'
 import { daysAgoYmd, todayYmd, tusharePost } from '@/lib/tushare-data'
+import { toNum } from '@/lib/utils'
 
 interface IndexItem {
   code: string
@@ -27,11 +28,6 @@ const DASHBOARD_INDEXES: Array<{ code: string; name: string; tsCode: string }> =
 ]
 
 const INDEX_FIELDS = ['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'pre_close', 'change', 'pct_chg', 'vol', 'amount']
-
-function toNum(value: unknown): number {
-  const n = Number(value)
-  return Number.isFinite(n) ? n : 0
-}
 
 async function fetchLatestIndexRow(tsCode: string): Promise<Record<string, unknown> | null> {
   const today = todayYmd()

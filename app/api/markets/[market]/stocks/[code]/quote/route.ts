@@ -4,11 +4,7 @@ import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
 import { getOrSetLocalCache } from '@/lib/local-data-cache'
 import { fetchAStockQuote, hasTushareLicence } from '@/lib/tushare-data'
-
-function toNum(value: unknown): number {
-  const num = Number(value)
-  return Number.isFinite(num) ? num : 0
-}
+import { toNum } from '@/lib/utils'
 
 interface Params {
   params: Promise<{ market: string; code: string }>

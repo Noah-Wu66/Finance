@@ -7,6 +7,7 @@ import { inferMarketFromCode } from '@/lib/market'
 import { createOperationLog } from '@/lib/operation-logs'
 import { analyzeWithAI, isAIEnabled } from '@/lib/ai-client'
 import { tusharePost, toTsCode, hasTushareLicence, todayYmd, daysAgoYmd } from '@/lib/tushare-data'
+import { toNum as toNumber } from '@/lib/utils'
 
 const EXEC_COLLECTION = 'web_executions'
 const REPORT_COLLECTION = 'analysis_reports'
@@ -380,11 +381,6 @@ interface DataQualityItem {
   latency_sec?: number
   source?: string
   quality_flag?: string
-}
-
-function toNumber(value: unknown): number {
-  const num = Number(value)
-  return Number.isFinite(num) ? num : 0
 }
 
 function normalizeYmd(raw: unknown): string {

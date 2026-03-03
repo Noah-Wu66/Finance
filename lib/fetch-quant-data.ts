@@ -6,26 +6,9 @@ import { hasTushareLicence, tusharePost, toTsCode, todayYmd, daysAgoYmd } from '
 import { TUSHARE_CASHFLOW_FIELDS, TUSHARE_FINA_INDICATOR_FIELDS } from '@/lib/tushare-field-sets'
 import { callTushare11000 } from '@/lib/tushare-11000-call'
 import { getTushare11000Endpoints, normalizeTushareApiName } from '@/lib/tushare-11000'
+import { toNum, toYmd } from '@/lib/utils'
 
 const FRESHNESS_MS = 30 * 60 * 1000
-
-function toNum(v: unknown): number {
-  const n = Number(v)
-  return Number.isFinite(n) ? n : 0
-}
-
-function toYmd(value: unknown): string {
-  const source = String(value || '').trim()
-  if (!source) return ''
-  const compact = source.replace(/[^0-9]/g, '')
-  if (compact.length >= 8) return compact.slice(0, 8)
-  const parsed = new Date(source)
-  if (Number.isNaN(parsed.getTime())) return ''
-  const y = parsed.getFullYear().toString()
-  const m = String(parsed.getMonth() + 1).padStart(2, '0')
-  const d = String(parsed.getDate()).padStart(2, '0')
-  return `${y}${m}${d}`
-}
 
 function normalizeCode(code: string): string {
   return String(code || '').trim().toUpperCase().replace(/\.(SH|SZ|BJ)$/i, '')

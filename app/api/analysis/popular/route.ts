@@ -7,11 +7,7 @@ import { LOCAL_CACHE_ONE_MINUTE_MS, getOrSetLocalCache } from '@/lib/local-data-
 import { fetchAStockQuote } from '@/lib/tushare-data'
 import { inferMarketFromCode, normalizeMarketName } from '@/lib/market'
 import { userIdOrFilter } from '@/lib/mongo-helpers'
-
-function toNum(value: unknown): number {
-  const num = Number(value)
-  return Number.isFinite(num) ? num : 0
-}
+import { toNum } from '@/lib/utils'
 
 export async function GET(request: NextRequest) {
   const user = await getRequestUser(request)

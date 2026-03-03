@@ -5,11 +5,7 @@ import { fail, ok } from '@/lib/http'
 import { LOCAL_CACHE_ONE_MINUTE_MS, getOrSetLocalCache } from '@/lib/local-data-cache'
 import { fetchAStockFinancialSummary, fetchAStockProfileSummary, fetchAStockQuote } from '@/lib/tushare-data'
 import { normalizeMarketName } from '@/lib/market'
-
-function toNum(value: unknown): number {
-  const num = Number(value)
-  return Number.isFinite(num) ? num : 0
-}
+import { toNum } from '@/lib/utils'
 
 export async function GET(request: NextRequest) {
   const user = await getRequestUser(request)
