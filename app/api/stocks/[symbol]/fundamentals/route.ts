@@ -34,6 +34,11 @@ export async function GET(request: NextRequest, { params }: Params) {
   ])
 
   if (!profileResult.success && !financialResult.success && !quoteResult.success) {
+    console.error(`[fundamentals] all sources failed for ${symbol}`, {
+      profile: profileResult.message,
+      financial: financialResult.message,
+      quote: quoteResult.message
+    })
     return fail('获取基本面失败，上游数据暂不可用', 503)
   }
 

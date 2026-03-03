@@ -26,6 +26,7 @@ export async function GET(request: NextRequest, { params }: Params) {
   const symbol = rawSymbol.toUpperCase()
   const result = await getOrSetLocalCache(`stock-quote:${symbol}`, () => fetchAStockQuote(symbol))
   if (!result.success || !result.data) {
+    console.error(`[quote] failed for ${symbol}:`, result.message)
     return fail('获取行情失败，上游数据暂不可用', 503, result.message)
   }
 
