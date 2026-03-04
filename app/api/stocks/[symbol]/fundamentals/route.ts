@@ -39,7 +39,6 @@ export async function GET(request: NextRequest, { params }: Params) {
       financial: financialResult.message,
       quote: quoteResult.message
     })
-    return fail('获取基本面失败，上游数据暂不可用', 503)
   }
 
   const profile = (profileResult.data || {}) as { name?: string; industry?: string }
@@ -69,10 +68,10 @@ export async function GET(request: NextRequest, { params }: Params) {
       turnover_rate: pickNum(quote.turnover_rate),
       volume_ratio: pickNum(quote.volume_ratio),
       pe_is_realtime: true,
-      pe_source: quoteResult.success ? 'daily_basic' : 'fina_indicator',
+      pe_source: quoteResult.success ? 'daily_basic' : financialResult.success ? 'fina_indicator' : 'unavailable',
       pe_updated_at: updatedAt,
       updated_at: updatedAt
     },
-    '获取基本面成功'
+    '获取基本面成功（缺失字段已置空）'
   )
 }

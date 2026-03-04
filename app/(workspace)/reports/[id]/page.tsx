@@ -136,7 +136,7 @@ interface ReportDetail {
 
 function getT1Prediction(predicted: KlineBar[] | undefined) {
   if (!predicted || predicted.length === 0) return null
-  const sorted = [...predicted].sort((a, b) => (a.time > b.time ? 1 : -1))
+  const sorted = [...predicted].sort((a, b) => toSortDate(a.time).localeCompare(toSortDate(b.time)))
   const t1 = sorted[0]
   const open = Number(t1.open || 0)
   const close = Number(t1.close || 0)
@@ -157,6 +157,12 @@ function getT1Prediction(predicted: KlineBar[] | undefined) {
     trend,
     colorClass
   }
+}
+
+function toSortDate(value: string) {
+  const digits = String(value || '').replace(/[^0-9]/g, '')
+  if (digits.length >= 8) return digits.slice(0, 8)
+  return String(value || '')
 }
 
 function fmtDate(value?: string) {
@@ -301,7 +307,7 @@ export default function ReportDetailPage() {
                 <div className="flex flex-wrap items-center gap-4">
                   <span className="text-xs text-[var(--fg-muted)]">
                     预测日期：
-                    <span className="font-mono text-[var(--fg-secondary)]">{t1.time}</span>
+                    <span className="font-mono text-[var(--fg-secondary)]">{fmtDate(t1.time)}</span>
                   </span>
                   <span className={`text-base font-semibold ${t1.colorClass}`}>{t1.trend}</span>
                   <span className="text-xs text-[var(--fg-muted)]">
@@ -332,9 +338,10 @@ export default function ReportDetailPage() {
             </h4>
             {(() => {
               const history = [...(detail.kline_history || [])]
-                .sort((a, b) => (a.time > b.time ? 1 : -1))
+                .sort((a, b) => toSortDate(a.time).localeCompare(toSortDate(b.time)))
                 .slice(-41)
-              const predicted = [...(detail.predicted_kline || [])].sort((a, b) => (a.time > b.time ? 1 : -1))
+              const predicted = [...(detail.predicted_kline || [])]
+                .sort((a, b) => toSortDate(a.time).localeCompare(toSortDate(b.time)))
               const merged = [...history, ...predicted]
               const predictStartIndex = predicted.length > 0 ? history.length : undefined
 

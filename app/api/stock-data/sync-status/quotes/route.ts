@@ -30,11 +30,11 @@ export async function GET(request: NextRequest) {
       LOCAL_CACHE_ONE_MINUTE_MS
     )
     const sorted = rows.sort((a, b) => String(b.trade_date || '').localeCompare(String(a.trade_date || '')))
-    const lastTradeDate = sorted.length > 0 ? String(sorted[0].trade_date || today) : today
+    const lastTradeDate = sorted.length > 0 ? String(sorted[0].trade_date || '') : null
 
     return ok(
       {
-        status: 'ready',
+        status: sorted.length > 0 ? 'ready' : 'empty',
         total_records: null,
         last_trade_date: lastTradeDate,
         updated_at: new Date().toISOString(),

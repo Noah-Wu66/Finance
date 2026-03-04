@@ -220,7 +220,7 @@ function AnalysisPageContent() {
       if (stopped) return
       try {
         const data = await runTick(executionId)
-        if (data.status !== 'running' || stopped) {
+        if (!data || data.status !== 'running' || stopped) {
           return
         }
         setTimeout(poll, 2000)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { apiFetch } from '@/lib/client-api'
 import { Spinner } from '@/components/ui/spinner'
@@ -45,6 +45,12 @@ interface KlineBar {
   volume: number
 }
 
+function toSortDate(value: string) {
+  const digits = String(value || '').replace(/[^0-9]/g, '')
+  if (digits.length >= 8) return digits.slice(0, 8)
+  return String(value || '')
+}
+
 export function StockDataPanel({
   symbol,
   className = '',
@@ -55,55 +61,77 @@ export function StockDataPanel({
   const [funda, setFunda] = useState<FundaData | null>(null)
   const [kline, setKline] = useState<KlineBar[]>([])
   const [loading, setLoading] = useState(true)
+  const requestIdRef = useRef(0)
 
   const load = useCallback(async () => {
-    if (!symbol) return
+    if (!symbol) {
+      setLoading(false)
+      return
+    }
+
+    const requestId = ++requestIdRef.current
     setLoading(true)
 
-    const qRes = await apiFetch<{
-      price: number
-      change_percent: number
-      amount: number
-      trade_date: string
-      turnover_rate: number
-      amplitude: number
-    }>(`/api/stocks/${symbol}/quote`).catch(() => null)
-    if (qRes?.data) {
-      setQuote({
-        price: qRes.data.price,
-        change_percent: qRes.data.change_percent,
-        amount: qRes.data.amount,
-        trade_date: qRes.data.trade_date,
-        open: 0,
-        high: 0,
-        low: 0,
-        turnover_rate: qRes.data.turnover_rate,
-        amplitude: qRes.data.amplitude
-      })
-    }
-    setLoading(false)
+    try {
+      const [qRes, fRes, kRes] = await Promise.all([
+        apiFetch<{
+          price: number
+          change_percent: number
+          amount: number
+          trade_date: string
+          turnover_rate: number
+          amplitude: number
+        }>(`/api/stocks/${symbol}/quote`).catch(() => null),
+        apiFetch<{
+          pe: number; pb: number; ps: number; roe: number
+          total_mv: number; circ_mv: number; industry: string; debt_ratio: number
+        }>(`/api/stocks/${symbol}/fundamentals`).catch(() => null),
+        apiFetch<{ items: KlineBar[] }>(`/api/stocks/${symbol}/kline?limit=${klineLimit}`).catch(() => null)
+      ])
 
-    const fRes = await apiFetch<{
-      pe: number; pb: number; ps: number; roe: number
-      total_mv: number; circ_mv: number; industry: string; debt_ratio: number
-    }>(`/api/stocks/${symbol}/fundamentals`).catch(() => null)
-    if (fRes?.data) {
-      setFunda({
-        pe: fRes.data.pe ?? 0,
-        pb: fRes.data.pb ?? 0,
-        ps: fRes.data.ps ?? 0,
-        roe: fRes.data.roe ?? 0,
-        total_mv: fRes.data.total_mv ?? 0,
-        circ_mv: fRes.data.circ_mv ?? 0,
-        industry: fRes.data.industry ?? '',
-        debt_ratio: fRes.data.debt_ratio ?? 0
-      })
-    }
+      if (requestId !== requestIdRef.current) return
 
-    const kRes = await apiFetch<{ items: KlineBar[] }>(`/api/stocks/${symbol}/kline?limit=${klineLimit}`).catch(() => null)
-    if (kRes?.data?.items) {
-      const sorted = [...kRes.data.items].sort((a, b) => (a.time > b.time ? 1 : -1))
-      setKline(sorted)
+      if (qRes?.data) {
+        setQuote({
+          price: qRes.data.price,
+          change_percent: qRes.data.change_percent,
+          amount: qRes.data.amount,
+          trade_date: qRes.data.trade_date,
+          open: 0,
+          high: 0,
+          low: 0,
+          turnover_rate: qRes.data.turnover_rate,
+          amplitude: qRes.data.amplitude
+        })
+      } else {
+        setQuote(null)
+      }
+
+      if (fRes?.data) {
+        setFunda({
+          pe: fRes.data.pe ?? 0,
+          pb: fRes.data.pb ?? 0,
+          ps: fRes.data.ps ?? 0,
+          roe: fRes.data.roe ?? 0,
+          total_mv: fRes.data.total_mv ?? 0,
+          circ_mv: fRes.data.circ_mv ?? 0,
+          industry: fRes.data.industry ?? '',
+          debt_ratio: fRes.data.debt_ratio ?? 0
+        })
+      } else {
+        setFunda(null)
+      }
+
+      if (kRes?.data?.items) {
+        const sorted = [...kRes.data.items].sort((a, b) => toSortDate(a.time).localeCompare(toSortDate(b.time)))
+        setKline(sorted)
+      } else {
+        setKline([])
+      }
+    } finally {
+      if (requestId === requestIdRef.current) {
+        setLoading(false)
+      }
     }
   }, [symbol, klineLimit])
 
@@ -113,6 +141,10 @@ export function StockDataPanel({
       setFunda(null)
       setKline([])
       void load()
+    }
+
+    return () => {
+      requestIdRef.current += 1
     }
   }, [symbol, load])
 
@@ -139,7 +171,7 @@ export function StockDataPanel({
   const fmtPct = (v: number | undefined) =>
     v !== undefined && v !== 0 ? `${v.toFixed(2)}%` : '-'
 
-  const sortedPredicted = [...predictedKline].sort((a, b) => (a.time > b.time ? 1 : -1))
+  const sortedPredicted = [...predictedKline].sort((a, b) => toSortDate(a.time).localeCompare(toSortDate(b.time)))
   const mergedKline = [...kline, ...sortedPredicted]
   const predictStartIndex = sortedPredicted.length > 0 ? kline.length : undefined
 

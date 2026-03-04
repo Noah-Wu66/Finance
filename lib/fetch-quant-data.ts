@@ -65,6 +65,15 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
 
+function daysLaterYmd(days: number): string {
+  const date = new Date()
+  date.setDate(date.getDate() + days)
+  const y = date.getFullYear().toString()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}${m}${d}`
+}
+
 function parseJsonObject(text: string): Record<string, unknown> | null {
   const raw = String(text || '').trim()
   if (!raw) return null
@@ -288,10 +297,11 @@ export async function fetchTradingCalendar(): Promise<{ success: boolean; messag
   if (!tok.ok) return { success: false, message: tok.message, count: 0 }
 
   try {
-    const startDate = daysAgoYmd(60)
+    const startDate = daysAgoYmd(120)
+    const endDate = daysLaterYmd(45)
     const rows = await tusharePost(
       'trade_cal',
-      { exchange: 'SSE', start_date: startDate, end_date: todayYmd() },
+      { exchange: 'SSE', start_date: startDate, end_date: endDate },
       ['exchange', 'cal_date', 'is_open', 'pretrade_date']
     )
     if (rows.length === 0) return { success: false, message: '交易日历无数据', count: 0 }

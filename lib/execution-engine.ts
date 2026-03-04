@@ -6,7 +6,15 @@ import { fetchAllQuantData } from '@/lib/fetch-quant-data'
 import { inferMarketFromCode } from '@/lib/market'
 import { createOperationLog } from '@/lib/operation-logs'
 import { analyzeWithAI, isAIEnabled } from '@/lib/ai-client'
-import { tusharePost, toTsCode, hasTushareLicence, todayYmd, daysAgoYmd } from '@/lib/tushare-data'
+import {
+  daysAgoYmd,
+  fetchAStockFinancialSummary,
+  fetchAStockProfileSummary,
+  hasTushareLicence,
+  todayYmd,
+  toTsCode,
+  tusharePost
+} from '@/lib/tushare-data'
 import { toNum as toNumber } from '@/lib/utils'
 
 const EXEC_COLLECTION = 'web_executions'
@@ -141,6 +149,28 @@ async function loadStockBasic(symbol: string) {
   const db = await getDb()
   const doc = await db.collection('stock_basic_info').findOne({ symbol })
 
+  if (doc?.name && doc?.industry) {
+    return {
+      symbol,
+      name: String(doc.name),
+      industry: String(doc.industry)
+    }
+  }
+
+  if (hasTushareLicence()) {
+    try {
+      const profile = await fetchAStockProfileSummary(symbol)
+      if (profile.success && profile.data) {
+        return {
+          symbol,
+          name: profile.data.name || symbol,
+          industry: profile.data.industry || '未知行业'
+        }
+      }
+    } catch {
+    }
+  }
+
   return {
     symbol,
     name: (doc?.name as string | undefined) || symbol,
@@ -170,6 +200,7 @@ async function loadQuotePack(symbol: string) {
             prevClose: preClose,
             changePct,
             samples: rows.length,
+            tradeDate: normalizeYmd(latest.trade_date),
             source: 'tushare' as const
           }
         }
@@ -201,6 +232,7 @@ async function loadQuotePack(symbol: string) {
       prevClose: preClose,
       changePct,
       samples: rows.length,
+      tradeDate: normalizeYmd(rows[0].trade_date),
       source: 'database' as const
     }
   }
@@ -210,6 +242,7 @@ async function loadQuotePack(symbol: string) {
     prevClose: 0,
     changePct: 0,
     samples: 0,
+    tradeDate: '',
     source: 'none' as const
   }
 }
@@ -223,10 +256,23 @@ async function loadFundamentals(symbol: string) {
     { sort: { report_date: -1, updated_at: -1 } }
   )
 
-  const roe = Number(basicDoc?.roe ?? finaDoc?.roe ?? 0)
-  const pe = Number(basicDoc?.pe ?? finaDoc?.pe ?? 0)
-  const pb = Number(basicDoc?.pb ?? finaDoc?.pb ?? 0)
-  const revenueGrowth = Number(basicDoc?.revenue_yoy ?? finaDoc?.revenue_yoy ?? 0)
+  let roe = Number(basicDoc?.roe ?? finaDoc?.roe ?? 0)
+  let pe = Number(basicDoc?.pe ?? finaDoc?.pe ?? 0)
+  let pb = Number(basicDoc?.pb ?? finaDoc?.pb ?? 0)
+  let revenueGrowth = Number(basicDoc?.revenue_yoy ?? finaDoc?.revenue_yoy ?? 0)
+
+  if (hasTushareLicence() && roe === 0 && pe === 0 && pb === 0 && revenueGrowth === 0) {
+    try {
+      const financial = await fetchAStockFinancialSummary(symbol)
+      if (financial.success && financial.data) {
+        roe = Number(financial.data.roe || 0)
+        pe = Number(financial.data.pe || 0)
+        pb = Number(financial.data.pb || 0)
+        revenueGrowth = Number(financial.data.revenueGrowth || 0)
+      }
+    } catch {
+    }
+  }
 
   return { roe, pe, pb, revenueGrowth }
 }
@@ -274,6 +320,32 @@ function makeDecision(changePct: number, roe: number, pe: number, pb: number) {
 }
 
 async function loadKlineHistory(symbol: string, limit = 60) {
+  if (hasTushareLicence()) {
+    try {
+      const tsCode = toTsCode(symbol)
+      const rows = await tusharePost(
+        'daily',
+        { ts_code: tsCode, start_date: daysAgoYmd(limit + 20), end_date: todayYmd() },
+        ['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'pre_close', 'change', 'pct_chg', 'vol', 'amount']
+      )
+
+      if (rows.length > 0) {
+        return rows
+          .sort((a, b) => String(a.trade_date || '').localeCompare(String(b.trade_date || '')))
+          .slice(-limit)
+          .map((r) => ({
+            time: normalizeYmd(r.trade_date),
+            open: Number(r.open ?? 0),
+            high: Number(r.high ?? 0),
+            low: Number(r.low ?? 0),
+            close: Number(r.close ?? 0),
+            volume: Number(r.vol ?? 0)
+          }))
+      }
+    } catch {
+    }
+  }
+
   const db = await getDb()
   const rows = await db
     .collection('stock_quotes')
@@ -289,13 +361,14 @@ async function loadKlineHistory(symbol: string, limit = 60) {
 
   return rows
     .map((r) => ({
-      time: String(r.trade_date || ''),
+      time: normalizeYmd(r.trade_date),
       open: Number(r.open ?? 0),
       high: Number(r.high ?? 0),
       low: Number(r.low ?? 0),
       close: Number(r.close ?? 0),
       volume: Number(r.volume ?? 0)
     }))
+    .filter((item) => item.time)
     .reverse()
 }
 
@@ -421,6 +494,49 @@ function ymdDaysAgo(days: number): string {
   const m = String(now.getMonth() + 1).padStart(2, '0')
   const d = String(now.getDate()).padStart(2, '0')
   return `${y}${m}${d}`
+}
+
+function ymdToDate(ymd: string): Date | null {
+  const normalized = normalizeYmd(ymd)
+  if (!/^\d{8}$/.test(normalized)) return null
+  const year = Number(normalized.slice(0, 4))
+  const month = Number(normalized.slice(4, 6))
+  const day = Number(normalized.slice(6, 8))
+  const date = new Date(Date.UTC(year, month - 1, day))
+  return Number.isFinite(date.getTime()) ? date : null
+}
+
+function diffDays(fromYmd: string, toYmd: string): number {
+  const fromDate = ymdToDate(fromYmd)
+  const toDate = ymdToDate(toYmd)
+  if (!fromDate || !toDate) return 0
+  const diff = toDate.getTime() - fromDate.getTime()
+  return Math.floor(diff / (24 * 60 * 60 * 1000))
+}
+
+function pickLatestYmd(...values: Array<string | undefined | null>): string {
+  const dates = values
+    .map((value) => normalizeYmd(value || ''))
+    .filter((value) => /^\d{8}$/.test(value))
+    .sort((a, b) => (a > b ? 1 : -1))
+
+  return dates[dates.length - 1] || ''
+}
+
+function choosePredictionBaseDate(params: {
+  lastKlineDate?: string
+  quoteTradeDate?: string
+}): string {
+  const today = todayYmd()
+  const latestDataDate = pickLatestYmd(params.lastKlineDate, params.quoteTradeDate)
+  if (!latestDataDate) return today
+
+  const lagDays = diffDays(latestDataDate, today)
+  if (lagDays > 15) {
+    return today
+  }
+
+  return latestDataDate
 }
 
 function sleepMs(ms: number) {
@@ -582,16 +698,17 @@ async function triggerQuantAutoFetchIfNeeded(params: {
 
 function fallbackTradingDays(lastDate: string, count: number): string[] {
   const normalized = normalizeYmd(lastDate)
-  const base = normalized ? new Date(`${normalized.slice(0, 4)}-${normalized.slice(4, 6)}-${normalized.slice(6, 8)}T00:00:00+08:00`) : new Date()
+  const baseYmd = /^\d{8}$/.test(normalized) ? normalized : todayYmd()
+  const base = new Date(Date.UTC(Number(baseYmd.slice(0, 4)), Number(baseYmd.slice(4, 6)) - 1, Number(baseYmd.slice(6, 8))))
   const days: string[] = []
   const cursor = new Date(base)
   while (days.length < count) {
-    cursor.setDate(cursor.getDate() + 1)
-    const day = cursor.getDay()
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
+    const day = cursor.getUTCDay()
     if (day === 0 || day === 6) continue
-    const y = cursor.getFullYear().toString()
-    const m = String(cursor.getMonth() + 1).padStart(2, '0')
-    const d = String(cursor.getDate()).padStart(2, '0')
+    const y = cursor.getUTCFullYear().toString()
+    const m = String(cursor.getUTCMonth() + 1).padStart(2, '0')
+    const d = String(cursor.getUTCDate()).padStart(2, '0')
     days.push(`${y}${m}${d}`)
   }
   return days
@@ -601,7 +718,7 @@ async function loadNextTradingDays(lastDate: string, market: string, count = 10)
   const db = await getDb()
   const startDate = normalizeYmd(lastDate)
   if (!startDate) {
-    return fallbackTradingDays(lastDate, count)
+    return fallbackTradingDays(todayYmd(), count)
   }
   const formattedStart = formatYmd(startDate)
 
@@ -624,7 +741,8 @@ async function loadNextTradingDays(lastDate: string, market: string, count = 10)
     .filter((value) => value.length === 8)
 
   if (days.length >= count) return days
-  const fallback = fallbackTradingDays(lastDate, count)
+  const fallbackBase = startDate > todayYmd() ? startDate : todayYmd()
+  const fallback = fallbackTradingDays(fallbackBase, count)
   const merged = [...days]
   for (const item of fallback) {
     if (!merged.includes(item)) merged.push(item)
@@ -1241,7 +1359,7 @@ async function runAIAnalysis(
   if (!aiEnabled) return null
 
   const basic = execution.context.basic as { name: string; industry: string }
-  const quote = execution.context.quote as { latestClose: number; prevClose: number; changePct: number; samples: number }
+  const quote = execution.context.quote as { latestClose: number; prevClose: number; changePct: number; samples: number; tradeDate?: string }
   const financial = execution.context.financial as { roe: number; pe: number; pb: number; revenueGrowth: number }
   const news = (execution.context.news as NewsItem[] | undefined) || []
   const groundingSources = (execution.context.news_grounding_sources as GroundingSource[] | undefined) || []
@@ -2164,7 +2282,7 @@ export async function tickExecution(id: string, userId: string) {
     context.news_grounding_summary = grounded.summary
     nextStep += 1
   } else if (execution.step === 5) {
-    const quote = context.quote as { changePct: number }
+    const quote = context.quote as { changePct: number; tradeDate?: string }
     const financial = context.financial as { roe: number; pe: number; pb: number }
     const basic = context.basic as { industry: string }
     const decision = makeDecision(quote.changePct, financial.roe, financial.pe, financial.pb)
@@ -2191,6 +2309,11 @@ export async function tickExecution(id: string, userId: string) {
       context.kline_history = klineData
 
       const lastKlineDate = klineData[klineData.length - 1]?.time || ''
+      const predictionBaseDate = choosePredictionBaseDate({
+        lastKlineDate,
+        quoteTradeDate: quote.tradeDate
+      })
+      context.prediction_base_date = predictionBaseDate
 
       const quantFetchResult = await fetchAllQuantData({
         symbol: execution.symbol,
@@ -2226,8 +2349,8 @@ export async function tickExecution(id: string, userId: string) {
         dragonTigerData,
         institutionHoldingData
       ] = await Promise.all([
-        loadNextTradingDays(lastKlineDate, execution.market, 10).catch(() => []),
-        loadIndexBenchmarks(lastKlineDate, execution.market, 60).catch(() => []),
+        loadNextTradingDays(predictionBaseDate, execution.market, 10).catch(() => []),
+        loadIndexBenchmarks(predictionBaseDate, execution.market, 60).catch(() => []),
         loadFundFlow(execution.symbol, 30).catch(() => []),
         loadEnhancedFinancial(execution.symbol).catch(() => null),
         loadNewsSentiment(execution.symbol, 50).catch(() => []),
@@ -2261,7 +2384,7 @@ export async function tickExecution(id: string, userId: string) {
         symbol: execution.symbol,
         market: execution.market,
         industry: basic.industry || '',
-        lastKlineDate
+        lastKlineDate: predictionBaseDate
       }).catch(() => [])
 
       const quantAutoFetch = await triggerQuantAutoFetchIfNeeded({

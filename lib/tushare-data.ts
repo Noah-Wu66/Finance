@@ -3,6 +3,7 @@ import {
   normalizeTushareApiName
 } from '@/lib/tushare-11000'
 import { TUSHARE_FINA_INDICATOR_FIELDS } from '@/lib/tushare-field-sets'
+import { getDb } from '@/lib/db'
 import { toNum as toNumber, toYmd } from '@/lib/utils'
 
 const TUSHARE_TOKEN = (process.env.TUSHARE_TOKEN || '').trim()
@@ -41,6 +42,74 @@ function fromTsCode(tsCode: string): string {
 
 function normalizeStockCode(code: string): string {
   return fromTsCode(code)
+}
+
+async function persistStockQuotes(
+  symbol: string,
+  rows: Array<Record<string, unknown>>,
+  source: 'tushare_a_stock_daily' | 'tushare_a_stock'
+) {
+  if (rows.length === 0) return
+
+  const db = await getDb()
+  const now = new Date()
+  const ops: Array<{ updateOne: { filter: Record<string, unknown>; update: Record<string, unknown>; upsert: boolean } }> = []
+
+  for (const row of rows) {
+    const tradeDate = toYmd(row.trade_date)
+    if (!tradeDate) continue
+
+    ops.push({
+      updateOne: {
+        filter: {
+          symbol,
+          trade_date: tradeDate,
+          data_source: source
+        },
+        update: {
+          $set: {
+            symbol,
+            trade_date: tradeDate,
+            open: toNumber(row.open),
+            high: toNumber(row.high),
+            low: toNumber(row.low),
+            close: toNumber(row.close),
+            pre_close: toNumber(row.pre_close),
+            change: toNumber(row.change),
+            pct_chg: toNumber(row.pct_chg),
+            volume: toNumber(row.vol ?? row.volume),
+            amount: toNumber(row.amount),
+            turnover_rate: toNumber(row.turnover_rate),
+            turnover_rate_f: toNumber(row.turnover_rate_f),
+            volume_ratio: toNumber(row.volume_ratio),
+            pe: toNumber(row.pe),
+            pe_ttm: toNumber(row.pe_ttm),
+            pb: toNumber(row.pb),
+            ps: toNumber(row.ps),
+            ps_ttm: toNumber(row.ps_ttm),
+            dv_ratio: toNumber(row.dv_ratio),
+            dv_ttm: toNumber(row.dv_ttm),
+            total_share: toNumber(row.total_share),
+            float_share: toNumber(row.float_share),
+            free_share: toNumber(row.free_share),
+            total_mv: toNumber(row.total_mv),
+            circ_mv: toNumber(row.circ_mv),
+            data_source: source,
+            source: 'tushare',
+            updated_at: now
+          },
+          $setOnInsert: {
+            created_at: now
+          }
+        },
+        upsert: true
+      }
+    })
+  }
+
+  if (ops.length > 0) {
+    await db.collection('stock_quotes').bulkWrite(ops, { ordered: false })
+  }
 }
 
 // ─── Tushare HTTP 客户端 ─────────────────────────────────────────────────────
@@ -213,6 +282,15 @@ export async function fetchAStockQuote(code: string): Promise<{
       trade_date: tradeDate
     }
 
+    try {
+      await persistStockQuotes(symbol, [doc], 'tushare_a_stock')
+    } catch (persistError) {
+      console.error(
+        `[fetchAStockQuote] persist stock_quotes failed for ${symbol}:`,
+        persistError instanceof Error ? persistError.message : persistError
+      )
+    }
+
     return { success: true, message: `已获取 ${symbol} 行情`, data: doc }
   } catch (err) {
     console.error(`[fetchAStockQuote] failed for ${code}:`, err instanceof Error ? err.message : err)
@@ -236,6 +314,16 @@ export async function fetchAStockDaily(code: string, days = 60): Promise<{
       ['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'pre_close', 'change', 'pct_chg', 'vol', 'amount']
     )
     if (rows.length === 0) return { success: false, message: '无K线数据', count: 0 }
+
+    try {
+      await persistStockQuotes(symbol, rows, 'tushare_a_stock_daily')
+    } catch (persistError) {
+      console.error(
+        `[fetchAStockDaily] persist stock_quotes failed for ${symbol}:`,
+        persistError instanceof Error ? persistError.message : persistError
+      )
+    }
+
     return { success: true, message: `已获取 ${symbol} ${rows.length} 天K线`, count: rows.length, stockName: symbol }
   } catch (err) {
     return { success: false, message: err instanceof Error ? err.message : '未知错误', count: 0 }

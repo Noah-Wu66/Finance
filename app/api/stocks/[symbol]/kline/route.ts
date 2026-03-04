@@ -69,6 +69,19 @@ export async function GET(request: NextRequest, { params }: Params) {
       '获取K线成功'
     )
   } catch (error) {
-    return fail('获取K线失败', 500, error instanceof Error ? error.message : String(error))
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    console.error(`[kline] failed for ${symbol}:`, errorMessage)
+    return ok(
+      {
+        symbol,
+        code: symbol,
+        period,
+        limit,
+        adj,
+        source: 'tushare_direct',
+        items: []
+      },
+      '获取K线成功（当前暂无数据）'
+    )
   }
 }

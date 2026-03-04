@@ -6,7 +6,7 @@
  * 不依赖任何第三方图表库
  */
 
-import { useCallback, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 
 interface KlineBar {
   time: string
@@ -30,7 +30,18 @@ export function KlineChart({ data, width = 720, height = 340, predictStartIndex 
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
   const [mouseY, setMouseY] = useState<number | null>(null)
 
-  if (!data || data.length === 0) {
+  const bars = (data || [])
+    .map((item) => ({
+      time: String(item?.time || ''),
+      open: Number(item?.open ?? 0),
+      high: Number(item?.high ?? 0),
+      low: Number(item?.low ?? 0),
+      close: Number(item?.close ?? 0),
+      volume: Number(item?.volume ?? 0)
+    }))
+    .filter((item) => item.time && Number.isFinite(item.open) && Number.isFinite(item.high) && Number.isFinite(item.low) && Number.isFinite(item.close) && Number.isFinite(item.volume))
+
+  if (bars.length === 0) {
     return (
       <div
         className="flex items-center justify-center text-sm text-[var(--fg-muted)]"
@@ -56,7 +67,7 @@ export function KlineChart({ data, width = 720, height = 340, predictStartIndex 
   const volTop = klineBottom + gapBetween
   const volBottom = volTop + volumeAreaHeight
 
-  const barCount = data.length
+  const barCount = bars.length
   const barTotalW = chartW / barCount
   const barW = Math.max(1, barTotalW * 0.7)
   const barGap = barTotalW * 0.15
@@ -65,7 +76,7 @@ export function KlineChart({ data, width = 720, height = 340, predictStartIndex 
   let pMin = Infinity
   let pMax = -Infinity
   let vMax = 0
-  for (const d of data) {
+  for (const d of bars) {
     if (d.low < pMin) pMin = d.low
     if (d.high > pMax) pMax = d.high
     if (d.volume > vMax) vMax = d.volume
@@ -99,7 +110,7 @@ export function KlineChart({ data, width = 720, height = 340, predictStartIndex 
   const dateLabelStep = Math.max(1, Math.floor(barCount / 5))
   const dateLabels: { x: number; label: string }[] = []
   for (let i = 0; i < barCount; i += dateLabelStep) {
-    const t = data[i].time
+    const t = bars[i].time
     const formatted = t.length === 8
       ? `${t.slice(4, 6)}-${t.slice(6, 8)}`
       : t.length >= 10
@@ -111,10 +122,10 @@ export function KlineChart({ data, width = 720, height = 340, predictStartIndex 
   // --- 5日 / 10日均线 ---
   const calcMA = (n: number): { x: number; y: number }[] => {
     const pts: { x: number; y: number }[] = []
-    for (let i = 0; i < data.length; i++) {
+    for (let i = 0; i < bars.length; i++) {
       if (i < n - 1) continue
       let sum = 0
-      for (let j = i - n + 1; j <= i; j++) sum += data[j].close
+      for (let j = i - n + 1; j <= i; j++) sum += bars[j].close
       pts.push({ x: xOf(i) + barW / 2, y: priceToY(sum / n) })
     }
     return pts
@@ -129,7 +140,7 @@ export function KlineChart({ data, width = 720, height = 340, predictStartIndex 
   const downColor = 'var(--kline-down, #22c55e)'
 
   // --- 鼠标事件 ---
-  const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const svg = svgRef.current
     if (!svg) return
     const rect = svg.getBoundingClientRect()
@@ -152,15 +163,15 @@ export function KlineChart({ data, width = 720, height = 340, predictStartIndex 
     // 限制 Y 在 K 线区域内
     const clampedY = Math.max(klineTop, Math.min(klineBottom, svgY))
     setMouseY(clampedY)
-  }, [width, height, paddingLeft, chartW, barTotalW, barCount, klineTop, klineBottom])
+  }
 
-  const handleMouseLeave = useCallback(() => {
+  const handleMouseLeave = () => {
     setHoverIndex(null)
     setMouseY(null)
-  }, [])
+  }
 
   // --- 悬停数据 ---
-  const hoverBar = hoverIndex !== null ? data[hoverIndex] : null
+  const hoverBar = hoverIndex !== null ? bars[hoverIndex] : null
   const hoverCx = hoverIndex !== null ? xOf(hoverIndex) + barW / 2 : 0
   const hoverIsPredicted = hoverIndex !== null && predictStartIndex !== undefined && hoverIndex >= predictStartIndex
 
@@ -312,7 +323,7 @@ export function KlineChart({ data, width = 720, height = 340, predictStartIndex 
       )}
 
       {/* K线蜡烛 */}
-      {data.map((d, i) => {
+      {bars.map((d, i) => {
         const x = xOf(i)
         const cx = x + barW / 2
         const isUp = d.close >= d.open
@@ -390,7 +401,7 @@ export function KlineChart({ data, width = 720, height = 340, predictStartIndex 
       </text>
 
       {/* 成交量柱 */}
-      {data.map((d, i) => {
+      {bars.map((d, i) => {
         const x = xOf(i)
         const h = volToH(d.volume)
         const isUp = d.close >= d.open

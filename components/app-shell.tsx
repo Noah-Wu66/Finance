@@ -134,7 +134,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const fetchUnread = useCallback(async () => {
     try {
       const res = await apiFetch<{ count: number }>('/api/notifications/unread_count')
-      setUnreadCount(res.data.count)
+      setUnreadCount(Number(res.data?.count ?? 0))
     } catch {}
   }, [])
 
