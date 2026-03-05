@@ -124,7 +124,7 @@ async function acquireTushareSlot(): Promise<() => void> {
 
 async function gateTushareRequestStart() {
   const prev = globalThis.__financeTusharePaceLock || Promise.resolve()
-  let releaseCurrent: (() => void) | null = null
+  let releaseCurrent: () => void = () => {}
   const current = new Promise<void>((resolve) => {
     releaseCurrent = resolve
   })
@@ -138,7 +138,7 @@ async function gateTushareRequestStart() {
     }
     tushareGuardState.lastRequestAt = Date.now()
   } finally {
-    releaseCurrent?.()
+    releaseCurrent()
   }
 }
 
