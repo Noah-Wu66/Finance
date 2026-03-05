@@ -21,6 +21,15 @@ if (!globalThis.__financeLocalCachePending) {
 
 export const LOCAL_CACHE_ONE_MINUTE_MS = 60 * 1000
 
+function defaultShouldCache(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return true
+  if (!('success' in value)) return true
+
+  const success = (value as { success?: unknown }).success
+  if (typeof success !== 'boolean') return true
+  return success
+}
+
 function pruneLocalCache(maxSize = 3000) {
   if (cacheStore.size <= maxSize) return
 
@@ -66,7 +75,8 @@ export function setLocalCacheValue<T>(key: string, value: T, ttlMs = LOCAL_CACHE
 export async function getOrSetLocalCache<T>(
   key: string,
   loader: () => Promise<T>,
-  ttlMs = LOCAL_CACHE_ONE_MINUTE_MS
+  ttlMs = LOCAL_CACHE_ONE_MINUTE_MS,
+  shouldCache: (value: T) => boolean = defaultShouldCache as (value: T) => boolean
 ): Promise<T> {
   const cached = getLocalCacheValue<T>(key)
   if (cached.hit) return cached.value as T
@@ -75,7 +85,7 @@ export async function getOrSetLocalCache<T>(
   if (pending) return pending as Promise<T>
 
   const task = loader()
-    .then((value) => setLocalCacheValue(key, value, ttlMs))
+    .then((value) => (shouldCache(value) ? setLocalCacheValue(key, value, ttlMs) : value))
     .finally(() => {
       pendingStore.delete(key)
     })
@@ -83,3 +93,4 @@ export async function getOrSetLocalCache<T>(
   pendingStore.set(key, task as Promise<unknown>)
   return task
 }
+
