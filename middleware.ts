@@ -34,11 +34,45 @@ interface AccessPayload {
   token_kind?: 'access' | 'refresh'
 }
 
+declare global {
+  var __financeApiRateStore: Map<string, number[]> | undefined
+}
+
 const jwtSecretText = (process.env.JWT_SECRET || '').trim()
 if (!jwtSecretText) {
   throw new Error('JWT_SECRET 环境变量未设置，服务拒绝启动')
 }
 const jwtSecretValue = new TextEncoder().encode(jwtSecretText)
+
+const apiRateStore = globalThis.__financeApiRateStore || new Map<string, number[]>()
+if (!globalThis.__financeApiRateStore) {
+  globalThis.__financeApiRateStore = apiRateStore
+}
+
+function hitRateLimit(key: string, maxCount: number, windowMs: number): boolean {
+  const now = Date.now()
+  const beginAt = now - windowMs
+  const current = (apiRateStore.get(key) || []).filter((ts) => ts > beginAt)
+  current.push(now)
+  apiRateStore.set(key, current)
+
+  if (current.length > maxCount) {
+    return true
+  }
+
+  if (apiRateStore.size > 3000) {
+    for (const [k, values] of apiRateStore.entries()) {
+      const alive = values.filter((ts) => ts > now - 5 * 60 * 1000)
+      if (alive.length === 0) {
+        apiRateStore.delete(k)
+      } else {
+        apiRateStore.set(k, alive)
+      }
+    }
+  }
+
+  return false
+}
 
 function isPublicApi(pathname: string) {
   return PUBLIC_API_PREFIXES.some((prefix) => pathname.startsWith(prefix))
@@ -94,6 +128,16 @@ function forbiddenApi(message: string) {
   )
 }
 
+function tooManyRequestsApi(message: string) {
+  return NextResponse.json(
+    {
+      success: false,
+      message
+    },
+    { status: 429 }
+  )
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
@@ -116,6 +160,17 @@ export async function middleware(request: NextRequest) {
 
     if (!tokenPayload) {
       return unauthorizedApi('未登录')
+    }
+
+    const requester = tokenPayload.userId || request.headers.get('x-forwarded-for') || 'unknown'
+    if (hitRateLimit(`api:all:${requester}`, 240, 60 * 1000)) {
+      return tooManyRequestsApi('请求过于频繁，请稍后再试')
+    }
+
+    if (pathname.includes('/api/executions/') && pathname.endsWith('/tick')) {
+      if (hitRateLimit(`api:tick:${requester}`, 20, 30 * 1000)) {
+        return tooManyRequestsApi('任务推进太频繁，请稍后重试')
+      }
     }
 
     if (isAdminApi(pathname) && !tokenPayload.isAdmin) {
@@ -146,3 +201,4 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: ['/((?!.*\\.).*)']
 }
+

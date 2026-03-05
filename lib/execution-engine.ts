@@ -327,8 +327,8 @@ async function loadKlineHistory(symbol: string, limit = 60) {
     try {
       const tsCode = toTsCode(symbol)
       const rows = await tusharePost(
-        'daily',
-        { ts_code: tsCode, start_date: daysAgoYmd(limit + 20), end_date: todayYmd() },
+        'daily_adj',
+        { ts_code: tsCode, start_date: daysAgoYmd(limit + 20), end_date: todayYmd(), adj: 'qfq' },
         ['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'pre_close', 'change', 'pct_chg', 'vol', 'amount']
       )
 
@@ -1908,9 +1908,47 @@ export async function startExecution(input: {
 }) {
   const db = await getDb()
   const executions = db.collection<ExecutionDoc>(EXEC_COLLECTION)
+  const users = db.collection('users')
+
+  const userObjectId = ObjectId.isValid(input.userId) ? new ObjectId(input.userId) : null
+  const userDoc = userObjectId
+    ? await users.findOne(
+      { _id: userObjectId },
+      { projection: { daily_quota: 1, concurrent_limit: 1 } }
+    )
+    : null
+
+  const dailyQuota = Math.max(1, Number(userDoc?.daily_quota || 1000))
+  const concurrentLimit = Math.max(1, Number(userDoc?.concurrent_limit || 3))
+
+  const runningCount = await executions.countDocuments({
+    user_id: input.userId,
+    status: 'running'
+  })
+
+  if (runningCount >= concurrentLimit) {
+    throw new Error(`当前运行任务已达并发上限（${concurrentLimit}）`)
+  }
+
+  const now = new Date()
+  const nowCst = new Date(now.getTime() + 8 * 60 * 60 * 1000)
+  nowCst.setUTCHours(0, 0, 0, 0)
+  const dayStart = new Date(nowCst.getTime() - 8 * 60 * 60 * 1000)
+  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
+
+  const todayCount = await executions.countDocuments({
+    user_id: input.userId,
+    created_at: {
+      $gte: dayStart,
+      $lt: dayEnd
+    }
+  })
+
+  if (todayCount >= dailyQuota) {
+    throw new Error(`今日任务次数已达上限（${dailyQuota}）`)
+  }
 
   const symbol = sanitizeSymbol(input.symbol)
-  const now = new Date()
   const doc = {
     user_id: input.userId,
     user_email: input.userEmail,
@@ -1951,7 +1989,6 @@ export async function startExecution(input: {
   })
   return result.insertedId.toHexString()
 }
-
 export async function createBatch(input: {
   userId: string
   title: string

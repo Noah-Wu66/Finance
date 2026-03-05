@@ -223,10 +223,10 @@ function AnalysisPageContent() {
         if (!data || data.status !== 'running' || stopped) {
           return
         }
-        setTimeout(poll, 2000)
+        setTimeout(poll, 3500)
       } catch {
         if (!stopped) {
-          setTimeout(poll, 3000)
+          setTimeout(poll, 5000)
         }
       }
     }
@@ -557,3 +557,4 @@ export default function AnalysisPage() {
     </Suspense>
   )
 }
+

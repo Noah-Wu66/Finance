@@ -89,7 +89,7 @@ export function StockDataPanel({
           pe: number; pb: number; ps: number; roe: number
           total_mv: number; circ_mv: number; industry: string; debt_ratio: number
         }>(`/api/stocks/${symbol}/fundamentals`).catch(() => null),
-        apiFetch<{ items: KlineBar[] }>(`/api/stocks/${symbol}/kline?limit=${klineLimit}`).catch(() => null)
+        apiFetch<{ items: KlineBar[] }>(`/api/stocks/${symbol}/kline?limit=${klineLimit}&adj=qfq`).catch(() => null)
       ])
 
       if (requestId !== requestIdRef.current) return
@@ -273,3 +273,4 @@ export function StockDataPanel({
     </div>
   )
 }
+

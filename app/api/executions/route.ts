@@ -35,18 +35,25 @@ export async function POST(request: NextRequest) {
 
   const market = (body.market || 'A股').trim()
 
-  const executionId = await startExecution({
-    userId: user.userId,
-    userEmail: user.email,
-    symbol,
-    market,
-    depth: '全面'
-  })
+  try {
+    const executionId = await startExecution({
+      userId: user.userId,
+      userEmail: user.email,
+      symbol,
+      market,
+      depth: '全面'
+    })
 
-  return ok(
-    {
-      execution_id: executionId
-    },
-    '已创建现场执行任务'
-  )
+    return ok(
+      {
+        execution_id: executionId
+      },
+      '已创建现场执行任务'
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const status = message.includes('上限') ? 429 : 500
+    return fail('创建任务失败', status, message)
+  }
 }
+

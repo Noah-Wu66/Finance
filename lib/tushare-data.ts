@@ -8,6 +8,139 @@ import { toNum as toNumber, toYmd } from '@/lib/utils'
 
 const TUSHARE_TOKEN = (process.env.TUSHARE_TOKEN || '').trim()
 const TUSHARE_API = 'https://api.tushare.pro'
+function toSafeIntEnv(value: string | undefined, fallback: number, min: number, max: number): number {
+  const parsed = Number.parseInt(String(value || ''), 10)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.min(max, Math.max(min, parsed))
+}
+
+interface TushareGuardState {
+  active: number
+  queue: Array<() => void>
+  lastRequestAt: number
+}
+
+declare global {
+  var __financeTushareGuardState: TushareGuardState | undefined
+  var __financeTusharePaceLock: Promise<void> | undefined
+}
+
+const TUSHARE_TIMEOUT_MS = toSafeIntEnv(process.env.TUSHARE_TIMEOUT_MS, 20000, 5000, 60000)
+const TUSHARE_MAX_RETRIES = toSafeIntEnv(process.env.TUSHARE_MAX_RETRIES, 3, 0, 6)
+const TUSHARE_BASE_BACKOFF_MS = toSafeIntEnv(process.env.TUSHARE_BASE_BACKOFF_MS, 800, 100, 10000)
+const TUSHARE_MAX_BACKOFF_MS = toSafeIntEnv(process.env.TUSHARE_MAX_BACKOFF_MS, 10000, 1000, 60000)
+const TUSHARE_MAX_CONCURRENCY = toSafeIntEnv(process.env.TUSHARE_MAX_CONCURRENCY, 3, 1, 10)
+const TUSHARE_MIN_INTERVAL_MS = toSafeIntEnv(process.env.TUSHARE_MIN_INTERVAL_MS, 250, 0, 5000)
+
+const tushareGuardState = globalThis.__financeTushareGuardState || {
+  active: 0,
+  queue: [],
+  lastRequestAt: 0
+}
+if (!globalThis.__financeTushareGuardState) {
+  globalThis.__financeTushareGuardState = tushareGuardState
+}
+if (!globalThis.__financeTusharePaceLock) {
+  globalThis.__financeTusharePaceLock = Promise.resolve()
+}
+
+class TushareRequestError extends Error {
+  retryable: boolean
+  retryAfterMs?: number
+
+  constructor(message: string, retryable = false, retryAfterMs?: number) {
+    super(message)
+    this.name = 'TushareRequestError'
+    this.retryable = retryable
+    this.retryAfterMs = retryAfterMs
+  }
+}
+
+function sleepMs(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function parseRetryAfterMs(value: string | null): number | undefined {
+  if (!value) return undefined
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+
+  const asSeconds = Number(trimmed)
+  if (Number.isFinite(asSeconds) && asSeconds >= 0) {
+    return Math.round(asSeconds * 1000)
+  }
+
+  const asDate = Date.parse(trimmed)
+  if (Number.isFinite(asDate)) {
+    const wait = asDate - Date.now()
+    return wait > 0 ? wait : 0
+  }
+
+  return undefined
+}
+
+function calcRetryDelayMs(attempt: number, retryAfterMs?: number): number {
+  if (retryAfterMs !== undefined) {
+    return Math.min(TUSHARE_MAX_BACKOFF_MS, Math.max(200, retryAfterMs))
+  }
+
+  const base = Math.min(TUSHARE_MAX_BACKOFF_MS, TUSHARE_BASE_BACKOFF_MS * (2 ** attempt))
+  const jitter = Math.floor(base * 0.2 * Math.random())
+  return Math.min(TUSHARE_MAX_BACKOFF_MS, base + jitter)
+}
+
+function isRetryableHttpStatus(status: number): boolean {
+  return status === 408 || status === 409 || status === 425 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504
+}
+
+function isRetryableBusinessError(message: string): boolean {
+  const text = String(message || '').toLowerCase()
+  return text.includes('too many') || text.includes('rate') || text.includes('quota') || text.includes('limit') || text.includes('频率') || text.includes('限制') || text.includes('过于频繁') || text.includes('超限')
+}
+
+async function acquireTushareSlot(): Promise<() => void> {
+  if (tushareGuardState.active < TUSHARE_MAX_CONCURRENCY) {
+    tushareGuardState.active += 1
+  } else {
+    await new Promise<void>((resolve) => {
+      tushareGuardState.queue.push(resolve)
+    })
+  }
+
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+
+    const next = tushareGuardState.queue.shift()
+    if (next) {
+      next()
+      return
+    }
+
+    tushareGuardState.active = Math.max(0, tushareGuardState.active - 1)
+  }
+}
+
+async function gateTushareRequestStart() {
+  const prev = globalThis.__financeTusharePaceLock || Promise.resolve()
+  let releaseCurrent: (() => void) | null = null
+  const current = new Promise<void>((resolve) => {
+    releaseCurrent = resolve
+  })
+  globalThis.__financeTusharePaceLock = current
+
+  await prev
+  try {
+    const delta = Date.now() - tushareGuardState.lastRequestAt
+    if (delta < TUSHARE_MIN_INTERVAL_MS) {
+      await sleepMs(TUSHARE_MIN_INTERVAL_MS - delta)
+    }
+    tushareGuardState.lastRequestAt = Date.now()
+  } finally {
+    releaseCurrent?.()
+  }
+}
 
 // ─── 工具函数 ────────────────────────────────────────────────────────────────
 
@@ -144,48 +277,92 @@ async function tusharePost(
     throw new Error(`接口 ${normalizedApiName} 不在 11000 积分支持清单中，已禁止调用`)
   }
 
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 20000)
+  let lastError: Error | null = null
 
-  let res: Response
-  try {
-    res = await fetch(TUSHARE_API, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        api_name: normalizedApiName,
-        token: TUSHARE_TOKEN,
-        params,
-        fields: fields.join(',')
+  for (let attempt = 0; attempt <= TUSHARE_MAX_RETRIES; attempt += 1) {
+    const release = await acquireTushareSlot()
+
+    try {
+      await gateTushareRequestStart()
+
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), TUSHARE_TIMEOUT_MS)
+
+      let res: Response
+      try {
+        res = await fetch(TUSHARE_API, {
+          method: 'POST',
+          signal: controller.signal,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            api_name: normalizedApiName,
+            token: TUSHARE_TOKEN,
+            params,
+            fields: fields.join(',')
+          })
+        })
+      } finally {
+        clearTimeout(timer)
+      }
+
+      if (!res.ok) {
+        const retryAfterMs = parseRetryAfterMs(res.headers.get('retry-after'))
+        throw new TushareRequestError(
+          `Tushare HTTP ${res.status}`,
+          isRetryableHttpStatus(res.status),
+          retryAfterMs
+        )
+      }
+
+      const json = await res.json().catch(() => {
+        throw new TushareRequestError('Tushare 响应解析失败', true)
       })
-    })
-  } finally {
-    clearTimeout(timer)
+
+      if (json.code !== 0) {
+        const msg = String(json.msg || '未知错误')
+        throw new TushareRequestError(
+          `Tushare ${normalizedApiName} 错误：${msg}`,
+          isRetryableBusinessError(msg)
+        )
+      }
+
+      const { fields: colNames, items } = json.data as {
+        fields: string[]
+        items: unknown[][]
+      }
+      if (!Array.isArray(items)) return []
+
+      const rows = items.map((row) => {
+        const obj: Record<string, unknown> = {}
+        colNames.forEach((k, i) => {
+          obj[k] = row[i] ?? null
+        })
+        return obj
+      })
+
+      return rows
+    } catch (error) {
+      const isAbort = error instanceof Error && error.name === 'AbortError'
+      const wrapped = error instanceof TushareRequestError
+        ? error
+        : new TushareRequestError(
+          error instanceof Error ? error.message : String(error),
+          isAbort || (error instanceof TypeError)
+        )
+
+      lastError = wrapped
+      if (!wrapped.retryable || attempt >= TUSHARE_MAX_RETRIES) {
+        break
+      }
+
+      await sleepMs(calcRetryDelayMs(attempt, wrapped.retryAfterMs))
+    } finally {
+      release()
+    }
   }
 
-  if (!res.ok) throw new Error(`Tushare HTTP ${res.status}`)
-
-  const json = await res.json()
-  if (json.code !== 0) throw new Error(`Tushare ${normalizedApiName} 错误：${json.msg}`)
-
-  const { fields: colNames, items } = json.data as {
-    fields: string[]
-    items: unknown[][]
-  }
-  if (!Array.isArray(items)) return []
-
-  const rows = items.map((row) => {
-    const obj: Record<string, unknown> = {}
-    colNames.forEach((k, i) => {
-      obj[k] = row[i] ?? null
-    })
-    return obj
-  })
-
-  return rows
+  throw lastError || new Error('Tushare 请求失败')
 }
-
 // ─── 公开检测函数 ─────────────────────────────────────────────────────────────
 
 export function hasTushareLicence(): boolean {
@@ -498,3 +675,4 @@ export async function fetchAStockExtendedSnapshot(code: string): Promise<{
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export { tusharePost, toTsCode, fromTsCode, todayYmd, daysAgoYmd }
+

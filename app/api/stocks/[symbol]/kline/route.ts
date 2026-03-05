@@ -22,7 +22,7 @@ export async function GET(request: NextRequest, { params }: Params) {
   const symbol = rawSymbol.toUpperCase()
   const period = (request.nextUrl.searchParams.get('period') || 'day') as 'day' | 'week' | 'month' | '5m' | '15m' | '30m' | '60m'
   const limit = Math.min(500, Math.max(1, Number(request.nextUrl.searchParams.get('limit') || '120')))
-  const adj = (request.nextUrl.searchParams.get('adj') || 'none') as 'none' | 'qfq' | 'hfq'
+  const adj = (request.nextUrl.searchParams.get('adj') || 'qfq') as 'none' | 'qfq' | 'hfq'
 
   try {
     const tsCode = toTsCode(symbol)
@@ -85,3 +85,4 @@ export async function GET(request: NextRequest, { params }: Params) {
     )
   }
 }
+

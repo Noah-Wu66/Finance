@@ -352,7 +352,7 @@ export default function ReportDetailPage() {
             )
           })()}
 
-          {/* 日K线（历史 + 预测合并） */}
+          {/* 日K线（仅历史，不含预测） */}
           <Card>
             <h4 className="text-sm font-semibold text-[var(--fg)] mb-3">
               日K线（近 41 日）
@@ -361,33 +361,48 @@ export default function ReportDetailPage() {
               const history = [...(detail.kline_history || [])]
                 .sort((a, b) => toSortDate(a.time).localeCompare(toSortDate(b.time)))
                 .slice(-41)
-              const predicted = [...(detail.predicted_kline || [])]
-                .sort((a, b) => toSortDate(a.time).localeCompare(toSortDate(b.time)))
-              const merged = [...history, ...predicted]
-              const predictStartIndex = predicted.length > 0 ? history.length : undefined
 
               return (
-                <>
-                  <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-2 sm:p-3 overflow-x-auto">
-                    <div className="min-w-[700px]">
-                      <KlineChart
-                        data={merged}
-                        width={760}
-                        height={320}
-                        predictStartIndex={predictStartIndex}
-                      />
-                    </div>
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-2 sm:p-3 overflow-x-auto">
+                  <div className="min-w-[700px]">
+                    <KlineChart
+                      data={history}
+                      width={760}
+                      height={320}
+                    />
                   </div>
-                  {predicted.length > 0 && (
-                    <p className="text-[11px] text-[var(--fg-muted)] mt-2 m-0">
-                      已合并量化分析预测：未来 {predicted.length} 个交易日为虚线部分，仅供参考。
-                    </p>
-                  )}
-                </>
+                </div>
               )
             })()}
           </Card>
 
+
+          {(() => {
+            const predicted = [...(detail.predicted_kline || [])]
+              .sort((a, b) => toSortDate(a.time).localeCompare(toSortDate(b.time)))
+            if (predicted.length === 0) return null
+
+            return (
+              <Card>
+                <h4 className="text-sm font-semibold text-[var(--fg)] mb-3">
+                  预测K线（未来 {predicted.length} 个交易日）
+                </h4>
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-2 sm:p-3 overflow-x-auto">
+                  <div className="min-w-[700px]">
+                    <KlineChart
+                      data={predicted}
+                      width={760}
+                      height={320}
+                      predictStartIndex={0}
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-[var(--fg-muted)] mt-2 m-0">
+                  量化分析预测仅供参考，不构成投资建议。
+                </p>
+              </Card>
+            )
+          })()}
           {detail.benchmark_summary && detail.benchmark_summary.length > 0 && (
             <Card>
               <h4 className="text-sm font-semibold text-[var(--fg)] mb-3">基准指数对照</h4>

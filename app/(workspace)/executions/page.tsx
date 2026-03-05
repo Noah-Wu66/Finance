@@ -60,7 +60,7 @@ export default function ExecutionsPage() {
   useEffect(() => {
     const timer = window.setInterval(() => {
       void advanceRunning(false)
-    }, 3000)
+    }, 5000)
     return () => window.clearInterval(timer)
   }, [items])
 
@@ -322,3 +322,4 @@ export default function ExecutionsPage() {
     </div>
   )
 }
+
