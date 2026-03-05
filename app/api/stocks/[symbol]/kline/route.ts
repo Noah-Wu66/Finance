@@ -3,8 +3,14 @@ import { NextRequest } from 'next/server'
 import { getRequestUser } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
 import { LOCAL_CACHE_ONE_MINUTE_MS, getOrSetLocalCache } from '@/lib/local-data-cache'
-import { daysAgoYmd, hasTushareLicence, todayYmd, toTsCode, tusharePost } from '@/lib/tushare-data'
+import { daysAgoYmd, hasTushareLicence, toTsCode, tusharePost } from '@/lib/tushare-data'
 import { toNum } from '@/lib/utils'
+
+function futureYmd(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10).replace(/-/g, '')
+}
 
 interface Params {
   params: Promise<{ symbol: string }>
@@ -35,7 +41,7 @@ export async function GET(request: NextRequest, { params }: Params) {
         {
           ts_code: tsCode,
           start_date: daysAgoYmd(limit + 20),
-          end_date: todayYmd(),
+          end_date: futureYmd(3),
           ...(adj === 'none' ? {} : { adj })
         },
         fields

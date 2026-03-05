@@ -11,10 +11,10 @@ import {
   fetchAStockFinancialSummary,
   fetchAStockProfileSummary,
   hasTushareLicence,
-  todayYmd,
   toTsCode,
   tusharePost
 } from '@/lib/tushare-data'
+import { todayYmd, daysLaterYmd, getLatestTradingDay } from '@/lib/holiday'
 import { toNum as toNumber } from '@/lib/utils'
 
 const EXEC_COLLECTION = 'web_executions'
@@ -188,7 +188,7 @@ async function loadQuotePack(symbol: string) {
     try {
       const rows = await tusharePost(
         'daily',
-        { ts_code: tsCode, start_date: daysAgoYmd(10), end_date: todayYmd() },
+        { ts_code: tsCode, start_date: daysAgoYmd(10), end_date: daysLaterYmd(3) },
         ['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'pre_close', 'change', 'pct_chg', 'vol', 'amount']
       )
       if (rows.length > 0) {
@@ -328,7 +328,7 @@ async function loadKlineHistory(symbol: string, limit = 60) {
       const tsCode = toTsCode(symbol)
       const rows = await tusharePost(
         'daily_adj',
-        { ts_code: tsCode, start_date: daysAgoYmd(limit + 20), end_date: todayYmd(), adj: 'qfq' },
+        { ts_code: tsCode, start_date: daysAgoYmd(limit + 20), end_date: daysLaterYmd(3), adj: 'qfq' },
         ['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'pre_close', 'change', 'pct_chg', 'vol', 'amount']
       )
 
@@ -776,7 +776,7 @@ async function loadIndexBenchmarks(lastDate: string, market: string, limit = 60)
   if (hasTushareLicence()) {
     try {
       const allRows: IndexDailyItem[] = []
-      const endDate = todayYmd()
+      const endDate = daysLaterYmd(3)
       const startDate = daysAgoYmd(limit + 20)
       for (const idx of indexTsCodes) {
         try {

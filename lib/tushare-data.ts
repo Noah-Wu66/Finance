@@ -5,6 +5,7 @@ import {
 import { TUSHARE_FINA_INDICATOR_FIELDS } from '@/lib/tushare-field-sets'
 import { getDb } from '@/lib/db'
 import { toNum as toNumber, toYmd } from '@/lib/utils'
+import { getLatestTradingDay, daysLaterYmd } from '@/lib/holiday'
 
 const TUSHARE_TOKEN = (process.env.TUSHARE_TOKEN || '').trim()
 const TUSHARE_API = 'https://api.tushare.pro'
@@ -156,6 +157,27 @@ function daysAgoYmd(n: number): string {
   const d = new Date()
   d.setDate(d.getDate() - n)
   return d.toISOString().slice(0, 10).replace(/-/g, '')
+}
+
+/**
+ * 获取最近的交易日（用于查询行情数据）
+ * 如果假日API失败，返回今天的日期
+ */
+async function getRecentTradingDayYmd(): Promise<string> {
+  try {
+    const latestTradingDay = await getLatestTradingDay(10)
+    return latestTradingDay || todayYmd()
+  } catch (error) {
+    console.warn('[tushare-data] 获取最近交易日失败，使用今天日期:', error)
+    return todayYmd()
+  }
+}
+
+/**
+ * 获取查询结束日期（往后推几天，确保能获取到最新数据）
+ */
+function getQueryEndDate(): string {
+  return daysLaterYmd(3)
 }
 
 /** 纯数字代码 → Tushare 带后缀代码：000001 → 000001.SZ */
@@ -406,13 +428,13 @@ export async function fetchAStockQuote(code: string): Promise<{
   const symbol = normalizeStockCode(code)
   const tsCode = toTsCode(symbol)
   try {
-    const today = todayYmd()
+    const endDate = getQueryEndDate()
     const quoteFields = ['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'pre_close', 'change', 'pct_chg', 'vol', 'amount']
     let row: Record<string, unknown> | undefined
 
     let dailyRows = await tusharePost(
       'daily',
-      { ts_code: tsCode, start_date: daysAgoYmd(30), end_date: today },
+      { ts_code: tsCode, start_date: daysAgoYmd(30), end_date: endDate },
       quoteFields
     )
     dailyRows = dailyRows.sort((a, b) => String(b.trade_date).localeCompare(String(a.trade_date)))
@@ -421,7 +443,7 @@ export async function fetchAStockQuote(code: string): Promise<{
     if (!row) {
       const latestRows = await tusharePost(
         'daily',
-        { ts_code: tsCode, start_date: daysAgoYmd(365), end_date: today },
+        { ts_code: tsCode, start_date: daysAgoYmd(365), end_date: endDate },
         quoteFields
       )
       row = latestRows.sort((a, b) => String(b.trade_date).localeCompare(String(a.trade_date)))[0]
@@ -442,7 +464,7 @@ export async function fetchAStockQuote(code: string): Promise<{
     }
     const basic = basicRows[0] || {}
 
-    const tradeDate = toYmd(row.trade_date) || today
+    const tradeDate = toYmd(row.trade_date) || await getRecentTradingDayYmd()
     const doc = {
       symbol,
       name: String(row.name || symbol),
@@ -502,7 +524,7 @@ export async function fetchAStockDaily(code: string, days = 60): Promise<{
   try {
     const rows = await tusharePost(
       'daily',
-      { ts_code: tsCode, start_date: daysAgoYmd(days + 10), end_date: todayYmd() },
+      { ts_code: tsCode, start_date: daysAgoYmd(days + 10), end_date: getQueryEndDate() },
       ['ts_code', 'trade_date', 'open', 'high', 'low', 'close', 'pre_close', 'change', 'pct_chg', 'vol', 'amount']
     )
     if (rows.length === 0) return { success: false, message: '无K线数据', count: 0 }
@@ -531,6 +553,7 @@ export async function fetchAStockFinancialSummary(code: string): Promise<{
   const symbol = normalizeStockCode(code)
   const tsCode = toTsCode(symbol)
   try {
+    const latestTradingDay = await getRecentTradingDayYmd()
     const [finaRows, basicRows] = await Promise.all([
       tusharePost(
         'fina_indicator',
@@ -539,7 +562,7 @@ export async function fetchAStockFinancialSummary(code: string): Promise<{
       ),
       tusharePost(
         'daily_basic',
-        { ts_code: tsCode, trade_date: todayYmd() },
+        { ts_code: tsCode, trade_date: latestTradingDay },
         ['ts_code', 'trade_date', 'turnover_rate', 'turnover_rate_f', 'volume_ratio', 'pe', 'pe_ttm', 'pb', 'ps', 'ps_ttm',
           'dv_ratio', 'dv_ttm', 'total_share', 'float_share', 'free_share', 'total_mv', 'circ_mv']
       )
