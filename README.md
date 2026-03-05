@@ -51,6 +51,7 @@ components/          # UI 组件
 
 - Node.js: `24.x`
 - 环境变量:
-  - `MONGODB_URI` - MongoDB 连接字符串
+  - `MONGO_URI` - MongoDB 连接字符串
   - `MONGODB_DB` - 数据库名称
   - `JWT_SECRET` - JWT 签名密钥
+

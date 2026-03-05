@@ -1,11 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { applyAuthCookie, getUserById, signUserToken, toPublicUserProfile, verifyUserPassword } from '@/lib/auth'
+import {
+  ACCESS_TOKEN_MAX_AGE_SECONDS,
+  applyAuthCookies,
+  getUserById,
+  signAccessToken,
+  signRefreshToken,
+  toPublicUserProfile,
+  verifyUserPassword,
+  normalizeEmail
+} from '@/lib/auth'
 
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as { email?: string; password?: string }
-    const email = (body.email || '').trim()
+    const email = normalizeEmail(body.email || '')
     const password = body.password || ''
 
     if (!email || !password) {
@@ -29,7 +38,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const token = await signUserToken(user)
+    const accessToken = await signAccessToken(user)
+    const refreshToken = await signRefreshToken(user)
     const userDoc = await getUserById(user.userId)
     const userProfile = userDoc ? toPublicUserProfile(userDoc) : {
       id: user.userId,
@@ -51,16 +61,16 @@ export async function POST(request: NextRequest) {
     const response = NextResponse.json({
       success: true,
       data: {
-        access_token: token,
-        refresh_token: token,
+        access_token: accessToken,
+        refresh_token: refreshToken,
         token_type: 'bearer',
-        expires_in: 60 * 60 * 12,
+        expires_in: ACCESS_TOKEN_MAX_AGE_SECONDS,
         user: userProfile
       },
       message: '登录成功'
     })
 
-    applyAuthCookie(response, token)
+    applyAuthCookies(response, { accessToken, refreshToken })
     return response
   } catch (error) {
     return NextResponse.json(
@@ -73,3 +83,4 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+

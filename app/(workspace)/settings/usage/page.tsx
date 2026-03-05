@@ -54,7 +54,7 @@ export default function SettingsUsagePage() {
   }, [])
 
   const cleanup = async () => {
-    await apiFetch('/api/usage/records/old?days=90', { method: 'DELETE' })
+    await apiFetch('/api/usage/records?days=90', { method: 'DELETE' })
     await load()
   }
 

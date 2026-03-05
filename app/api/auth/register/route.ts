@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { applyAuthCookie, createUserAccount, signUserToken, toPublicUserProfile } from '@/lib/auth'
+import {
+  ACCESS_TOKEN_MAX_AGE_SECONDS,
+  applyAuthCookies,
+  createUserAccount,
+  isEmailTaken,
+  normalizeEmail,
+  signAccessToken,
+  signRefreshToken,
+  toPublicUserProfile
+} from '@/lib/auth'
 import { getDb } from '@/lib/db'
 
 interface RegisterPayload {
@@ -13,7 +22,7 @@ interface RegisterPayload {
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as RegisterPayload
-    const email = (body.email || '').trim()
+    const email = normalizeEmail(body.email || '')
     const password = body.password || ''
     const confirmPassword = body.confirm_password || ''
     const nickname = (body.nickname || '').trim()
@@ -48,9 +57,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const db = await getDb()
-    const users = db.collection('users')
-    const exists = await users.findOne({ email })
+    const exists = await isEmailTaken(email)
     if (exists) {
       return NextResponse.json(
         {
@@ -61,12 +68,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 检查是否为管理员：
-    // 1. 如果是第一个用户，自动成为管理员
-    // 2. 如果邮箱匹配环境变量 ADMIN_EMAIL
+    // 仅第一个注册用户自动成为管理员
+    const db = await getDb()
+    const users = db.collection('users')
     const userCount = await users.countDocuments()
-    const adminEmail = process.env.ADMIN_EMAIL
-    const isAdmin = userCount === 0 || !!(adminEmail && email.toLowerCase() === adminEmail.toLowerCase())
+    const isAdmin = userCount === 0
 
     const userDoc = await createUserAccount({
       email,
@@ -85,26 +91,28 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const token = await signUserToken({
+    const sessionUser = {
       userId: String(userDoc._id),
       email,
       isAdmin,
       nickname: nickname || undefined
-    })
+    }
+    const accessToken = await signAccessToken(sessionUser)
+    const refreshToken = await signRefreshToken(sessionUser)
 
     const response = NextResponse.json({
       success: true,
       data: {
-        access_token: token,
-        refresh_token: token,
+        access_token: accessToken,
+        refresh_token: refreshToken,
         token_type: 'bearer',
-        expires_in: 60 * 60 * 12,
+        expires_in: ACCESS_TOKEN_MAX_AGE_SECONDS,
         user: toPublicUserProfile(userDoc)
       },
       message: '注册成功'
     })
 
-    applyAuthCookie(response, token)
+    applyAuthCookies(response, { accessToken, refreshToken })
     return response
   } catch (error) {
     return NextResponse.json(

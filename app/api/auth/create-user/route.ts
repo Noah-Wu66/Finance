@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server'
 
-import { createUserAccount, getRequestUser, getUserById, toPublicUserProfile } from '@/lib/auth'
-import { getDb } from '@/lib/db'
+import { createUserAccount, getRequestUser, isEmailTaken, normalizeEmail, toPublicUserProfile } from '@/lib/auth'
 import { fail, ok } from '@/lib/http'
 
 interface Payload {
@@ -17,7 +16,7 @@ export async function POST(request: NextRequest) {
   if (!current.isAdmin) return fail('仅管理员可创建用户', 403)
 
   const body = (await request.json().catch(() => ({}))) as Payload
-  const email = (body.email || '').trim()
+  const email = normalizeEmail(body.email || '')
   const password = body.password || ''
   const nickname = (body.nickname || '').trim()
 
@@ -25,8 +24,7 @@ export async function POST(request: NextRequest) {
     return fail('邮箱和密码不能为空', 400)
   }
 
-  const db = await getDb()
-  const exists = await db.collection('users').findOne({ email })
+  const exists = await isEmailTaken(email)
   if (exists) {
     return fail('邮箱已存在', 409)
   }

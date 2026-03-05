@@ -6,7 +6,6 @@ import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { apiFetch } from '@/lib/client-api'
-import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 
 /* ========== Nav Config ========== */
@@ -112,22 +111,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         method: 'POST',
         credentials: 'include',
         keepalive: true
-      }).catch(() => {})
+      }).catch((error) => {
+        console.error('页面关闭时停止任务失败', error)
+      })
     }
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [])
-
-  // 轮询执行状态
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      fetch('/api/executions?limit=20', {
-        method: 'GET',
-        credentials: 'include',
-        cache: 'no-store'
-      }).catch(() => {})
-    }, 2800)
-    return () => window.clearInterval(timer)
   }, [])
 
   // 轮询未读通知数量
@@ -135,7 +124,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     try {
       const res = await apiFetch<{ count: number }>('/api/notifications/unread_count')
       setUnreadCount(Number(res.data?.count ?? 0))
-    } catch {}
+    } catch (error) {
+      console.error('获取未读通知失败', error)
+    }
   }, [])
 
   useEffect(() => {
@@ -149,7 +140,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     try {
       const res = await apiFetch<{ items: NotifItem[] }>('/api/notifications?status=all&page=1&page_size=20')
       setNotifItems(res.data.items || [])
-    } catch {}
+    } catch (error) {
+      console.error('加载通知列表失败', error)
+    }
   }
 
   const toggleNotif = async () => {
@@ -200,7 +193,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       await apiFetch('/api/auth/logout', { method: 'POST' })
       router.replace('/login')
       router.refresh()
-    } catch {
+    } catch (error) {
+      console.error('退出登录失败，准备强制跳转登录页', error)
       router.replace('/login')
       router.refresh()
     } finally {
@@ -213,7 +207,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     try {
       const saved = localStorage.getItem('sidebar-collapsed')
       if (saved === 'true') setCollapsed(true)
-    } catch {}
+    } catch (error) {
+      console.error('读取侧边栏状态失败', error)
+    }
   }, [])
 
   const toggleCollapse = () => {
@@ -476,3 +472,5 @@ export function AppShell({ children }: { children: ReactNode }) {
     </div>
   )
 }
+
+

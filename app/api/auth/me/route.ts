@@ -5,6 +5,7 @@ import { fail, ok } from '@/lib/http'
 
 interface UpdatePayload {
   email?: string
+  nickname?: string
   preferences?: Record<string, unknown>
   daily_quota?: number
   concurrent_limit?: number
@@ -31,16 +32,28 @@ export async function PUT(request: NextRequest) {
   }
 
   const body = (await request.json().catch(() => ({}))) as UpdatePayload
-  const doc = await updateUserProfile(user.userId, {
-    email: body.email,
-    preferences: body.preferences,
-    daily_quota: body.daily_quota,
-    concurrent_limit: body.concurrent_limit
-  })
 
-  if (!doc) {
-    return fail('更新失败', 400)
+  if (!user.isAdmin) {
+    if (body.email !== undefined || body.daily_quota !== undefined || body.concurrent_limit !== undefined) {
+      return fail('普通用户不能修改邮箱或配额', 403)
+    }
   }
 
-  return ok(toPublicUserProfile(doc), '用户信息已更新')
+  try {
+    const doc = await updateUserProfile(user.userId, {
+      email: user.isAdmin ? body.email : undefined,
+      nickname: body.nickname,
+      preferences: body.preferences,
+      daily_quota: user.isAdmin ? body.daily_quota : undefined,
+      concurrent_limit: user.isAdmin ? body.concurrent_limit : undefined
+    })
+
+    if (!doc) {
+      return fail('更新失败', 400)
+    }
+
+    return ok(toPublicUserProfile(doc), '用户信息已更新')
+  } catch (error) {
+    return fail('更新失败', 400, error instanceof Error ? error.message : String(error))
+  }
 }

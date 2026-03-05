@@ -5,8 +5,12 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { getDb } from '@/lib/db'
 
-const AUTH_COOKIE = 'ta_token'
-const MAX_AGE_SECONDS = 60 * 60 * 24 * 7
+export const AUTH_COOKIE = 'ta_token'
+export const REFRESH_COOKIE = 'ta_refresh_token'
+export const ACCESS_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 12
+export const REFRESH_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 7
+
+type TokenKind = 'access' | 'refresh'
 
 export interface SessionUser {
   userId: string
@@ -34,12 +38,23 @@ export interface UserPublicProfile {
 }
 
 interface JwtPayload extends SessionUser {
+  token_kind: TokenKind
   iat: number
   exp: number
 }
 
+declare global {
+  var __usersIndexesReady__: Promise<void> | undefined
+}
+
+const jwtSecretText = (process.env.JWT_SECRET || '').trim()
+if (!jwtSecretText) {
+  throw new Error('JWT_SECRET 环境变量未设置，服务拒绝启动')
+}
+const jwtSecretValue = new TextEncoder().encode(jwtSecretText)
+
 function jwtSecret() {
-  return new TextEncoder().encode(process.env.JWT_SECRET || 'change-me-in-vercel')
+  return jwtSecretValue
 }
 
 const defaultPreferences = {
@@ -55,6 +70,38 @@ const defaultPreferences = {
   desktop_notifications: true,
   analysis_complete_notification: true,
   system_maintenance_notification: true
+}
+
+export function normalizeEmail(email: string): string {
+  return String(email || '').trim().toLowerCase()
+}
+
+async function ensureUsersCollectionIndexes() {
+  if (!global.__usersIndexesReady__) {
+    global.__usersIndexesReady__ = (async () => {
+      const db = await getDb()
+      const users = db.collection('users')
+
+      await users.updateMany(
+        { email: { $type: 'string' } },
+        [
+          {
+            $set: {
+              email: { $toLower: '$email' },
+              email_normalized: { $toLower: '$email' }
+            }
+          }
+        ]
+      )
+
+      await users.createIndex(
+        { email_normalized: 1 },
+        { unique: true, name: 'uniq_users_email_normalized' }
+      )
+    })()
+  }
+
+  return global.__usersIndexesReady__
 }
 
 function normalizeDateString(value: unknown): string {
@@ -93,7 +140,32 @@ export async function getUserById(userId: string): Promise<Record<string, unknow
   return db.collection('users').findOne({ _id: new ObjectId(userId) }) as Promise<Record<string, unknown> | null>
 }
 
+export async function isEmailTaken(email: string, excludeUserId?: string) {
+  await ensureUsersCollectionIndexes()
+
+  const normalized = normalizeEmail(email)
+  if (!normalized) return false
+
+  const db = await getDb()
+  const users = db.collection('users')
+
+  const query: Record<string, unknown> = { email_normalized: normalized }
+  if (excludeUserId && ObjectId.isValid(excludeUserId)) {
+    query._id = { $ne: new ObjectId(excludeUserId) }
+  }
+
+  const exists = await users.findOne(query, { projection: { _id: 1 } })
+  return Boolean(exists)
+}
+
 export async function createUserAccount(input: { email: string; password: string; nickname?: string; isAdmin?: boolean }) {
+  await ensureUsersCollectionIndexes()
+
+  const normalizedEmail = normalizeEmail(input.email)
+  if (!normalizedEmail) {
+    throw new Error('邮箱不能为空')
+  }
+
   const db = await getDb()
   const users = db.collection('users')
 
@@ -101,7 +173,8 @@ export async function createUserAccount(input: { email: string; password: string
   const passwordHash = await hashPassword(input.password)
 
   const result = await users.insertOne({
-    email: input.email,
+    email: normalizedEmail,
+    email_normalized: normalizedEmail,
     nickname: input.nickname,
     hashed_password: passwordHash,
     is_active: true,
@@ -130,6 +203,9 @@ export async function updateUserProfile(userId: string, updates: {
   concurrent_limit?: number
 }) {
   if (!ObjectId.isValid(userId)) return null
+
+  await ensureUsersCollectionIndexes()
+
   const db = await getDb()
   const users = db.collection('users')
 
@@ -137,7 +213,18 @@ export async function updateUserProfile(userId: string, updates: {
     updated_at: new Date()
   }
 
-  if (updates.email !== undefined) patch.email = updates.email
+  if (updates.email !== undefined) {
+    const normalizedEmail = normalizeEmail(updates.email)
+    if (!normalizedEmail) {
+      throw new Error('邮箱不能为空')
+    }
+    const exists = await isEmailTaken(normalizedEmail, userId)
+    if (exists) {
+      throw new Error('邮箱已存在')
+    }
+    patch.email = normalizedEmail
+    patch.email_normalized = normalizedEmail
+  }
   if (updates.nickname !== undefined) patch.nickname = updates.nickname
   if (updates.preferences !== undefined) patch.preferences = updates.preferences
   if (updates.daily_quota !== undefined) patch.daily_quota = updates.daily_quota
@@ -164,30 +251,40 @@ export async function updateUserPassword(userId: string, newPassword: string) {
   return res.matchedCount > 0
 }
 
-export async function signUserToken(user: SessionUser) {
+async function signUserToken(user: SessionUser, tokenKind: TokenKind, maxAgeSeconds: number) {
   return new SignJWT({
     userId: user.userId,
     email: user.email,
     isAdmin: user.isAdmin,
-    nickname: user.nickname
+    nickname: user.nickname,
+    token_kind: tokenKind
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
-    .setExpirationTime(`${MAX_AGE_SECONDS}s`)
+    .setExpirationTime(`${maxAgeSeconds}s`)
     .sign(jwtSecret())
 }
 
-export async function verifyUserToken(token: string): Promise<SessionUser | null> {
+export async function signAccessToken(user: SessionUser) {
+  return signUserToken(user, 'access', ACCESS_TOKEN_MAX_AGE_SECONDS)
+}
+
+export async function signRefreshToken(user: SessionUser) {
+  return signUserToken(user, 'refresh', REFRESH_TOKEN_MAX_AGE_SECONDS)
+}
+
+export async function verifyUserToken(token: string, expectedTokenKind: TokenKind = 'access'): Promise<SessionUser | null> {
   try {
     const { payload } = await jwtVerify(token, jwtSecret())
     const data = payload as unknown as JwtPayload
-    // 检查是否为管理员邮箱（环境变量配置优先）
-    const adminEmail = process.env.ADMIN_EMAIL
-    const isAdmin = adminEmail && (data.email || '').toLowerCase() === adminEmail.toLowerCase()
+    if (data.token_kind !== expectedTokenKind) {
+      return null
+    }
+
     return {
       userId: data.userId,
       email: data.email,
-      isAdmin: isAdmin || Boolean(data.isAdmin),
+      isAdmin: Boolean(data.isAdmin),
       nickname: data.nickname
     }
   } catch {
@@ -203,13 +300,27 @@ function tokenFromRequest(request: NextRequest): string | null {
   return request.cookies.get(AUTH_COOKIE)?.value || null
 }
 
+export function tokenFromRefreshRequest(request: NextRequest): string | null {
+  return request.cookies.get(REFRESH_COOKIE)?.value || null
+}
+
 export async function getRequestUser(request: NextRequest): Promise<SessionUser | null> {
   const token = tokenFromRequest(request)
   if (!token) return null
-  return verifyUserToken(token)
+  return verifyUserToken(token, 'access')
 }
 
-export function applyAuthCookie(response: NextResponse, token: string) {
+export async function getRefreshRequestUser(request: NextRequest): Promise<SessionUser | null> {
+  const token = tokenFromRefreshRequest(request)
+  if (!token) return null
+  return verifyUserToken(token, 'refresh')
+}
+
+export async function verifyRefreshToken(token: string): Promise<SessionUser | null> {
+  return verifyUserToken(token, 'refresh')
+}
+
+export function applyAccessCookie(response: NextResponse, token: string) {
   response.cookies.set({
     name: AUTH_COOKIE,
     value: token,
@@ -217,11 +328,36 @@ export function applyAuthCookie(response: NextResponse, token: string) {
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     path: '/',
-    maxAge: MAX_AGE_SECONDS
+    maxAge: ACCESS_TOKEN_MAX_AGE_SECONDS
   })
 }
 
-export function clearAuthCookie(response: NextResponse) {
+export function applyRefreshCookie(response: NextResponse, token: string) {
+  response.cookies.set({
+    name: REFRESH_COOKIE,
+    value: token,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: REFRESH_TOKEN_MAX_AGE_SECONDS
+  })
+}
+
+export function applyAuthCookies(response: NextResponse, tokens: { accessToken: string; refreshToken: string }) {
+  applyAccessCookie(response, tokens.accessToken)
+  applyRefreshCookie(response, tokens.refreshToken)
+}
+
+export function applyAuthCookie(response: NextResponse, token: string) {
+  applyAccessCookie(response, token)
+}
+
+export function applyRefreshAuthCookie(response: NextResponse, token: string) {
+  applyRefreshCookie(response, token)
+}
+
+export function clearAccessCookie(response: NextResponse) {
   response.cookies.set({
     name: AUTH_COOKIE,
     value: '',
@@ -233,11 +369,29 @@ export function clearAuthCookie(response: NextResponse) {
   })
 }
 
+export function clearAuthCookie(response: NextResponse) {
+  clearAccessCookie(response)
+  response.cookies.set({
+    name: REFRESH_COOKIE,
+    value: '',
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 0
+  })
+}
+
 export async function verifyUserPassword(email: string, password: string): Promise<SessionUser | null> {
+  await ensureUsersCollectionIndexes()
+
+  const normalizedEmail = normalizeEmail(email)
+  if (!normalizedEmail) return null
+
   const db = await getDb()
   const users = db.collection('users')
 
-  const user = await users.findOne({ email })
+  const user = await users.findOne({ email_normalized: normalizedEmail })
   if (!user || user.is_active === false) {
     return null
   }
@@ -269,14 +423,10 @@ export async function verifyUserPassword(email: string, password: string): Promi
     }
   )
 
-  // 检查是否为管理员邮箱（环境变量配置优先）
-  const adminEmail = process.env.ADMIN_EMAIL
-  const isAdmin = adminEmail && (user.email as string).toLowerCase() === adminEmail.toLowerCase()
-
   return {
     userId: (user._id as ObjectId).toHexString(),
     email: user.email as string,
-    isAdmin: isAdmin || Boolean(user.is_admin),
+    isAdmin: Boolean(user.is_admin),
     nickname: (user.nickname as string | undefined) || undefined
   }
 }

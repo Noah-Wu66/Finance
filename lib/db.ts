@@ -43,3 +43,4 @@ export async function getDb() {
   const dbName = process.env.MONGODB_DB || process.env.MONGODB_DATABASE || 'tradingagents'
   return client.db(dbName)
 }
+

@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { applyAuthCookie, getRequestUser, signUserToken, verifyUserToken } from '@/lib/auth'
+import {
+  ACCESS_TOKEN_MAX_AGE_SECONDS,
+  applyAuthCookies,
+  getRefreshRequestUser,
+  signAccessToken,
+  signRefreshToken,
+  verifyRefreshToken
+} from '@/lib/auth'
 
 interface Payload {
   refresh_token?: string
@@ -9,8 +16,8 @@ interface Payload {
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => ({}))) as Payload
-    const userFromCookie = await getRequestUser(request)
-    const userFromToken = body.refresh_token ? await verifyUserToken(body.refresh_token) : null
+    const userFromCookie = await getRefreshRequestUser(request)
+    const userFromToken = body.refresh_token ? await verifyRefreshToken(body.refresh_token) : null
     const user = userFromCookie || userFromToken
 
     if (!user) {
@@ -23,17 +30,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const token = await signUserToken(user)
+    const accessToken = await signAccessToken(user)
+    const refreshToken = await signRefreshToken(user)
     const response = NextResponse.json({
       success: true,
       data: {
-        access_token: token,
-        refresh_token: token,
-        expires_in: 60 * 60 * 12
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        expires_in: ACCESS_TOKEN_MAX_AGE_SECONDS
       },
       message: 'Token刷新成功'
     })
-    applyAuthCookie(response, token)
+
+    applyAuthCookies(response, { accessToken, refreshToken })
     return response
   } catch (error) {
     return NextResponse.json(
