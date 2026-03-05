@@ -4,6 +4,7 @@ import { getRequestUser } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { fail, ok } from '@/lib/http'
 import { getOrSetLocalCache } from '@/lib/local-data-cache'
+import { getLatestQuoteByCode } from '@/lib/stock-data'
 import { fetchAStockQuote } from '@/lib/tushare-data'
 import { maybeObjectId } from '@/lib/mongo-helpers'
 import { toNum } from '@/lib/utils'
@@ -31,14 +32,32 @@ export async function GET(request: NextRequest) {
 
   const quotes: Record<string, { price: number; pct_chg: number; trade_date: string }> = {}
   const uniqueCodes = Array.from(new Set(codes))
-  const rows = await Promise.all(uniqueCodes.map(async (code) => {
-    const result = await getOrSetLocalCache(`stock-quote:${code}`, () => fetchAStockQuote(code))
-    if (!result.success || !result.data) return null
-    return {
-      code,
-      data: result.data
-    }
-  }))
+
+  const rows = await Promise.all(
+    uniqueCodes.map(async (code) => {
+      const result = await getOrSetLocalCache(`stock-quote:${code}`, () => fetchAStockQuote(code))
+      const realtimeClose = result.success && result.data ? toNum(result.data.close) : 0
+
+      if (result.success && result.data && realtimeClose > 0) {
+        return {
+          code,
+          data: result.data
+        }
+      }
+
+      const fallback = await getLatestQuoteByCode(code)
+      if (!fallback || fallback.close <= 0) return null
+
+      return {
+        code,
+        data: {
+          close: fallback.close,
+          pct_chg: fallback.pct_chg,
+          trade_date: fallback.trade_date
+        }
+      }
+    })
+  )
 
   for (const row of rows) {
     if (!row) continue
