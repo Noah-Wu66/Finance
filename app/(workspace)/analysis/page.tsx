@@ -225,6 +225,9 @@ function AnalysisPageContent() {
         }
         setTimeout(poll, 2000)
       } catch {
+        if (!stopped) {
+          setTimeout(poll, 3000)
+        }
       }
     }
 
@@ -238,7 +241,7 @@ function AnalysisPageContent() {
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (!executionId || execution?.status !== 'running') return
-      fetch(`/api/executions/${executionId}/cancel`, {
+      fetch(`/api/executions/${executionId}/cancel?source=page-unload`, {
         method: 'POST',
         credentials: 'include',
         keepalive: true

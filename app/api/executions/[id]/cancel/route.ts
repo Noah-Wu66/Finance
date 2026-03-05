@@ -16,7 +16,11 @@ export async function POST(request: NextRequest, { params }: Params) {
 
   try {
     const { id } = await params
-    await cancelExecution(id, user.userId)
+    const source = request.nextUrl.searchParams.get('source') === 'page-unload'
+      ? 'page-unload'
+      : 'manual'
+
+    await cancelExecution(id, user.userId, { source })
     return ok({ id }, '任务已停止')
   } catch (error) {
     return fail('停止任务失败', 400, error instanceof Error ? error.message : String(error))

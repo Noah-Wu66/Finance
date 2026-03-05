@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { apiFetch } from '@/lib/client-api'
 import { Card } from '@/components/ui/card'
@@ -38,6 +38,7 @@ export default function ExecutionsPage() {
   const [busyId, setBusyId] = useState('')
   const [error, setError] = useState('')
   const [expandedId, setExpandedId] = useState('')
+  const advancingRef = useRef(false)
 
   const load = async () => {
     setLoading(true)
@@ -80,7 +81,11 @@ export default function ExecutionsPage() {
   }, [items])
 
   const advanceRunning = async (withLoading = true) => {
+    if (advancingRef.current) return
+
+    advancingRef.current = true
     if (withLoading) setLoading(true)
+
     try {
       const runningIds = items.filter((item) => item.status === 'running').map((item) => item._id)
       for (const id of runningIds) {
@@ -90,6 +95,8 @@ export default function ExecutionsPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : '推进失败')
       if (withLoading) setLoading(false)
+    } finally {
+      advancingRef.current = false
     }
   }
 

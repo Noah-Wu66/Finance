@@ -36,7 +36,8 @@ const MARGIN_TRADING_COLLECTION = 'margin_trading'
 const DRAGON_TIGER_COLLECTION = 'dragon_tiger'
 const INSTITUTION_HOLDING_COLLECTION = 'institution_holding'
 
-const STALE_TIMEOUT_MS = 150 * 1000
+const STALE_TIMEOUT_MS = 15 * 60 * 1000
+const PROCESSING_STALE_TIMEOUT_MS = Math.max(STALE_TIMEOUT_MS * 2, 30 * 60 * 1000)
 
 export type ExecutionStatus = 'running' | 'completed' | 'failed' | 'canceled' | 'stopped'
 
@@ -57,6 +58,8 @@ export interface ExecutionDoc {
   report_id?: string
   created_at: Date
   updated_at: Date
+  processing?: boolean
+  processing_started_at?: Date
   stopped_reason?: string
 }
 
@@ -1857,19 +1860,29 @@ async function buildReport(execution: ExecutionDoc) {
 export async function markStaleExecutions(userId: string) {
   const db = await getDb()
   const executions = db.collection<ExecutionDoc>(EXEC_COLLECTION)
-  const staleAt = new Date(Date.now() - STALE_TIMEOUT_MS)
+  const now = Date.now()
+  const staleAt = new Date(now - STALE_TIMEOUT_MS)
+  const staleProcessingAt = new Date(now - PROCESSING_STALE_TIMEOUT_MS)
 
   await executions.updateMany(
     {
       user_id: userId,
       status: 'running',
-      updated_at: { $lt: staleAt }
+      updated_at: { $lt: staleAt },
+      $or: [
+        { processing: { $ne: true } },
+        { processing_started_at: { $lt: staleProcessingAt } }
+      ]
     },
     {
       $set: {
         status: 'stopped',
         stopped_reason: '页面关闭或中断，任务已停止',
-        updated_at: new Date()
+        updated_at: new Date(),
+        processing: false
+      },
+      $unset: {
+        processing_started_at: ''
       }
     }
   )
@@ -1898,6 +1911,7 @@ export async function startExecution(input: {
     step: 0,
     total_steps: 7,
     progress: 0,
+    processing: false,
     context: {},
     created_at: now,
     updated_at: now
@@ -2067,31 +2081,51 @@ export async function listExecutionsPaged(
   }
 }
 
-export async function cancelExecution(id: string, userId: string) {
+export async function cancelExecution(
+  id: string,
+  userId: string,
+  options?: {
+    source?: 'manual' | 'page-unload'
+    reason?: string
+  }
+) {
   const db = await getDb()
   const executions = db.collection<ExecutionDoc>(EXEC_COLLECTION)
-  const current = await executions.findOne({ _id: new ObjectId(id), user_id: userId })
+  const executionId = new ObjectId(id)
+  const current = await executions.findOne({ _id: executionId, user_id: userId })
+  const source = options?.source || 'manual'
+  const nextStatus: ExecutionStatus = source === 'manual' ? 'canceled' : 'stopped'
+  const stopReason = options?.reason || (source === 'manual' ? '用户手动停止' : '页面关闭，任务自动停止')
 
   const now = new Date()
-  await executions.updateOne(
+  const updateResult = await executions.updateOne(
     {
-      _id: new ObjectId(id),
-      user_id: userId
+      _id: executionId,
+      user_id: userId,
+      status: 'running'
     },
     {
       $set: {
-        status: 'canceled',
+        status: nextStatus,
         updated_at: now,
-        stopped_reason: '用户手动停止'
+        stopped_reason: stopReason,
+        processing: false
+      },
+      $unset: {
+        processing_started_at: ''
       }
     }
   )
 
+  if (updateResult.matchedCount === 0) {
+    return
+  }
+
   await createNotificationSafe({
     userId,
     type: 'system',
-    title: '任务已停止',
-    content: `任务 ${id} 已手动停止。`,
+    title: source === 'manual' ? '任务已停止' : '页面关闭，任务已自动停止',
+    content: source === 'manual' ? `任务 ${id} 已手动停止。` : `任务 ${id} 已因页面关闭自动停止。`,
     link: '/executions',
     source: 'execution'
   })
@@ -2100,7 +2134,9 @@ export async function cancelExecution(id: string, userId: string) {
     userId,
     userEmail: current?.user_email || 'current_user',
     actionType: 'stock_analysis',
-    action: `停止任务 ${current?.symbol || id}`,
+    action: source === 'manual'
+      ? `手动停止任务 ${current?.symbol || id}`
+      : `页面关闭自动停止任务 ${current?.symbol || id}`,
     success: true
   })
 }
@@ -2127,7 +2163,11 @@ export async function cancelAllRunningExecutions(userId: string) {
       $set: {
         status: 'stopped',
         updated_at: now,
-        stopped_reason: '页面关闭，任务自动停止'
+        stopped_reason: '页面关闭，任务自动停止',
+        processing: false
+      },
+      $unset: {
+        processing_started_at: ''
       }
     }
   )
@@ -2159,7 +2199,11 @@ export async function markExecutionFailed(id: string, userId: string, reason?: s
       $set: {
         status: 'failed',
         updated_at: now,
-        stopped_reason: reason || '用户手动标记为失败'
+        stopped_reason: reason || '用户手动标记为失败',
+        processing: false
+      },
+      $unset: {
+        processing_started_at: ''
       }
     }
   )
@@ -2192,9 +2236,10 @@ export async function deleteExecution(id: string, userId: string) {
 export async function tickExecution(id: string, userId: string) {
   const db = await getDb()
   const executions = db.collection<ExecutionDoc>(EXEC_COLLECTION)
+  const executionId = new ObjectId(id)
 
   const execution = await executions.findOne({
-    _id: new ObjectId(id),
+    _id: executionId,
     user_id: userId
   })
 
@@ -2208,273 +2253,369 @@ export async function tickExecution(id: string, userId: string) {
 
   if (Date.now() - execution.updated_at.getTime() > STALE_TIMEOUT_MS) {
     const now = new Date()
-    await executions.updateOne(
-      { _id: execution._id },
+    const staleResult = await executions.updateOne(
+      {
+        _id: execution._id,
+        user_id: userId,
+        status: 'running',
+        processing: { $ne: true }
+      },
       {
         $set: {
           status: 'stopped',
           updated_at: now,
-          stopped_reason: '页面关闭或中断，任务已停止'
+          stopped_reason: '页面关闭或中断，任务已停止',
+          processing: false
+        },
+        $unset: {
+          processing_started_at: ''
         }
       }
     )
-    const stopped = await executions.findOne({ _id: execution._id })
-    return stopped
+
+    if (staleResult.modifiedCount === 0) {
+      return executions.findOne({ _id: executionId, user_id: userId })
+    }
+
+    return executions.findOne({ _id: execution._id })
   }
 
-  const context = { ...(execution.context || {}) }
-  let nextStep = execution.step
-  let nextStatus: ExecutionStatus = execution.status
-  let resultPayload = execution.result || undefined
-  let reportId = execution.report_id
+  const lockNow = new Date()
+  const lockedExecution = await executions.findOneAndUpdate(
+    {
+      _id: executionId,
+      user_id: userId,
+      status: 'running',
+      step: execution.step,
+      processing: { $ne: true }
+    },
+    {
+      $set: {
+        processing: true,
+        processing_started_at: lockNow,
+        updated_at: lockNow
+      }
+    },
+    { returnDocument: 'after' }
+  )
 
-  if (execution.step === 0) {
-    const valid = execution.symbol.length >= 4
-    if (!valid) {
-      nextStatus = 'failed'
-      resultPayload = { error: '股票代码格式不正确' }
+  if (!lockedExecution) {
+    return executions.findOne({ _id: executionId, user_id: userId })
+  }
+
+  const touchHeartbeat = async () => {
+    const heartbeat = await executions.updateOne(
+      { _id: executionId, user_id: userId, status: 'running', processing: true },
+      { $set: { updated_at: new Date() } }
+    )
+
+    if (heartbeat.matchedCount === 0) {
+      throw new Error('任务已停止')
+    }
+  }
+
+  const context = { ...(lockedExecution.context || {}) }
+  let nextStep = lockedExecution.step
+  let nextStatus: ExecutionStatus = lockedExecution.status
+  let resultPayload = lockedExecution.result || undefined
+  let reportId = lockedExecution.report_id
+
+  try {
+    if (lockedExecution.step === 0) {
+      const valid = lockedExecution.symbol.length >= 4
+      if (!valid) {
+        nextStatus = 'failed'
+        resultPayload = { error: '股票代码格式不正确' }
+        await createNotificationSafe({
+          userId,
+          type: 'alert',
+          title: `${lockedExecution.symbol} 分析失败`,
+          content: '股票代码格式不正确。',
+          link: '/executions',
+          source: 'analysis'
+        })
+      }
+      nextStep += 1
+    } else if (lockedExecution.step === 1) {
+      const market = inferMarketFromCode(lockedExecution.symbol)
+      if (market === 'A股') {
+        try {
+          await fetchAStockData(lockedExecution.symbol, { force: true })
+        } catch {
+        }
+      }
+
+      const basic = await loadStockBasic(lockedExecution.symbol)
+      context.basic = basic
+      nextStep += 1
+    } else if (lockedExecution.step === 2) {
+      const quote = await loadQuotePack(lockedExecution.symbol)
+      context.quote = quote
+      nextStep += 1
+    } else if (lockedExecution.step === 3) {
+      const financial = await loadFundamentals(lockedExecution.symbol)
+      context.financial = financial
+      nextStep += 1
+    } else if (lockedExecution.step === 4) {
+      await touchHeartbeat()
+      const basic = (context.basic as { name: string; industry: string } | undefined) || {
+        name: lockedExecution.symbol,
+        industry: '未知行业'
+      }
+
+      const grounded = await collectGroundedNews({
+        stockName: basic.name,
+        symbol: lockedExecution.symbol,
+        industry: basic.industry
+      })
+
+      context.news = grounded.news
+      context.read_pages = grounded.readPages
+      context.search_logs = grounded.searchLogs
+      context.news_grounding_sources = grounded.groundingSources
+      context.news_grounding_summary = grounded.summary
+      nextStep += 1
+    } else if (lockedExecution.step === 5) {
+      const quote = context.quote as { changePct: number; tradeDate?: string }
+      const financial = context.financial as { roe: number; pe: number; pb: number }
+      const basic = context.basic as { industry: string }
+      const decision = makeDecision(quote.changePct, financial.roe, financial.pe, financial.pb)
+      context.decision = decision
+
+      const existingKline = (context.kline_history as Array<{ time: string; open: number; high: number; low: number; close: number; volume: number }> | undefined) || []
+      const hasPreparedContext = existingKline.length > 0
+        && Array.isArray(context.next_trading_days)
+        && Array.isArray(context.index_benchmarks)
+        && Array.isArray(context.fund_flow)
+        && Array.isArray(context.adjust_factors)
+        && Array.isArray(context.corporate_actions)
+        && Array.isArray(context.industry_aggregation)
+        && Array.isArray(context.earnings_expectation)
+        && Array.isArray(context.northbound_flow)
+        && Array.isArray(context.margin_trading)
+        && Array.isArray(context.dragon_tiger)
+        && Array.isArray(context.institution_holding)
+
+      let klineData = existingKline
+
+      if (!hasPreparedContext) {
+        await touchHeartbeat()
+        klineData = await loadKlineHistory(lockedExecution.symbol, 60)
+        context.kline_history = klineData
+
+        const lastKlineDate = klineData[klineData.length - 1]?.time || ''
+        const predictionBaseDate = choosePredictionBaseDate({
+          lastKlineDate,
+          quoteTradeDate: quote.tradeDate
+        })
+        context.prediction_base_date = predictionBaseDate
+
+        const quantFetchResult = await fetchAllQuantData({
+          symbol: lockedExecution.symbol,
+          market: lockedExecution.market,
+          industry: basic.industry || ''
+        }).catch(() => ({
+          success: false,
+          message: '增强数据拉取异常',
+          results: {},
+          dynamic_plan: {
+            selected_count: 0,
+            total_records: 0,
+            selected_apis: [],
+            executed: []
+          }
+        }))
+
+        context.tushare_dynamic_plan = quantFetchResult.dynamic_plan
+        await touchHeartbeat()
+
+        const [
+          nextTradingDays,
+          indexBenchmarks,
+          fundFlow,
+          enhancedFinancial,
+          newsSentiment,
+          adjustFactors,
+          corporateActions,
+          industryAggregation,
+          earningsExpectation,
+          dataQuality,
+          northboundFlowData,
+          marginTradingData,
+          dragonTigerData,
+          institutionHoldingData
+        ] = await Promise.all([
+          loadNextTradingDays(predictionBaseDate, lockedExecution.market, 10).catch(() => []),
+          loadIndexBenchmarks(predictionBaseDate, lockedExecution.market, 60).catch(() => []),
+          loadFundFlow(lockedExecution.symbol, 30).catch(() => []),
+          loadEnhancedFinancial(lockedExecution.symbol).catch(() => null),
+          loadNewsSentiment(lockedExecution.symbol, 50).catch(() => []),
+          loadAdjustFactors(lockedExecution.symbol, 30).catch(() => []),
+          loadCorporateActions(lockedExecution.symbol, 30).catch(() => []),
+          loadIndustryAggregation(basic.industry || '', 20).catch(() => []),
+          loadEarningsExpectation(lockedExecution.symbol, 20).catch(() => []),
+          loadDataQualitySnapshot(lockedExecution.symbol, 30).catch(() => []),
+          loadNorthboundFlow(30).catch(() => []),
+          loadMarginTrading(lockedExecution.symbol, 30).catch(() => []),
+          loadDragonTiger(lockedExecution.symbol, 20).catch(() => []),
+          loadInstitutionHolding(lockedExecution.symbol, 10).catch(() => [])
+        ])
+
+        context.next_trading_days = nextTradingDays
+        context.index_benchmarks = indexBenchmarks
+        context.fund_flow = fundFlow
+        context.financial_enhanced = enhancedFinancial
+        context.news_sentiment_summary = summarizeNewsSentiment(newsSentiment)
+        context.adjust_factors = adjustFactors
+        context.corporate_actions = corporateActions
+        context.industry_aggregation = industryAggregation
+        context.earnings_expectation = earningsExpectation
+        context.data_quality_summary = summarizeDataQuality(dataQuality)
+        context.northbound_flow = northboundFlowData
+        context.margin_trading = marginTradingData
+        context.dragon_tiger = dragonTigerData
+        context.institution_holding = institutionHoldingData
+
+        const missingDatasets = await detectMissingEnhancedDatasets({
+          symbol: lockedExecution.symbol,
+          market: lockedExecution.market,
+          industry: basic.industry || '',
+          lastKlineDate: predictionBaseDate
+        }).catch(() => [])
+
+        const quantAutoFetch = await triggerQuantAutoFetchIfNeeded({
+          symbol: lockedExecution.symbol,
+          market: lockedExecution.market,
+          industry: basic.industry || '',
+          missingDatasets,
+          userId
+        }).catch(() => ({
+          triggered: false,
+          reason: 'error',
+          missing: missingDatasets
+        }))
+
+        context.quant_auto_fetch = quantAutoFetch
+      }
+
+      await executions.updateOne(
+        { _id: lockedExecution._id, user_id: userId, status: 'running', processing: true },
+        {
+          $set: {
+            context,
+            updated_at: new Date()
+          }
+        }
+      )
+
+      await touchHeartbeat()
+      const aiResult = await runAIAnalysis(
+        { ...lockedExecution, context } as ExecutionDoc,
+        klineData
+      )
+
+      if (aiResult) {
+        context.ai_analysis = aiResult
+      } else {
+        context.ai_analysis = null
+      }
+
+      nextStep += 1
+    } else if (lockedExecution.step === 6) {
+      await touchHeartbeat()
+      const report = await buildReport({
+        ...lockedExecution,
+        step: nextStep,
+        context
+      })
+
+      reportId = report.report_id
+      resultPayload = report
+      nextStatus = 'completed'
+      nextStep += 1
+
       await createNotificationSafe({
         userId,
-        type: 'alert',
-        title: `${execution.symbol} 分析失败`,
-        content: '股票代码格式不正确。',
-        link: '/executions',
+        type: 'analysis',
+        title: `${lockedExecution.symbol} 分析完成`,
+        content: report.ai_powered ? 'AI深度分析报告已生成，含K线预测。' : '报告已生成，可直接打开查看。',
+        link: `/reports/${report.report_id}`,
         source: 'analysis'
       })
-    }
-    nextStep += 1
-  } else if (execution.step === 1) {
-    const market = inferMarketFromCode(execution.symbol)
-    if (market === 'A股') {
-      try {
-        await fetchAStockData(execution.symbol, { force: true })
-      } catch {
-      }
-    }
 
-    const basic = await loadStockBasic(execution.symbol)
-    context.basic = basic
-    nextStep += 1
-  } else if (execution.step === 2) {
-    const quote = await loadQuotePack(execution.symbol)
-    context.quote = quote
-    nextStep += 1
-  } else if (execution.step === 3) {
-    const financial = await loadFundamentals(execution.symbol)
-    context.financial = financial
-    nextStep += 1
-  } else if (execution.step === 4) {
-    const basic = (context.basic as { name: string; industry: string } | undefined) || {
-      name: execution.symbol,
-      industry: '未知行业'
-    }
-
-    const grounded = await collectGroundedNews({
-      stockName: basic.name,
-      symbol: execution.symbol,
-      industry: basic.industry
-    })
-
-    context.news = grounded.news
-    context.read_pages = grounded.readPages
-    context.search_logs = grounded.searchLogs
-    context.news_grounding_sources = grounded.groundingSources
-    context.news_grounding_summary = grounded.summary
-    nextStep += 1
-  } else if (execution.step === 5) {
-    const quote = context.quote as { changePct: number; tradeDate?: string }
-    const financial = context.financial as { roe: number; pe: number; pb: number }
-    const basic = context.basic as { industry: string }
-    const decision = makeDecision(quote.changePct, financial.roe, financial.pe, financial.pb)
-    context.decision = decision
-
-    const existingKline = (context.kline_history as Array<{ time: string; open: number; high: number; low: number; close: number; volume: number }> | undefined) || []
-    const hasPreparedContext = existingKline.length > 0
-      && Array.isArray(context.next_trading_days)
-      && Array.isArray(context.index_benchmarks)
-      && Array.isArray(context.fund_flow)
-      && Array.isArray(context.adjust_factors)
-      && Array.isArray(context.corporate_actions)
-      && Array.isArray(context.industry_aggregation)
-      && Array.isArray(context.earnings_expectation)
-      && Array.isArray(context.northbound_flow)
-      && Array.isArray(context.margin_trading)
-      && Array.isArray(context.dragon_tiger)
-      && Array.isArray(context.institution_holding)
-
-    let klineData = existingKline
-
-    if (!hasPreparedContext) {
-      klineData = await loadKlineHistory(execution.symbol, 60)
-      context.kline_history = klineData
-
-      const lastKlineDate = klineData[klineData.length - 1]?.time || ''
-      const predictionBaseDate = choosePredictionBaseDate({
-        lastKlineDate,
-        quoteTradeDate: quote.tradeDate
-      })
-      context.prediction_base_date = predictionBaseDate
-
-      const quantFetchResult = await fetchAllQuantData({
-        symbol: execution.symbol,
-        market: execution.market,
-        industry: basic.industry || ''
-      }).catch(() => ({
-        success: false,
-        message: '增强数据拉取异常',
-        results: {},
-        dynamic_plan: {
-          selected_count: 0,
-          total_records: 0,
-          selected_apis: [],
-          executed: []
+      await createOperationLogSafe({
+        userId,
+        userEmail: lockedExecution.user_email,
+        actionType: 'report_generation',
+        action: `${lockedExecution.symbol} 分析完成并生成报告`,
+        success: true,
+        details: {
+          report_id: report.report_id,
+          analysis_id: report.analysis_id,
+          ai_powered: report.ai_powered
         }
-      }))
+      })
+    }
 
-      context.tushare_dynamic_plan = quantFetchResult.dynamic_plan
+    const progress = Math.min(100, Math.round((nextStep / lockedExecution.total_steps) * 100))
 
-      const [
-        nextTradingDays,
-        indexBenchmarks,
-        fundFlow,
-        enhancedFinancial,
-        newsSentiment,
-        adjustFactors,
-        corporateActions,
-        industryAggregation,
-        earningsExpectation,
-        dataQuality,
-        northboundFlowData,
-        marginTradingData,
-        dragonTigerData,
-        institutionHoldingData
-      ] = await Promise.all([
-        loadNextTradingDays(predictionBaseDate, execution.market, 10).catch(() => []),
-        loadIndexBenchmarks(predictionBaseDate, execution.market, 60).catch(() => []),
-        loadFundFlow(execution.symbol, 30).catch(() => []),
-        loadEnhancedFinancial(execution.symbol).catch(() => null),
-        loadNewsSentiment(execution.symbol, 50).catch(() => []),
-        loadAdjustFactors(execution.symbol, 30).catch(() => []),
-        loadCorporateActions(execution.symbol, 30).catch(() => []),
-        loadIndustryAggregation(basic.industry || '', 20).catch(() => []),
-        loadEarningsExpectation(execution.symbol, 20).catch(() => []),
-        loadDataQualitySnapshot(execution.symbol, 30).catch(() => []),
-        loadNorthboundFlow(30).catch(() => []),
-        loadMarginTrading(execution.symbol, 30).catch(() => []),
-        loadDragonTiger(execution.symbol, 20).catch(() => []),
-        loadInstitutionHolding(execution.symbol, 10).catch(() => [])
-      ])
-
-      context.next_trading_days = nextTradingDays
-      context.index_benchmarks = indexBenchmarks
-      context.fund_flow = fundFlow
-      context.financial_enhanced = enhancedFinancial
-      context.news_sentiment_summary = summarizeNewsSentiment(newsSentiment)
-      context.adjust_factors = adjustFactors
-      context.corporate_actions = corporateActions
-      context.industry_aggregation = industryAggregation
-      context.earnings_expectation = earningsExpectation
-      context.data_quality_summary = summarizeDataQuality(dataQuality)
-      context.northbound_flow = northboundFlowData
-      context.margin_trading = marginTradingData
-      context.dragon_tiger = dragonTigerData
-      context.institution_holding = institutionHoldingData
-
-      const missingDatasets = await detectMissingEnhancedDatasets({
-        symbol: execution.symbol,
-        market: execution.market,
-        industry: basic.industry || '',
-        lastKlineDate: predictionBaseDate
-      }).catch(() => [])
-
-      const quantAutoFetch = await triggerQuantAutoFetchIfNeeded({
-        symbol: execution.symbol,
-        market: execution.market,
-        industry: basic.industry || '',
-        missingDatasets,
-        userId
-      }).catch(() => ({
-        triggered: false,
-        reason: 'error',
-        missing: missingDatasets
-      }))
-
-      context.quant_auto_fetch = quantAutoFetch
+    await executions.updateOne(
+      { _id: lockedExecution._id, user_id: userId, status: { $in: ['running', 'failed'] }, processing: true },
+      {
+        $set: {
+          step: nextStep,
+          status: nextStatus,
+          progress,
+          context,
+          result: resultPayload,
+          report_id: reportId,
+          processing: false,
+          updated_at: new Date()
+        },
+        $unset: {
+          processing_started_at: ''
+        }
+      }
+    )
+  } catch (error) {
+    const failReason = error instanceof Error ? error.message : '执行失败'
+    if (failReason === '任务已停止') {
+      return executions.findOne({ _id: executionId, user_id: userId })
     }
 
     await executions.updateOne(
-      { _id: execution._id },
+      { _id: lockedExecution._id, user_id: userId, processing: true },
       {
         $set: {
-          context,
+          status: 'failed',
+          stopped_reason: failReason,
+          processing: false,
           updated_at: new Date()
+        },
+        $unset: {
+          processing_started_at: ''
         }
       }
     )
 
-    const aiResult = await runAIAnalysis(
-      { ...execution, context } as ExecutionDoc,
-      klineData
-    )
-
-    if (aiResult) {
-      context.ai_analysis = aiResult
-    } else {
-      context.ai_analysis = null
-    }
-
-    nextStep += 1
-  } else if (execution.step === 6) {
-    const report = await buildReport({
-      ...execution,
-      step: nextStep,
-      context
-    })
-
-    reportId = report.report_id
-    resultPayload = report
-    nextStatus = 'completed'
-    nextStep += 1
-
     await createNotificationSafe({
       userId,
-      type: 'analysis',
-      title: `${execution.symbol} 分析完成`,
-      content: report.ai_powered ? 'AI深度分析报告已生成，含K线预测。' : '报告已生成，可直接打开查看。',
-      link: `/reports/${report.report_id}`,
+      type: 'alert',
+      title: `${lockedExecution.symbol} 分析失败`,
+      content: failReason,
+      link: '/executions',
       source: 'analysis'
     })
 
     await createOperationLogSafe({
       userId,
-      userEmail: execution.user_email,
-      actionType: 'report_generation',
-      action: `${execution.symbol} 分析完成并生成报告`,
-      success: true,
-      details: {
-        report_id: report.report_id,
-        analysis_id: report.analysis_id,
-        ai_powered: report.ai_powered
-      }
+      userEmail: lockedExecution.user_email,
+      actionType: 'stock_analysis',
+      action: `${lockedExecution.symbol} 执行失败`,
+      success: false,
+      errorMessage: failReason
     })
   }
 
-  const progress = Math.min(100, Math.round((nextStep / execution.total_steps) * 100))
-
-  await executions.updateOne(
-    { _id: execution._id },
-    {
-      $set: {
-        step: nextStep,
-        status: nextStatus,
-        progress,
-        context,
-        result: resultPayload,
-        report_id: reportId,
-        updated_at: new Date()
-      }
-    }
-  )
-
-  return executions.findOne({ _id: execution._id })
+  return executions.findOne({ _id: executionId, user_id: userId })
 }
