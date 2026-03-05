@@ -134,10 +134,21 @@ interface ReportDetail {
   created_at: string
 }
 
+function currentLocalYmd() {
+  const now = new Date()
+  const y = now.getFullYear().toString()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}${m}${d}`
+}
+
 function getT1Prediction(predicted: KlineBar[] | undefined) {
   if (!predicted || predicted.length === 0) return null
   const sorted = [...predicted].sort((a, b) => toSortDate(a.time).localeCompare(toSortDate(b.time)))
-  const t1 = sorted[0]
+  const today = currentLocalYmd()
+  const t1 = sorted.find((item) => toSortDate(item.time) > today)
+  if (!t1) return null
+
   const open = Number(t1.open || 0)
   const close = Number(t1.close || 0)
   const deltaPct = open > 0 ? ((close - open) / open) * 100 : 0
@@ -297,36 +308,46 @@ export default function ReportDetailPage() {
 
           {/* T+1 交易日预测 */}
           {(() => {
-            const t1 = getT1Prediction(detail.predicted_kline)
-            if (!t1) return null
+            const predicted = detail.predicted_kline || []
+            if (predicted.length === 0) return null
+
+            const t1 = getT1Prediction(predicted)
             return (
               <Card>
                 <h4 className="text-sm font-semibold text-[var(--fg)] mb-2">
                   T+1 交易日预测
                 </h4>
-                <div className="flex flex-wrap items-center gap-4">
-                  <span className="text-xs text-[var(--fg-muted)]">
-                    预测日期：
-                    <span className="font-mono text-[var(--fg-secondary)]">{fmtDate(t1.time)}</span>
-                  </span>
-                  <span className={`text-base font-semibold ${t1.colorClass}`}>{t1.trend}</span>
-                  <span className="text-xs text-[var(--fg-muted)]">
-                    开盘：<span className="font-mono text-[var(--fg-secondary)]">{t1.open.toFixed(2)}</span>
-                  </span>
-                  <span className="text-xs text-[var(--fg-muted)]">
-                    收盘：<span className="font-mono text-[var(--fg-secondary)]">{t1.close.toFixed(2)}</span>
-                  </span>
-                  <span className="text-xs text-[var(--fg-muted)]">
-                    变化：
-                    <span className={`font-mono ${t1.colorClass}`}>
-                      {t1.deltaPct > 0 ? '+' : ''}
-                      {t1.deltaPct.toFixed(2)}%
-                    </span>
-                  </span>
-                </div>
-                <p className="text-[11px] text-[var(--fg-muted)] m-0 mt-2">
-                  浮动 = 开盘与收盘几乎一致（绝对涨跌幅不超过 0.15%）。
-                </p>
+                {t1 ? (
+                  <>
+                    <div className="flex flex-wrap items-center gap-4">
+                      <span className="text-xs text-[var(--fg-muted)]">
+                        预测日期：
+                        <span className="font-mono text-[var(--fg-secondary)]">{fmtDate(t1.time)}</span>
+                      </span>
+                      <span className={`text-base font-semibold ${t1.colorClass}`}>{t1.trend}</span>
+                      <span className="text-xs text-[var(--fg-muted)]">
+                        开盘：<span className="font-mono text-[var(--fg-secondary)]">{t1.open.toFixed(2)}</span>
+                      </span>
+                      <span className="text-xs text-[var(--fg-muted)]">
+                        收盘：<span className="font-mono text-[var(--fg-secondary)]">{t1.close.toFixed(2)}</span>
+                      </span>
+                      <span className="text-xs text-[var(--fg-muted)]">
+                        变化：
+                        <span className={`font-mono ${t1.colorClass}`}>
+                          {t1.deltaPct > 0 ? '+' : ''}
+                          {t1.deltaPct.toFixed(2)}%
+                        </span>
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[var(--fg-muted)] m-0 mt-2">
+                      浮动 = 开盘与收盘几乎一致（绝对涨跌幅不超过 0.15%）。
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-[var(--fg-muted)] m-0">
+                    该报告的预测区间已过期，请重新发起分析任务查看最新 T+1 预测。
+                  </p>
+                )}
               </Card>
             )
           })()}

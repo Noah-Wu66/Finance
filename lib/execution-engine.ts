@@ -539,6 +539,10 @@ function choosePredictionBaseDate(params: {
     return today
   }
 
+  if (latestDataDate < today) {
+    return today
+  }
+
   return latestDataDate
 }
 
@@ -741,13 +745,20 @@ async function loadNextTradingDays(lastDate: string, market: string, count = 10)
 
   const days = rows
     .map((row) => normalizeYmd(row.date))
-    .filter((value) => value.length === 8)
+    .filter((value) => value.length === 8 && value > startDate)
+    .sort((a, b) => a.localeCompare(b))
 
-  if (days.length >= count) return days
+  const merged: string[] = []
+  for (const item of days) {
+    if (!merged.includes(item)) merged.push(item)
+    if (merged.length >= count) break
+  }
+  if (merged.length >= count) return merged.slice(0, count)
+
   const fallbackBase = startDate > todayYmd() ? startDate : todayYmd()
   const fallback = fallbackTradingDays(fallbackBase, count)
-  const merged = [...days]
   for (const item of fallback) {
+    if (item <= startDate) continue
     if (!merged.includes(item)) merged.push(item)
     if (merged.length >= count) break
   }
