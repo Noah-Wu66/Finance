@@ -18,7 +18,8 @@ export async function GET(request: NextRequest, { params }: Params) {
     return fail('未配置 TUSHARE_TOKEN', 503)
   }
 
-  const { code: rawCode } = await params
+  const { market: rawMarket, code: rawCode } = await params
+  const market = rawMarket.toUpperCase()
   const code = rawCode.toUpperCase()
   const result = await getOrSetLocalCache(`stock-quote:${code}`, () => fetchAStockQuote(code))
   if (!result.success || !result.data) {
@@ -29,6 +30,7 @@ export async function GET(request: NextRequest, { params }: Params) {
   return ok(
     {
       code,
+      market,
       close: toNum(quote.close),
       pct_chg: toNum(quote.pct_chg),
       open: toNum(quote.open),
@@ -37,7 +39,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       volume: toNum(quote.volume ?? quote.vol),
       amount: toNum(quote.amount),
       trade_date: String(quote.trade_date || ''),
-      currency: '',
+      currency: 'CNY',
       turnover_rate: toNum(quote.turnover_rate),
       amplitude: toNum(quote.amplitude),
       updated_at: new Date().toISOString()

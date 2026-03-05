@@ -524,12 +524,20 @@ export async function fetchIndustryAggregation(industry: string): Promise<{ succ
       return { success: false, message: `未找到行业 ${industry} 的股票列表`, count: 0 }
     }
 
-    // 按交易日拉全市场日线，再按行业成分过滤
-    const dailyRows = await tusharePost(
-      'daily',
-      { trade_date: todayYmd() },
-      ['ts_code', 'trade_date', 'pct_chg', 'amount']
-    )
+    // 按交易日拉全市场日线与资金流，再按行业成分过滤
+    const tradeDate = todayYmd()
+    const [dailyRows, moneyflowRows] = await Promise.all([
+      tusharePost(
+        'daily',
+        { trade_date: tradeDate },
+        ['ts_code', 'trade_date', 'pct_chg', 'amount']
+      ),
+      tusharePost(
+        'moneyflow',
+        { trade_date: tradeDate },
+        ['ts_code', 'trade_date', 'buy_lg_amount', 'sell_lg_amount', 'buy_elg_amount', 'sell_elg_amount']
+      )
+    ])
 
     const codeSet = new Set(matchedCodes)
     const validQuotes = dailyRows.filter((row) => codeSet.has(String(row.ts_code || '').trim().toUpperCase()))
@@ -537,20 +545,28 @@ export async function fetchIndustryAggregation(industry: string): Promise<{ succ
       return { success: false, message: `行业 ${industry} 当日无行情数据`, count: 0 }
     }
 
+    const validFlows = moneyflowRows.filter((row) => codeSet.has(String(row.ts_code || '').trim().toUpperCase()))
+    if (validFlows.length === 0) {
+      return { success: false, message: `行业 ${industry} 当日无资金流数据`, count: 0 }
+    }
+
     const totalPct = validQuotes.reduce((sum, row) => sum + toNum(row.pct_chg), 0)
     const totalAmount = validQuotes.reduce((sum, row) => sum + toNum(row.amount), 0)
+    const totalMainInflow = validFlows.reduce(
+      (sum, row) => sum + (toNum(row.buy_elg_amount) + toNum(row.buy_lg_amount) - toNum(row.sell_elg_amount) - toNum(row.sell_lg_amount)),
+      0
+    )
     const sentiment = validQuotes.length > 0 ? Number((totalPct / validQuotes.length).toFixed(4)) : 0
 
     const db = await getDb()
     const now = new Date()
-    const tradeDate = todayYmd()
     await db.collection('industry_aggregation').updateOne(
       { industry_name: industry, trade_date: tradeDate },
       {
         $set: {
           industry_name: industry,
           trade_date: tradeDate,
-          industry_main_inflow: 0,
+          industry_main_inflow: Number(totalMainInflow.toFixed(2)),
           industry_sentiment: sentiment,
           industry_heat: totalAmount,
           sample_count: validQuotes.length,

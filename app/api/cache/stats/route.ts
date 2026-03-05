@@ -13,18 +13,31 @@ export async function GET(request: NextRequest) {
   const db = await getDb()
   const cache = db.collection('app_cache')
 
-  const [totalFiles, stockDataCount, newsDataCount, analysisDataCount] = await Promise.all([
+  const [totalFiles, stockDataCount, newsDataCount, analysisDataCount, sizeRows] = await Promise.all([
     cache.countDocuments(),
     cache.countDocuments({ type: 'stock' }),
     cache.countDocuments({ type: 'news' }),
-    cache.countDocuments({ type: 'analysis' })
+    cache.countDocuments({ type: 'analysis' }),
+    cache
+      .aggregate([
+        {
+          $group: {
+            _id: null,
+            totalSize: { $sum: { $bsonSize: '$$ROOT' } },
+            maxSize: { $max: { $bsonSize: '$$ROOT' } }
+          }
+        }
+      ])
+      .toArray()
   ])
+
+  const sizeStat = sizeRows[0] as { totalSize?: number; maxSize?: number } | undefined
 
   return ok(
     {
       totalFiles,
-      totalSize: 0,
-      maxSize: 0,
+      totalSize: Number(sizeStat?.totalSize || 0),
+      maxSize: Number(sizeStat?.maxSize || 0),
       stockDataCount,
       newsDataCount,
       analysisDataCount

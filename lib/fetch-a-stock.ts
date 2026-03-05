@@ -32,7 +32,7 @@ export async function fetchDailyKline(code: string, days = 60): Promise<{
 export async function fetchFinancialData(code: string): Promise<{
   success: boolean
   message: string
-  data?: { roe: number; revenueGrowth: number; pe: number; pb: number; reportDate: string }
+  data?: { roe: number; revenueGrowth: number; pe: number; pb: number; debtRatio: number; reportDate: string }
 }> {
   return fetchAStockFinancialSummary(normalizeSymbol(code))
 }

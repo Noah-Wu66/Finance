@@ -79,6 +79,9 @@ export function StockDataPanel({
           change_percent: number
           amount: number
           trade_date: string
+          open: number
+          high: number
+          low: number
           turnover_rate: number
           amplitude: number
         }>(`/api/stocks/${symbol}/quote`).catch(() => null),
@@ -97,9 +100,9 @@ export function StockDataPanel({
           change_percent: qRes.data.change_percent,
           amount: qRes.data.amount,
           trade_date: qRes.data.trade_date,
-          open: 0,
-          high: 0,
-          low: 0,
+          open: qRes.data.open ?? 0,
+          high: qRes.data.high ?? 0,
+          low: qRes.data.low ?? 0,
           turnover_rate: qRes.data.turnover_rate,
           amplitude: qRes.data.amplitude
         })

@@ -351,10 +351,6 @@ export async function POST(request: NextRequest, { params }: Params) {
     return ok({ id: provider.id }, '厂家配置已保存')
   }
 
-  if (segments[0] === 'llm' && segments[1] === 'providers' && segments[2] && segments[3] === 'test') {
-    return ok({ provider_id: d(segments[2]), success: true, latency_ms: 120 }, '厂家连接测试成功')
-  }
-
   if (segments[0] === 'llm' && segments[1] === 'providers' && segments[2] && segments[3] === 'fetch-models') {
     const providerId = d(segments[2])
     const row = await db.collection(COLLECTIONS.modelCatalog).findOne({ provider: providerId })
@@ -525,19 +521,6 @@ export async function POST(request: NextRequest, { params }: Params) {
     return ok({ name: cfg.name }, '数据库配置已保存')
   }
 
-  if (segments[0] === 'database' && segments[1] && segments[2] === 'test') {
-    return ok(
-      {
-        success: true,
-        message: `数据库 ${d(segments[1])} 连接测试通过`
-      },
-      '连接测试成功'
-    )
-  }
-
-  if (key === 'test') {
-    return ok({ success: true, details: { mode: 'live' } }, '配置验证通过')
-  }
 
   if (key === 'export') {
     const config = await buildSystemConfig()

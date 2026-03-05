@@ -62,7 +62,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       pb_mrq: pickNum(quote.pb),
       ps_ttm: pickNum(quote.ps_ttm),
       roe: pickNum(financial?.roe),
-      debt_ratio: null,
+      debt_ratio: pickNum(financial?.debtRatio),
       total_mv: pickNum(quote.total_mv),
       circ_mv: pickNum(quote.circ_mv),
       turnover_rate: pickNum(quote.turnover_rate),
@@ -72,6 +72,6 @@ export async function GET(request: NextRequest, { params }: Params) {
       pe_updated_at: updatedAt,
       updated_at: updatedAt
     },
-    '获取基本面成功（缺失字段已置空）'
+    '获取基本面成功'
   )
 }

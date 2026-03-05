@@ -44,6 +44,11 @@ function normalizeStockCode(code: string): string {
   return fromTsCode(code)
 }
 
+function calcAmplitudePercent(high: number, low: number, preClose: number): number {
+  if (preClose <= 0) return 0
+  return Number((((high - low) / preClose) * 100).toFixed(4))
+}
+
 async function persistStockQuotes(
   symbol: string,
   rows: Array<Record<string, unknown>>,
@@ -58,6 +63,15 @@ async function persistStockQuotes(
   for (const row of rows) {
     const tradeDate = toYmd(row.trade_date)
     if (!tradeDate) continue
+    const open = toNumber(row.open)
+    const high = toNumber(row.high)
+    const low = toNumber(row.low)
+    const close = toNumber(row.close)
+    const preClose = toNumber(row.pre_close)
+    const providedAmplitude = Number(row.amplitude)
+    const amplitude = Number.isFinite(providedAmplitude) && providedAmplitude !== 0
+      ? providedAmplitude
+      : calcAmplitudePercent(high, low, preClose)
 
     ops.push({
       updateOne: {
@@ -70,15 +84,16 @@ async function persistStockQuotes(
           $set: {
             symbol,
             trade_date: tradeDate,
-            open: toNumber(row.open),
-            high: toNumber(row.high),
-            low: toNumber(row.low),
-            close: toNumber(row.close),
-            pre_close: toNumber(row.pre_close),
+            open,
+            high,
+            low,
+            close,
+            pre_close: preClose,
             change: toNumber(row.change),
             pct_chg: toNumber(row.pct_chg),
             volume: toNumber(row.vol ?? row.volume),
             amount: toNumber(row.amount),
+            amplitude,
             turnover_rate: toNumber(row.turnover_rate),
             turnover_rate_f: toNumber(row.turnover_rate_f),
             volume_ratio: toNumber(row.volume_ratio),
@@ -261,7 +276,7 @@ export async function fetchAStockQuote(code: string): Promise<{
       pre_close: toNumber(row.pre_close),
       pct_chg: toNumber(row.pct_chg),
       change: toNumber(row.change),
-      amplitude: 0,
+      amplitude: calcAmplitudePercent(toNumber(row.high), toNumber(row.low), toNumber(row.pre_close)),
       amount: toNumber(row.amount),
       volume: toNumber(row.vol),
       pe: toNumber(basic.pe),
@@ -333,7 +348,7 @@ export async function fetchAStockDaily(code: string, days = 60): Promise<{
 export async function fetchAStockFinancialSummary(code: string): Promise<{
   success: boolean
   message: string
-  data?: { roe: number; revenueGrowth: number; pe: number; pb: number; reportDate: string }
+  data?: { roe: number; revenueGrowth: number; pe: number; pb: number; debtRatio: number; reportDate: string }
 }> {
   if (!hasTushareLicence()) return { success: false, message: '未配置 TUSHARE_TOKEN' }
   const symbol = normalizeStockCode(code)
@@ -360,12 +375,13 @@ export async function fetchAStockFinancialSummary(code: string): Promise<{
     const revenueGrowth = toNumber(fina.revenue_yoy ?? fina.netprofit_yoy)
     const pe = toNumber(basic.pe)
     const pb = toNumber(basic.pb)
+    const debtRatio = toNumber(fina.debt_to_assets)
     const reportDate = String(fina.end_date || '')
 
     return {
       success: true,
-      message: `已获取 ${symbol} 财务：ROE ${roe.toFixed(2)}%，PE ${pe.toFixed(2)}，PB ${pb.toFixed(2)}`,
-      data: { roe, revenueGrowth, pe, pb, reportDate }
+      message: `已获取 ${symbol} 财务：ROE ${roe.toFixed(2)}%，PE ${pe.toFixed(2)}，PB ${pb.toFixed(2)}，资产负债率 ${debtRatio.toFixed(2)}%`,
+      data: { roe, revenueGrowth, pe, pb, debtRatio, reportDate }
     }
   } catch (err) {
     console.error(`[fetchAStockFinancialSummary] failed for ${code}:`, err instanceof Error ? err.message : err)
